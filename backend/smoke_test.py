@@ -305,6 +305,14 @@ async def main() -> None:
     assert view["status"] == "playing"
     print("LATE  4 人随机发牌即开局,空座 5/6 挂预发身份,迟到者入座继承 OK")
 
+    # 会面名单对空座预发的恶魔也成立(姓名为空时前端显示「空(预发)」)
+    dseat = state["demon_seats"][0]
+    assert len(state["demon_seats"]) == 1 and len(state["minion_seats"]) >= 1
+    occupied = {s["seat"] for s in state["seats"] if s["player"]}
+    assert (dseat["name"] is None) == (dseat["seat"] not in occupied), \
+        f"恶魔座姓名应与入座状态一致 {dseat}"
+    print("MEET  恶魔/爪牙座名单与空座预发一致 OK")
+
     # 进行中换座仍被拒绝
     try:
         req(f"/api/player/{late_ids[0]}/sit", "POST", {"seat": 6})
@@ -330,11 +338,17 @@ async def main() -> None:
     state = req("/api/assign/manual", "POST", {"assignments": pre}, ST)
     assert state["status"] == "lobby" and state["can_start"] is True, "人未齐时手动发身份应保持 lobby 且可开始"
     assert len(state["bluffs"]) == 3, "未指定伪装时应自动抽好(配版时即定)"
+    # 会面名单:告诉爪牙谁是恶魔、告诉恶魔谁是爪牙
+    assert [d["seat"] for d in state["demon_seats"]] == [1], state["demon_seats"]
+    assert [m["seat"] for m in state["minion_seats"]] == [2], state["minion_seats"]
+    assert state["demon_seats"][0]["name"] == "强1" and state["minion_seats"][0]["name"] == "强2", \
+        "会面名单应带在座玩家姓名"
     state = req("/api/start", "POST", headers=ST)
     assert state["status"] == "playing" and state["phase"] == "night" and state["night_no"] == 1
     keys = [s["key"] for s in state["night"]["steps"]]
     assert "investigator" in keys, "空座 5 的调查员步骤应在夜晚表中"
     print("START 手动预发 4/6 人强制开局成功,空座角色步骤在夜晚表中 OK")
+    print("MEET  会面名单:恶魔座 1(强1)、爪牙座 2(强2) OK")
 
     req("/api/reset", "POST", headers=ST)
     req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 6}, ST)

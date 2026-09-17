@@ -479,6 +479,19 @@ class GameManager:
 
     # ---- 视图 ----
 
+    def _team_seats(self, team: str) -> list[dict]:
+        """某阵营的座位名单(在座或空座预发都列出):会面步骤指向恶魔/爪牙用。"""
+        out = []
+        for i in range(1, self.player_count + 1):
+            p = self.seats.get(i)
+            rid = p.role_id if p is not None else None
+            if rid is None:
+                rid = self.seat_roles.get(i)
+            if rid and self.roles[rid]["team"] == team:
+                out.append({"seat": i, "name": p.name if p is not None else None,
+                            "role": self.roles[rid]})
+        return out
+
     def _seat_slots(self, st_view: bool, my_id: str | None = None) -> list[dict]:
         seat_of = self.seats
         slots = []
@@ -553,5 +566,8 @@ class GameManager:
                 (self.seats.get(i) is not None and self.seats[i].role_id)
                 or i in self.seat_roles for i in range(1, self.player_count + 1)),
             "bluffs": [self.roles[rid] for rid in self.bluffs],  # 恶魔的三个伪装(说书人可见)
+            # 入夜会面:告诉爪牙谁是恶魔、告诉恶魔谁是爪牙(空座预发也列出)
+            "demon_seats": self._team_seats(DEMON),
+            "minion_seats": self._team_seats(MINION),
             "saved_at": self.saved_at,
         }

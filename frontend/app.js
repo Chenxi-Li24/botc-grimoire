@@ -251,7 +251,7 @@ function renderStoryteller() {
     const { status, script, player_count: count, scripts, seats, roles, composition,
       adjust_roles, seat_roles, phase, night_no: nightNo, day_no: dayNo, night,
       nominations, current, alive_count: aliveCount, quorum, can_start: canStart,
-      bluffs, saved_at: savedAt } = view
+      bluffs, demon_seats: demonSeats, minion_seats: minionSeats, saved_at: savedAt } = view
     const minP = scripts.find((s) => s.id === script)?.min || 5 // 该板子的人数下限(瓦釜雷鸣 7 人起)
     const seatedCount = seats.filter((s) => s.player).length
     if (status === 'playing') { manual = false; draft = {} } // 发牌完成后退出草稿
@@ -495,6 +495,13 @@ function renderStoryteller() {
         ? '唤醒:' + wake.map((s) => `座${s.seat} ${esc(s.player.name)}${s.player.alive ? '' : ' ☠'}`).join('、')
         : (cur && cur.key !== 'dusk' && cur.key !== 'dawn' ? '该角色不在场,此步可跳过' : '')
       const fakeNote = cur && cur.fake_for != null ? ` · 🍺 酒鬼扮演(座${cur.fake_for})` : ''
+      // 会面步:告诉爪牙谁是恶魔 / 告诉恶魔谁是爪牙(空座预发也列出)
+      const seatTxt = (list) => list.map((d) => `座${d.seat} ${d.name ? esc(d.name) : '空(预发)'}`).join('、')
+      const relationTxt = (cur && cur.key === 'minioninfo' && demonSeats && demonSeats.length)
+        ? `<div class="step-seats">👉 恶魔:${seatTxt(demonSeats)}</div>`
+        : (cur && cur.key === 'demoninfo' && minionSeats && minionSeats.length)
+          ? `<div class="step-seats">👉 爪牙:${seatTxt(minionSeats)}</div>`
+          : ''
       // 恶魔会面步:顺带展示三个伪装,说书人告知恶魔
       const bluffTxt = (cur && cur.key === 'demoninfo' && bluffs && bluffs.length)
         ? `<p class="bluffs">🧪 告知恶魔三个伪装:${bluffs.map((r) => esc(r.name)).join(' · ')}</p>`
@@ -506,6 +513,7 @@ function renderStoryteller() {
           ${cur ? `<div class="step-card">
             <div class="step-name">${esc(cur.name)}${fakeNote}</div>
             ${wakeTxt ? `<div class="step-seats">${wakeTxt}</div>` : ''}
+            ${relationTxt}
             <p class="step-hint">${esc(cur.hint)}</p>
             ${bluffTxt}
           </div>` : '<p class="hint">本夜没有步骤</p>'}
