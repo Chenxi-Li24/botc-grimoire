@@ -765,10 +765,12 @@ function renderStoryteller() {
     document.getElementById('circle').appendChild(seatCircle(seats, {
       freeLabel: '空',
       draftBadge: (s) => {
-        // 手动模式显示草稿;非手动时,空座上的预发身份也显示在徽章里。徽章按阵营配色
+        // 手动模式显示草稿;开局后已入座玩家的真实角色也显示(玩家坐下徽章不能消失);
+        // 空座上的预发身份同样显示。徽章按阵营配色
         const badgeOf = (rid) => ({ name: (FAKE_ICON[rid] || '') + roleById[rid].name, team: roleById[rid].team })
         if (manual && draft[s.seat] && roleById[draft[s.seat]]) return badgeOf(draft[s.seat])
-        if (!s.player && seat_roles && seat_roles[s.seat] && roleById[seat_roles[s.seat]]) {
+        if (s.player && s.player.role && roleById[s.player.role.id]) return badgeOf(s.player.role.id)
+        if (seat_roles && seat_roles[s.seat] && roleById[seat_roles[s.seat]]) {
           return badgeOf(seat_roles[s.seat])
         }
         return null

@@ -436,13 +436,29 @@ class GameManager:
         fake_by_role: dict[str, list[int]] = {}
         for seat, rid in self.seat_fakes.items():
             fake_by_role.setdefault(rid, []).append(seat)
+        sheet_keys = {st["key"] for st in sheet}
+        lunatic_seats = {l["seat"] for l in self._role_seats("lunatic")}
+        # 疯子:官方顺序先恶魔后疯子——本夜有假恶魔步时由其覆盖唤醒,否则把疯子步挪到恶魔会面之后
+        lunatic_covered = {s for s in lunatic_seats
+                           if s in self.seat_fakes and self.seat_fakes[s] in sheet_keys}
         steps: list[dict] = []
+        pending_lunatic: dict | None = None
         for st in sheet:
             key = st["key"]
+            if key == "lunatic" and lunatic_seats:
+                if lunatic_covered == lunatic_seats:
+                    continue  # 疯子扮演假恶魔:附加步紧随恶魔步,不提前单独唤醒
+                pending_lunatic = dict(st)  # 挪到恶魔会面之后再唤醒疯子
+                continue
             if key in ("dusk", "dawn", "minioninfo", "demoninfo") or key in present:
                 steps.append(dict(st))
-            for seat in fake_by_role.get(key, []):  # 酒鬼扮演该角色:附加一步,标注座位
+            if key == "demoninfo" and pending_lunatic is not None:
+                steps.append(pending_lunatic)
+                pending_lunatic = None
+            for seat in fake_by_role.get(key, []):  # 假身份步骤:紧随真实步骤,标注座位
                 steps.append({**st, "fake_for": seat})
+        if pending_lunatic is not None:  # 兜底:本夜无恶魔会面步时,疯子步放在末尾
+            steps.append(pending_lunatic)
         self.night_steps = steps
         self.night_idx = 0
         self.phase = "night"
