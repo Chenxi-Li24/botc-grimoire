@@ -385,6 +385,8 @@ function renderStoryteller() {
     }
 
     const roleById = Object.fromEntries(roles.map((r) => [r.id, r]))
+    const FAKE_LABEL = { drunk: '🍺 酒鬼', lunatic: '🌙 疯子' }
+    const FAKE_ICON = { drunk: '🍺', lunatic: '🌙' }
 
     // ---- 手动发身份面板(草稿只在前端,确认后才提交) ----
     function renderManualPicker(detail, selSeat) {
@@ -467,7 +469,7 @@ function renderStoryteller() {
           const usedElsewhere = usedSeat != null && (!selSeat || usedSeat !== selSeat.seat)
           const chip = h(`<button class="chip team-${r.team} ${on ? 'on' : ''} ${usedElsewhere ? 'used' : ''}"
               title="${esc(r.ability)}${usedElsewhere ? `&#10;已发:座位 ${usedSeat}` : ''}">
-              ${esc(r.name)}${usedElsewhere ? `<span class="chip-used">座${usedSeat}</span>` : ''}</button>`)
+              ${(FAKE_ICON[r.id] || '') + esc(r.name)}${usedElsewhere ? `<span class="chip-used">座${usedSeat}</span>` : ''}</button>`)
           chip.onclick = () => {
             if (!selSeat || usedElsewhere) return // 已发到别的座位 → 禁止重复发
             if (draft[selSeat.seat] === r.id) delete draft[selSeat.seat]
@@ -491,11 +493,9 @@ function renderStoryteller() {
       })
       box.appendChild(bluffGroup)
       // 认知覆盖由说书人显式选定:疯子以为自己是恶魔(还须指定假爪牙与 3 个假伪装)、酒鬼看到假镇民
-      const FAKE_LABEL = { drunk: '🍺 酒鬼', lunatic: '🌙 疯子' }
       const fakeNeeded = Object.entries(draft).filter(([, rid]) => fakePools && fakePools[rid])
-      // 疯子的伪装候选:与真伪装同池(好角色 − 已进草稿/已选真伪装)
-      const lunBluffPool = roles.filter((r) => bluffTeams.includes(r.team)
-        && !Object.values(draft).includes(r.id) && !draftBluffs.includes(r.id))
+      // 疯子假伪装候选:好角色即可——允许与在场角色/真伪装相同(假身份不计算配板)
+      const lunBluffPool = roles.filter((r) => bluffTeams.includes(r.team))
       fakeNeeded.forEach(([seat, rid]) => {
         if (draftFakes[seat] && !(fakePools[rid].includes(roleById[draftFakes[seat]]?.team))) delete draftFakes[seat]
         if (!draftLunMinions[seat]) draftLunMinions[seat] = []
@@ -507,12 +507,14 @@ function renderStoryteller() {
       if (fakeNeeded.length) {
         const fakeGroup = h(`<div class="role-group" style="--team: var(--gold); --team-text: var(--on-gold)"><span class="role-group-head">🧠 认知覆盖(说书人选定假身份${fakeOk ? '' : ' · 未选完'})</span></div>`)
         fakeNeeded.forEach(([seat, rid]) => {
-          const row = h(`<label class="st-fake"><span class="hint">${FAKE_LABEL[rid] || '认知覆盖'} · 座${seat} 看到:</span>
-            <select data-fake-seat="${seat}">
-              <option value="" ${!draftFakes[seat] ? 'selected' : ''}>选择假身份…</option>
-              ${roles.filter((r) => fakePools[rid].includes(r.team)).map((r) =>
-                `<option value="${r.id}" ${draftFakes[seat] === r.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}
-            </select></label>`)
+          // 假身份做成框点选(再点已选中的框=清除);可与已发角色重复、不计算配板、不标已用
+          const row = h(`<div class="st-fake"><span class="hint">${FAKE_LABEL[rid] || '认知覆盖'} · 座${seat} 看到:</span></div>`)
+          roles.filter((r) => fakePools[rid].includes(r.team)).forEach((r) => {
+            const on = draftFakes[seat] === r.id
+            const chip = h(`<button class="chip team-${r.team} ${on ? 'on' : ''}" title="${esc(r.ability)}">${esc(r.name)}</button>`)
+            chip.onclick = () => { draftFakes[seat] = on ? '' : r.id; paint(view) }
+            row.appendChild(chip)
+          })
           fakeGroup.appendChild(row)
           if (rid === 'lunatic') {
             const minRow = h(`<div class="st-fake"><span class="hint">以为爪牙是(点选座位):</span></div>`)
@@ -551,9 +553,6 @@ function renderStoryteller() {
       detail.replaceChildren(box)
       box.querySelectorAll('[data-gf]').forEach((b) => {
         b.onclick = () => { godfatherAdj = Number(b.dataset.gf); paint(view) }
-      })
-      box.querySelectorAll('[data-fake-seat]').forEach((sel) => {
-        sel.onchange = () => { draftFakes[Number(sel.dataset.fakeSeat)] = sel.value; paint(view) }
       })
       document.getElementById('manual-confirm').onclick = () => act(() => {
         const assignments = Object.entries(draft).map(([seat, role]) => ({ seat: Number(seat), role }))
@@ -628,7 +627,16 @@ function renderStoryteller() {
       const wakeTxt = wake.length
         ? '唤醒:' + wake.map((s) => `座${s.seat} ${esc(s.player.name)}${s.player.alive ? '' : ' ☠'}`).join('、')
         : (cur && cur.key !== 'dusk' && cur.key !== 'dawn' ? '该角色不在场,此步可跳过' : '')
-      const fakeNote = cur && cur.fake_for != null ? ` · 🎭 认知覆盖(座${cur.fake_for} 扮演)` : ''
+      // 认知覆盖步骤:按座位真实身份区分 🍺 酒鬼 / 🌙 疯子(图标不再一样)
+      const realRoleAt = (seat) => {
+        const s = seats.find((x) => x.seat === seat)
+        if (!s) return null
+        const r = s.player ? s.player.role : s.assigned_role
+        return r ? r.id : null
+      }
+      const fakeLabel = (seat) => (realRoleAt(seat) === 'lunatic' ? '🌙 疯子' : '🍺 酒鬼')
+      const fakeIcon = (seat) => (realRoleAt(seat) === 'lunatic' ? '🌙' : '🍺')
+      const fakeNote = cur && cur.fake_for != null ? ` · ${fakeLabel(cur.fake_for)}扮演(座${cur.fake_for})` : ''
       // 会面步:告诉爪牙谁是恶魔、谁是疯子 / 告诉恶魔谁是爪牙、谁是疯子(空座预发也列出)
       const seatTxt = (list) => list.map((d) => `座${d.seat} ${d.name ? esc(d.name) : '空(预发)'}`).join('、')
       const lunRelTxt = (lunaticSeats && lunaticSeats.length)
@@ -675,7 +683,7 @@ function renderStoryteller() {
           </div>` : '<p class="hint">本夜没有步骤</p>'}
           <div class="step-list">
             ${steps.map((st, i) => `<button class="step-chip ${i < night.idx ? 'done' : ''} ${i === night.idx ? 'cur' : ''}"
-                title="${esc(st.name)}${st.fake_for != null ? ` · 认知覆盖(座${st.fake_for} 扮演)` : ''}">${i + 1} ${esc(st.name)}${st.fake_for != null ? ' 🎭' : ''}</button>`).join('')}
+                title="${esc(st.name)}${st.fake_for != null ? ` · ${fakeLabel(st.fake_for)}扮演(座${st.fake_for})` : ''}">${i + 1} ${esc(st.name)}${st.fake_for != null ? ` ${fakeIcon(st.fake_for)}` : ''}</button>`).join('')}
           </div>
           <div class="st-detail-actions">
             <button class="btn small ghost" id="night-prev" ${night.idx <= 0 ? 'disabled' : ''}>← 上一步</button>
@@ -758,7 +766,7 @@ function renderStoryteller() {
       freeLabel: '空',
       draftBadge: (s) => {
         // 手动模式显示草稿;非手动时,空座上的预发身份也显示在徽章里。徽章按阵营配色
-        const badgeOf = (rid) => ({ name: roleById[rid].name, team: roleById[rid].team })
+        const badgeOf = (rid) => ({ name: (FAKE_ICON[rid] || '') + roleById[rid].name, team: roleById[rid].team })
         if (manual && draft[s.seat] && roleById[draft[s.seat]]) return badgeOf(draft[s.seat])
         if (!s.player && seat_roles && seat_roles[s.seat] && roleById[seat_roles[s.seat]]) {
           return badgeOf(seat_roles[s.seat])
@@ -782,24 +790,18 @@ function renderStoryteller() {
     const detail = document.getElementById('detail')
     // 认知覆盖:疯子/酒鬼座位由说书人标记「玩家看到哪个假角色」,真实身份只有说书人可见。
     // 疯子额外由说书人选定:以为谁是爪牙(不一定是真的)+ 3 个伪装(不一定是恶魔的真伪装)
-    const FAKE_LABEL = { drunk: '🍺 酒鬼', lunatic: '🌙 疯子' }
-    const inPlayIds = new Set(Object.values(seat_roles || {}))
-    seats.forEach((s) => {
-      const r = s.player ? s.player.role : s.assigned_role
-      if (r) inPlayIds.add(r.id)
-    })
     const bluffTeamList = script === 'trouble-brewing' ? ['townsfolk'] : ['townsfolk', 'outsider']
-    const fakeBluffPool = roles.filter((r) => bluffTeamList.includes(r.team) && !inPlayIds.has(r.id))
+    // 假伪装候选:好角色即可,允许与在场角色相同(假身份不计算配板)
+    const fakeBluffPool = roles.filter((r) => bluffTeamList.includes(r.team))
     const fakeRow = (slot) => {
       const real = slot.player ? slot.player.role : slot.assigned_role
       if (!real || !fakePools || !fakePools[real.id]) return ''
       const cur = slot.fake_role
+      // 假身份做成框点选(再点已选中的框=清除);可与已发角色重复
       const head = `<div class="st-fake"><span class="hint">${FAKE_LABEL[real.id] || '认知覆盖'} 看到:</span>
-        <select id="fake-sel">
-          <option value="">真实身份(${esc(real.name)})</option>
-          ${roles.filter((r) => fakePools[real.id].includes(r.team)).map((r) =>
-            `<option value="${r.id}" ${cur && cur.id === r.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}
-        </select></div>`
+        <button class="chip ghost ${!cur ? 'on' : ''}" data-fake-chip="">真实身份(${esc(real.name)})</button>
+        ${roles.filter((r) => fakePools[real.id].includes(r.team)).map((r) =>
+          `<button class="chip team-${r.team} ${cur && cur.id === r.id ? 'on' : ''}" data-fake-chip="${r.id}" title="${esc(r.ability)}">${esc(r.name)}</button>`).join('')}</div>`
       if (real.id !== 'lunatic') return head
       const seatKey = String(slot.seat)
       const mins = (lunaticMinions && lunaticMinions[seatKey]) || []
@@ -835,13 +837,13 @@ function renderStoryteller() {
     } else {
       detail.replaceChildren(h('<p class="hint">点击环形座位查看/操作玩家</p>'))
     }
-    const fakeSelEl = document.getElementById('fake-sel')
-    if (fakeSelEl) {
+    const fakeChips = document.querySelectorAll('[data-fake-chip]')
+    if (fakeChips.length) {
       const real = selSeat.player ? selSeat.player.role : selSeat.assigned_role
       // 疯子详情:改动任何一项都提交(未填全的字段不带上 → 后端保留已存值)
-      const submitFake = () => {
-        const body = { seat: selSeat.seat, role: fakeSelEl.value || null }
-        if (body.role && real && real.id === 'lunatic') {
+      const submitFake = (role) => {
+        const body = { seat: selSeat.seat, role }
+        if (role && real && real.id === 'lunatic') {
           const minVals = [...document.querySelectorAll('[data-min-chip].on')]
             .map((c) => Number(c.dataset.minChip))
           const lbVals = [...document.querySelectorAll('[data-lb]')].map((s) => s.value)
@@ -850,11 +852,27 @@ function renderStoryteller() {
         }
         act(() => stApi('/api/fake', { method: 'POST', body: JSON.stringify(body) }))
       }
-      fakeSelEl.onchange = submitFake
-      document.querySelectorAll('[data-min-chip]').forEach((c) => {
-        c.onclick = () => { c.classList.toggle('on'); submitFake() }
+      fakeChips.forEach((c) => {
+        c.onclick = () => {
+          const curRole = selSeat.fake_role && selSeat.fake_role.id
+          const next = c.dataset.fakeChip || null
+          // 再点已选中的框 = 清除认知覆盖
+          submitFake(curRole && curRole === next ? null : next)
+        }
       })
-      document.querySelectorAll('[data-lb]').forEach((s) => { s.onchange = submitFake })
+      document.querySelectorAll('[data-min-chip]').forEach((c) => {
+        c.onclick = () => {
+          c.classList.toggle('on')
+          const curRole = selSeat.fake_role && selSeat.fake_role.id
+          if (curRole) submitFake(curRole)
+        }
+      })
+      document.querySelectorAll('[data-lb]').forEach((s) => {
+        s.onchange = () => {
+          const curRole = selSeat.fake_role && selSeat.fake_role.id
+          if (curRole) submitFake(curRole)
+        }
+      })
     }
 
     // ---- 配置 ----

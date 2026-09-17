@@ -348,8 +348,8 @@ class GameManager:
                     raise ValueError(f"伪装必须不在场:{rid} 已分配给座位")
             self.bluffs = list(bluffs)
         # 认知覆盖由说书人显式决定:fakes 给每个疯子/酒鬼座位指定看到的假身份;
-        # 疯子还须指定「以为谁是爪牙」(不一定是真爪牙)和 3 个伪装(不一定是恶魔的真伪装)
-        present_ids = set(picked.values())
+        # 疯子还须指定「以为谁是爪牙」(不一定是真爪牙)和 3 个伪装(不一定是恶魔的真伪装)。
+        # 假身份/假伪装允许与在场角色相同——认知覆盖不计算配板
         new_fakes: dict[int, str] = {}
         new_lun_minions: dict[int, list[int]] = {}
         new_lun_bluffs: dict[int, list[str]] = {}
@@ -373,8 +373,8 @@ class GameManager:
                 bluffs = item.get("bluffs") or []
                 if (len(bluffs) != 3 or len(set(bluffs)) != 3
                         or any(b not in self.roles or self.roles[b]["team"] not in self._bluff_teams()
-                               or b in present_ids for b in bluffs)):
-                    raise ValueError(f"座位 {seat} 的疯子伪装须为 3 个不重复的不在场好角色")
+                               for b in bluffs)):
+                    raise ValueError(f"座位 {seat} 的疯子伪装须为 3 个不重复的好角色(允许与在场角色相同)")
                 new_lun_minions[seat] = list(minions)
                 new_lun_bluffs[seat] = list(bluffs)
         for seat, real in picked.items():
@@ -547,8 +547,6 @@ class GameManager:
             self.seat_fakes[seat] = role_id
             # 疯子额外信息按增量更新:不给该字段就保留已存值(夜晚逐项设置友好),给了就校验替换
             if real == "lunatic":
-                present = ({p.role_id for p in self.players.values() if p.role_id}
-                           | set(self.seat_roles.values()))
                 if minions is not None:
                     if (not minions or any(not isinstance(m, int) or not 1 <= m <= self.player_count
                                            or m == seat for m in minions)
@@ -558,8 +556,8 @@ class GameManager:
                 if bluffs is not None:
                     if (len(bluffs) != 3 or len(set(bluffs)) != 3
                             or any(b not in self.roles or self.roles[b]["team"] not in self._bluff_teams()
-                                   or b in present for b in bluffs)):
-                        raise ValueError("疯子的伪装须为 3 个不重复的不在场好角色")
+                                   for b in bluffs)):
+                        raise ValueError("疯子的伪装须为 3 个不重复的好角色(允许与在场角色相同)")
                     self.lunatic_bluffs[seat] = list(bluffs)
         if self.phase == "night":
             self._begin_night()  # 夜晚中改认知覆盖 → 重算步骤表(假角色步骤随之增减)
