@@ -527,6 +527,8 @@ class GameManager:
             "status": self.status,
             "script": SCRIPTS[self.script_id]["name"],
             "player_count": self.player_count,
+            # 官方配比(公开信息)。实际调整(男爵 +2 外来者等)绝不告知玩家
+            "composition": list(COMPOSITION[self.player_count]),
             **self._public_progress(),
             # 提名/投票是公开信息,实时推给玩家(举手、票型、处决)
             "nominations": self.nominations,

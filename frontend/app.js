@@ -125,7 +125,13 @@ function renderJoin() {
 function renderPlayer(playerId) {
   app.replaceChildren(h('<div class="page center">连接中…</div>'))
   function paint(view) {
-    const { me, status, seats, phase, night_no: nightNo, day_no: dayNo, current, bluffs } = view
+    const { me, status, seats, phase, night_no: nightNo, day_no: dayNo, current, bluffs,
+      script: scriptName, player_count: count, composition } = view
+    // 官方配比(公开信息):只展示基础配比,实际调整(男爵/教父等)不给玩家
+    const compLine = composition && composition.length === 4
+      ? `<p class="hint">📋 ${esc(scriptName)} · ${count} 人 · 官方配比:${['townsfolk', 'outsider', 'minion', 'demon']
+        .map((t, i) => `${TEAM_LABEL[t]} ${composition[i]}`).join(' · ')}</p>`
+      : ''
 
     // ---- 未入座:选座 ----
     if (me.seat == null) {
@@ -133,6 +139,7 @@ function renderPlayer(playerId) {
         <div class="topbar"><span>${esc(me.name)}</span><span class="dot ok" title="已连接"></span></div>
         <div class="center grow">
           <p class="sub">${status === 'playing' ? '游戏已开始(迟到):点空座入座,继承该座预发身份' : '选择你的座位入座'}</p>
+          ${compLine}
           <div id="circle"></div>
           <p class="hint">${seats.length ? `共 ${seats.length} 个座位,点一个空座位入座` : '等待说书人设置本局人数…'}</p>
           <p class="error" id="sit-err" style="display:none"></p>
@@ -179,6 +186,7 @@ function renderPlayer(playerId) {
       <div class="topbar"><span>座位 ${me.seat} · ${esc(me.name)}${phaseTxt}</span><span class="dot ok" title="已连接"></span></div>
       <div id="circle"></div>
       ${voteLine}
+      ${compLine}
       ${card}
       ${bluffLine}
       ${role && status === 'lobby' ? '<p class="hint">身份已到手,等待其他玩家入座开局…</p>' : ''}

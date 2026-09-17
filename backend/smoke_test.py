@@ -64,7 +64,12 @@ async def main() -> None:
         assert view["me"]["seat"] == 1
         assert view["seats"][0]["is_me"] is True
         assert "role" not in view["seats"][1]["player"], "玩家不应看到他人角色"
-        print(f"WS    玩家收到角色: {view['me']['role']['name']}(座位 {view['me']['seat']})")
+        # 官方配比(公开)与说书人一致;实际配置(预发身份等)不泄露
+        assert view["composition"] == state["composition"] and len(view["composition"]) == 4, \
+            "玩家应看到官方基础配比"
+        assert "seat_roles" not in view and "demon_seats" not in view, "实际配置不应泄露给玩家"
+        print(f"WS    玩家收到角色: {view['me']['role']['name']}(座位 {view['me']['seat']}),"
+              f"配比 {view['composition']} OK")
 
         req(f"/api/player/{ids[0]}/alive", "POST", headers=ST)
         view = json.loads(await ws.recv())
