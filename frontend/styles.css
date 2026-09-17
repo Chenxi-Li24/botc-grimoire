@@ -38,6 +38,41 @@ body {
   color-scheme: dark;
   font-family: 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   min-height: 100vh;
+  transition: background 0.6s ease, color 0.6s ease;
+}
+
+/* 黑夜/白天配色自动切换:JS 按 phase 设 body[data-phase],覆盖 :root 变量 */
+body[data-phase='night'] {
+  --bg: #070b16;           /* 深夜蓝黑 */
+  --panel: #101726;
+  --line: #2a3a5c;
+  --text: #dde6f5;
+  --dim: #7a8ab0;
+  --accent: #5b7cfa;       /* 月光蓝:主操作/当前步骤 */
+  --on-accent: #eef2ff;
+  --text-bright: #b9c4e0;
+  --panel2: #1a2340;
+  --night-text: #9db8ff;
+  --night-line: #33498a;
+  --day-bg: #2a3552;
+}
+
+body[data-phase='day'] {
+  --bg: #f2e8d5;           /* 白昼暖黄 */
+  --panel: #fdf6e9;
+  --line: #d8c4a0;
+  --text: #3a2e1e;
+  --dim: #8a7458;
+  --accent: #c0392b;       /* 白昼保留血红操作色 */
+  --on-accent: #fff5f2;
+  --text-bright: #5a4632;
+  --panel2: #f0e2c8;
+  --danger: #c0392b;
+  --ok: #2e9e4f;
+  --day-text: #8a5a1e;
+  --day-line: #c8a860;
+  --day-bg: #ffedc0;
+  color-scheme: light;
 }
 
 .page {

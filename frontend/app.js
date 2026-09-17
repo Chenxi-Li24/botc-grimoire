@@ -137,6 +137,7 @@ function renderJoin() {
 function renderPlayer(playerId) {
   app.replaceChildren(h('<div class="page center">连接中…</div>'))
   function paint(view) {
+    document.body.dataset.phase = view.phase || '' // 黑夜/白天自动切换配色(body[data-phase] 变量覆盖)
     const { me, status, seats, phase, night_no: nightNo, day_no: dayNo, current, bluffs,
       demon_seats: demonSeats, minion_seats: minionSeats, lunatic_seats: lunaticSeats,
       script: scriptName, player_count: count, composition, sentinel: sentinelOn,
@@ -296,6 +297,7 @@ function renderStoryteller() {
   let teamPickSeat = null // 阵营转变:正在为该座位选择新阵营(善良/邪恶)
 
   function paint(view) {
+    document.body.dataset.phase = view.phase || '' // 黑夜/白天自动切换配色(body[data-phase] 变量覆盖)
     const { status, script, player_count: count, scripts, seats, roles, composition,
       adjust_roles, seat_roles, phase, night_no: nightNo, day_no: dayNo, night,
       nominations, current, alive_count: aliveCount, quorum, can_start: canStart,
