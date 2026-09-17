@@ -213,13 +213,7 @@ function renderPlayer(playerId) {
     const lunaticLine = lunaticSeats && lunaticSeats.length
       ? `<p class="meet-line">🌙 疯子:${lunaticSeats.map((l) => `座${l.seat}${l.name ? ` ${esc(l.name)}` : ''}`).join(' · ')}</p>`
       : ''
-    // 角色转变/阵营转变:说书人标记后必须告知玩家本人(其余标记玩家无感知)
-    const roleChangeLine = roleChanged
-      ? `<p class="meet-line">🔄 角色转变:你的角色已变为「${esc(roleChanged.name)}」</p>`
-      : ''
-    const teamChangeLine = teamChanged
-      ? `<p class="meet-line ${teamChanged === 'good' ? 'tc-good' : 'tc-evil'}">⚖ 阵营转变:你的阵营已变为 ${teamChanged === 'good' ? '善良' : '邪恶'}</p>`
-      : ''
+    // 角色/阵营转变已直接反映在角色卡与阵营徽章上(卡框换色),不再单独出文字提醒框
     app.replaceChildren(h(`<div class="page rolecard">
       <div class="topbar"><span>座位 ${me.seat} · ${esc(me.name)}${phaseTxt} · 🚪 ${esc(roomCode)}</span><span class="dot ok" title="已连接"></span></div>
       <div id="circle"></div>
@@ -231,8 +225,6 @@ function renderPlayer(playerId) {
       ${demonLine}
       ${minionLine}
       ${lunaticLine}
-      ${roleChangeLine}
-      ${teamChangeLine}
     </div>`))
     document.getElementById('circle').appendChild(seatCircle(seats, {
       voted: (s) => !!current && current.votes.includes(s.seat), // 举手票型公开,玩家也可见
