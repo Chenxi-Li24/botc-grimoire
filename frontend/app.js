@@ -214,6 +214,7 @@ function renderStoryteller() {
 
   function paint(view) {
     const { status, script, player_count: count, scripts, seats } = view
+    const minP = scripts.find((s) => s.id === script)?.min || 5 // 该板子的人数下限(瓦釜雷鸣 7 人起)
     const seatedCount = seats.filter((s) => s.player).length
     const allSeated = seatedCount === count
     const selSeat = seats.find((s) => s.seat === selected)
@@ -238,7 +239,7 @@ function renderStoryteller() {
               </select>
             </label>
             <label>人数
-              <button class="btn small" id="dec" ${count <= 5 ? 'disabled' : ''}>−</button>
+              <button class="btn small" id="dec" ${count <= minP ? 'disabled' : ''}>−</button>
               <span class="count">${count}</span>
               <button class="btn small" id="inc" ${count >= 15 ? 'disabled' : ''}>＋</button>
             </label>
@@ -308,7 +309,11 @@ function renderStoryteller() {
       act(() => stApi('/api/config', { method: 'POST', body: JSON.stringify({ script: sc, player_count: n }) })
         .then(() => { selected = null }))
     }
-    document.getElementById('script-select').onchange = (e) => doConfig(e.target.value, count)
+    document.getElementById('script-select').onchange = (e) => {
+      // 切板子时若人数低于新板子下限(瓦釜雷鸣 7 人起),自动抬到下限
+      const minNew = scripts.find((s) => s.id === e.target.value)?.min || 5
+      doConfig(e.target.value, Math.max(count, minNew))
+    }
     document.getElementById('dec').onclick = () => doConfig(script, count - 1)
     document.getElementById('inc').onclick = () => doConfig(script, count + 1)
 

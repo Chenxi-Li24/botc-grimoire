@@ -59,8 +59,9 @@ class GameManager:
     def configure(self, script_id: str, player_count: int) -> None:
         if script_id not in SCRIPTS:
             raise ValueError("未知脚本")
-        if not 5 <= player_count <= 15:
-            raise ValueError("人数需在 5~15 之间")
+        min_players = SCRIPTS[script_id].get("min_players", 5)
+        if not min_players <= player_count <= 15:
+            raise ValueError(f"人数需在 {min_players}~15 之间")
         self.script_id = script_id
         self.player_count = player_count
         for p in self.players.values():  # 改配置 → 清空座位与角色,玩家重新入座
@@ -111,7 +112,7 @@ class GameManager:
         pool = random.sample(by_team[DEMON], comp[3])
         minions = random.sample(by_team[MINION], comp[2])
         pool += minions
-        # 脚本特殊调整(男爵/方古等改变配比,在抽外来者之前结算)
+        # 脚本特殊调整(男爵/方古/亡骨魔/气球驾驶员/教父等改变配比,在抽外来者之前结算)
         for rid in SCRIPT_ADJUST_ROLES.get(self.script_id, ()):
             if any(r["id"] == rid for r in pool):
                 dt, do, dm, dd = ROLE_ADJUSTMENTS[rid]
@@ -119,6 +120,9 @@ class GameManager:
                 comp[1] += do
                 comp[2] += dm
                 comp[3] += dd
+        if comp[1] < 0:  # 外来者数不能为负(如亡骨魔 −1 遇上 0 外来者),差额还给镇民
+            comp[0] += comp[1]
+            comp[1] = 0
         pool += random.sample(by_team[OUTSIDER], comp[1])
         pool += random.sample(by_team[TOWNSFOLK], comp[0])
         random.shuffle(pool)
@@ -167,7 +171,8 @@ class GameManager:
             "status": self.status,
             "script": self.script_id,
             "player_count": self.player_count,
-            "scripts": [{"id": sid, "name": s["name"], "en": s["en"]}
+            "scripts": [{"id": sid, "name": s["name"], "en": s["en"],
+                         "min": s.get("min_players", 5)}
                         for sid, s in SCRIPTS.items()],
             "seats": self._seat_slots(st_view=True),
         }

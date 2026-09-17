@@ -61,7 +61,6 @@ async def main() -> None:
         view = json.loads(await ws.recv())
         assert view["me"]["role"], "玩家应收到自己的角色"
         assert view["me"]["seat"] == 1
-        print(f"DEBUG me.id={view['me']['id']} seats[0]={json.dumps(view['seats'][0], ensure_ascii=False)}")
         assert view["seats"][0]["is_me"] is True
         assert "role" not in view["seats"][1]["player"], "玩家不应看到他人角色"
         print(f"WS    玩家收到角色: {view['me']['role']['name']}(座位 {view['me']['seat']})")
@@ -70,6 +69,31 @@ async def main() -> None:
         view = json.loads(await ws.recv())
         assert view["me"]["alive"] is False, "存活状态应实时推送"
         print("WS    存活标记实时推送 OK")
+
+    # ---- 瓦釜雷鸣:7~15 人,6 人应被拒绝 ----
+    try:
+        req("/api/config", "POST", {"script": "wafu-leiming", "player_count": 6}, ST)
+        raise AssertionError("瓦釜雷鸣 6 人未被拒绝")
+    except urllib.error.HTTPError as e:
+        assert e.code == 400, f"瓦釜雷鸣 6 人应 400,实际 {e.code}"
+    print("CONFIG 瓦釜雷鸣 6 人被拒绝 OK")
+
+    req("/api/reset", "POST", headers=ST)  # 清掉上一局的玩家
+    cfg = req("/api/config", "POST", {"script": "wafu-leiming", "player_count": 7}, ST)
+    assert cfg["player_count"] == 7 and len(cfg["seats"]) == 7
+    print("CONFIG 瓦釜雷鸣 7 人 OK")
+
+    ids = [req("/api/join", "POST", {"name": f"瓦{i}"})["player_id"] for i in range(1, 8)]
+    for seat, pid in enumerate(ids, 1):
+        req(f"/api/player/{pid}/sit", "POST", {"seat": seat})
+    state = req("/api/assign", "POST", headers=ST)
+    assert state["status"] == "playing"
+    teams = Counter(p["role"]["team"] for s in state["seats"] for p in [s["player"]] if p)
+    assert teams["demon"] == 1 and sum(teams.values()) == 7, f"瓦釜雷鸣配比异常 {dict(teams)}"
+    assert teams.get("outsider", 0) >= 0
+    print("VAFU  " + ", ".join(f"{s['player']['seat']}:{s['player']['role']['name']}"
+                              for s in state["seats"] if s["player"]))
+    print(f"VAFU  配比 {dict(teams)}(恶魔决定 ±外来者)")
 
     # 重置后回到 lobby,座位清空
     state = req("/api/reset", "POST", headers=ST)
