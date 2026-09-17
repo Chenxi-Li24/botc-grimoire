@@ -282,6 +282,7 @@ function renderStoryteller() {
   let manual = false // 手动发身份模式
   let draft = {} // 手动模式草稿:座位号 → 角色 id
   let draftBluffs = [] // 手动模式伪装草稿:不在场好角色 id ×3(配版时选好)
+  let draftFakes = {} // 手动模式认知覆盖草稿:座位号 → 假角色 id(配版时选好)
   let godfatherAdj = 1 // 教父外来者调整:说书人可选 +1 或 −1,默认 +1
 
   function paint(view) {
@@ -289,10 +290,10 @@ function renderStoryteller() {
       adjust_roles, seat_roles, phase, night_no: nightNo, day_no: dayNo, night,
       nominations, current, alive_count: aliveCount, quorum, can_start: canStart,
       bluffs, demon_seats: demonSeats, minion_seats: minionSeats, sentinel, saved_at: savedAt,
-      room_code: roomCode } = view
+      fake_pools: fakePools, room_code: roomCode } = view
     const minP = scripts.find((s) => s.id === script)?.min || 5 // 该板子的人数下限(瓦釜雷鸣 7 人起)
     const seatedCount = seats.filter((s) => s.player).length
-    if (status === 'playing') { manual = false; draft = {} } // 发牌完成后退出草稿
+    if (status === 'playing') { manual = false; draft = {}; draftFakes = {} } // 发牌完成后退出草稿
     const allSeated = seatedCount === count
     const selSeat = seats.find((s) => s.seat === selected)
     const selP = selSeat && selSeat.player
@@ -481,6 +482,31 @@ function renderStoryteller() {
         bluffGroup.appendChild(chip)
       })
       box.appendChild(bluffGroup)
+      // 认知覆盖(配版时选定假身份):疯子以为自己是恶魔、酒鬼看到假镇民。
+      // 默认建议:疯子→在场的那名恶魔,酒鬼→第一个不在场镇民;说书人可改
+      const FAKE_LABEL = { drunk: '🍺 酒鬼', lunatic: '🌙 疯子' }
+      const fakeNeeded = Object.entries(draft).filter(([, rid]) => fakePools && fakePools[rid])
+      fakeNeeded.forEach(([seat, rid]) => {
+        if (draftFakes[seat] && !(fakePools[rid].includes(roleById[draftFakes[seat]]?.team))) delete draftFakes[seat]
+        if (!draftFakes[seat]) {
+          const pool = roles.filter((r) => fakePools[rid].includes(r.team))
+          const inDraft = Object.values(draft)
+          const sugg = rid === 'lunatic'
+            ? pool.find((r) => inDraft.includes(r.id)) || pool[0]
+            : pool.find((r) => !inDraft.includes(r.id)) || pool[0]
+          draftFakes[seat] = sugg.id
+        }
+      })
+      if (fakeNeeded.length) {
+        const fakeGroup = h(`<div class="role-group" style="--team: var(--gold); --team-text: var(--on-gold)"><span class="role-group-head">🧠 认知覆盖(配版时选定假身份)</span></div>`)
+        fakeNeeded.forEach(([seat, rid]) => {
+          const row = h(`<label class="st-fake"><span class="hint">${FAKE_LABEL[rid] || '认知覆盖'} · 座${seat} 看到:</span>
+            <select data-fake-seat="${seat}">${roles.filter((r) => fakePools[rid].includes(r.team)).map((r) =>
+              `<option value="${r.id}" ${draftFakes[seat] === r.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select></label>`)
+          fakeGroup.appendChild(row)
+        })
+        box.appendChild(fakeGroup)
+      }
       box.appendChild(h(`<div class="st-detail-actions">
         <button class="btn primary small" id="manual-confirm" ${full && ok && !hasDup && bluffOk ? '' : 'disabled'}>✅ 确认发身份</button>
         <button class="btn small ghost" id="manual-cancel">取消</button>
@@ -489,13 +515,19 @@ function renderStoryteller() {
       box.querySelectorAll('[data-gf]').forEach((b) => {
         b.onclick = () => { godfatherAdj = Number(b.dataset.gf); paint(view) }
       })
+      box.querySelectorAll('[data-fake-seat]').forEach((sel) => {
+        sel.onchange = () => { draftFakes[Number(sel.dataset.fakeSeat)] = sel.value; paint(view) }
+      })
       document.getElementById('manual-confirm').onclick = () => act(() => {
         const assignments = Object.entries(draft).map(([seat, role]) => ({ seat: Number(seat), role }))
-        return stApi('/api/assign/manual', { method: 'POST', body: JSON.stringify({ assignments, bluffs: draftBluffs }) })
-          .then((v) => { manual = false; draft = {}; draftBluffs = []; selected = null; paint(v) })
+        const fakes = Object.entries(draftFakes)
+          .filter(([seat]) => draft[seat] && fakePools && fakePools[draft[seat]])
+          .map(([seat, role]) => ({ seat: Number(seat), role }))
+        return stApi('/api/assign/manual', { method: 'POST', body: JSON.stringify({ assignments, bluffs: draftBluffs, fakes }) })
+          .then((v) => { manual = false; draft = {}; draftBluffs = []; draftFakes = {}; selected = null; paint(v) })
           // 空座预发时状态仍是 lobby,直接以响应视图重绘(不等推送)
       })
-      document.getElementById('manual-cancel').onclick = () => { manual = false; draft = {}; paint(view) }
+      document.getElementById('manual-cancel').onclick = () => { manual = false; draft = {}; draftFakes = {}; paint(view) }
     }
 
     // ---- 选中玩家详情条(夜晚/白天面板顶部复用) ----
@@ -685,15 +717,16 @@ function renderStoryteller() {
 
     // ---- 选中玩家详情 ----
     const detail = document.getElementById('detail')
-    // 认知覆盖:酒鬼座位由说书人标记「玩家看到哪个镇民角色」,真实身份只有说书人可见
+    // 认知覆盖:疯子/酒鬼座位由说书人标记「玩家看到哪个假角色」,真实身份只有说书人可见
+    const FAKE_LABEL = { drunk: '🍺 酒鬼', lunatic: '🌙 疯子' }
     const fakeRow = (slot) => {
       const real = slot.player ? slot.player.role : slot.assigned_role
-      if (!real || real.id !== 'drunk') return ''
+      if (!real || !fakePools || !fakePools[real.id]) return ''
       const cur = slot.fake_role
-      return `<div class="st-fake"><span class="hint">🍺 酒鬼看到:</span>
+      return `<div class="st-fake"><span class="hint">${FAKE_LABEL[real.id] || '认知覆盖'} 看到:</span>
         <select id="fake-sel">
-          <option value="">真实身份(酒鬼)</option>
-          ${roles.filter((r) => r.team === 'townsfolk').map((r) =>
+          <option value="">真实身份(${esc(real.name)})</option>
+          ${roles.filter((r) => fakePools[real.id].includes(r.team)).map((r) =>
             `<option value="${r.id}" ${cur && cur.id === r.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}
         </select></div>`
     }
@@ -749,10 +782,12 @@ function renderStoryteller() {
     if (manualBtn) {
       manualBtn.onclick = () => {
         manual = !manual
-        // 进入手动模式时载入已预发的身份,便于微调;退出则清空草稿
+        // 进入手动模式时载入已预发的身份与已定的认知覆盖,便于微调;退出则清空草稿
         draft = manual && seat_roles
           ? Object.fromEntries(Object.entries(seat_roles).map(([s, r]) => [Number(s), r]))
           : {}
+        draftFakes = {}
+        if (manual) seats.forEach((s) => { if (s.fake_role) draftFakes[s.seat] = s.fake_role.id })
         paint(view)
       }
     }

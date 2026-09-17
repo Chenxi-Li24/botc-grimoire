@@ -25,6 +25,9 @@ SAVE_PATH = Path(__file__).resolve().parent.parent / "data" / "game.json"
 MARKERS = ("poisoned", "drunk", "mad")  # 说书人标记:中毒/醉酒/疯狂
 MARKER_LABELS = {"poisoned": "中毒", "drunk": "醉酒", "mad": "疯狂"}
 
+# 认知覆盖类角色 → 假身份可取阵营(配板时决定):酒鬼看到镇民,疯子以为自己是恶魔
+FAKE_POOLS = {"drunk": (TOWNSFOLK,), "lunatic": (DEMON,)}
+
 
 @dataclass
 class Player:
@@ -263,6 +266,11 @@ class GameManager:
             else:
                 self.seat_roles[seat] = rid  # 空座挂预发身份,等人迟到入座继承
         self.bluffs = self._pick_bluffs({r["id"] for r in pool})  # 配版时即抽好伪装
+        # 认知覆盖配版时决定:随机分配自动抽取假身份(酒鬼→不在场镇民,疯子→在场恶魔),说书人可随后在详情里改
+        present_ids = {r["id"] for r in pool}
+        self.seat_fakes = {seat: fake
+                           for seat, rid in enumerate([r["id"] for r in pool], start=1)
+                           if (fake := self._auto_fake(rid, present_ids))}
         self.status = "playing"
         self._begin_night()  # 发完角色 → 第一夜开始
         self.save()
@@ -288,12 +296,14 @@ class GameManager:
             comp[1] = 0
         return tuple(comp)
 
-    def assign_manual(self, assignments: list[dict], bluffs: list[str] | None = None) -> list[dict]:
+    def assign_manual(self, assignments: list[dict], bluffs: list[str] | None = None,
+                      fakes: list[dict] | None = None) -> list[dict]:
         """说书人手动发身份:为每个座位指定角色。
 
         硬校验:恶魔恰 1 名、爪牙至少 1 名;镇民/外来者配比只作提示(教父 ±1 等由说书人决定)。
         无需等玩家入座:身份先挂在座位上,玩家入座时自动继承;全员入座后自动开局。
         伪装在配版时就选好:bluffs 给 3 个不在场好角色;不给则自动抽取。
+        认知覆盖同样配版时决定:fakes 指定疯子/酒鬼看到的假身份,未指定的自动抽取。
         """
         if self.status == "playing":
             raise ValueError("本局已开始,先重置")
@@ -331,6 +341,26 @@ class GameManager:
                 if rid in picked.values():
                     raise ValueError(f"伪装必须不在场:{rid} 已分配给座位")
             self.bluffs = list(bluffs)
+        # 认知覆盖配版时决定:fakes 指定疯子/酒鬼看到的假身份,未指定的座位自动抽取
+        present_ids = set(picked.values())
+        new_fakes: dict[int, str] = {}
+        if fakes is not None:
+            for item in fakes:
+                seat, rid = item.get("seat"), item.get("role")
+                if not isinstance(seat, int) or seat not in picked:
+                    raise ValueError(f"伪造身份的座位 {seat} 无效")
+                real = picked[seat]
+                if real not in FAKE_POOLS:
+                    raise ValueError(f"座位 {seat} 的角色没有认知覆盖")
+                if rid not in self.roles or self.roles[rid]["team"] not in FAKE_POOLS[real]:
+                    raise ValueError(f"座位 {seat} 的伪造身份无效")
+                new_fakes[seat] = rid
+        for seat, real in picked.items():
+            if real in FAKE_POOLS and seat not in new_fakes:
+                fake = self._auto_fake(real, present_ids)
+                if fake:
+                    new_fakes[seat] = fake
+        self.seat_fakes = new_fakes
         self.seat_roles = dict(picked)  # 身份挂在座位上,没人入座也可以先发
         for seat, player in seat_of.items():  # 已入座的玩家当场继承
             player.role_id = picked[seat]
@@ -370,6 +400,20 @@ class GameManager:
         pool = [r["id"] for r in self.roles.values()
                 if r["team"] in self._bluff_teams() and r["id"] not in present]
         return random.sample(pool, min(3, len(pool)))
+
+    def _auto_fake(self, rid: str, present: set[str]) -> str | None:
+        """配板时为认知覆盖角色选默认假身份:酒鬼→不在场镇民;疯子→在场的恶魔(多个则随机)。"""
+        pools = FAKE_POOLS.get(rid)
+        if not pools:
+            return None
+        cands = [r["id"] for r in self.roles.values() if r["team"] in pools]
+        if not cands:
+            return None
+        if rid == "lunatic":
+            in_play = [c for c in cands if c in present]
+            return in_play[0] if len(in_play) == 1 else random.choice(cands)
+        absent = [c for c in cands if c not in present]
+        return random.choice(absent or cands)
 
     def _begin_night(self) -> None:
         """进入夜晚:按本夜在场角色组装步骤表(酒鬼的假角色作为附加步骤)。"""
@@ -475,11 +519,16 @@ class GameManager:
             self.save()
 
     def set_fake(self, seat: int, role_id: str | None) -> None:
-        """认知覆盖:标记该座位玩家「实际是酒鬼,但看到的是 role_id 角色」。None 清除标记。"""
+        """认知覆盖:标记该座位玩家看到的假角色(酒鬼看到镇民/疯子以为自己是恶魔)。None 清除标记。"""
         if not 1 <= seat <= self.player_count:
             raise ValueError(f"座位需在 1~{self.player_count} 之间")
-        if role_id is not None and role_id not in self.roles:
-            raise ValueError(f"角色 {role_id} 不属于当前板子")
+        p = self.seats.get(seat)
+        real = p.role_id if p is not None else self.seat_roles.get(seat)
+        if role_id is not None:
+            if real not in FAKE_POOLS:
+                raise ValueError("该座位的角色没有认知覆盖(仅酒鬼/疯子)")
+            if role_id not in self.roles or self.roles[role_id]["team"] not in FAKE_POOLS[real]:
+                raise ValueError("伪造身份需属于该角色允许的阵营")
         if role_id is None:
             self.seat_fakes.pop(seat, None)
         else:
@@ -621,6 +670,7 @@ class GameManager:
                 (self.seats.get(i) is not None and self.seats[i].role_id)
                 or i in self.seat_roles for i in range(1, self.player_count + 1)),
             "bluffs": [self.roles[rid] for rid in self.bluffs],  # 恶魔的三个伪装(说书人可见)
+            "fake_pools": FAKE_POOLS,  # 认知覆盖类角色 → 假身份可取阵营(手动面板渲染选择器用)
             "sentinel": self.sentinel,  # 哨兵:+1/−1/2(不变)/0(关),说书人可见
             # 入夜会面:告诉爪牙谁是恶魔、告诉恶魔谁是爪牙(空座预发也列出)
             "demon_seats": self._team_seats(DEMON),

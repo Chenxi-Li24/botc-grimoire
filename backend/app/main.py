@@ -88,6 +88,7 @@ class PasswordBody(BaseModel):
 class ManualAssignBody(BaseModel):
     assignments: list[dict]  # [{"seat": int, "role": str}, ...]
     bluffs: list[str] | None = None  # 伪装:3 个不在场好角色 id(可选,缺省自动抽取)
+    fakes: list[dict] | None = None  # 认知覆盖:[{"seat": int, "role": str}],疯子/酒鬼看到的假身份
 
 
 class FakeBody(BaseModel):
@@ -202,7 +203,7 @@ async def assign() -> dict[str, Any]:
 @app.post("/api/assign/manual", dependencies=[Depends(require_storyteller)])
 async def assign_manual(body: ManualAssignBody) -> dict[str, Any]:
     try:
-        game.assign_manual(body.assignments, body.bluffs)
+        game.assign_manual(body.assignments, body.bluffs, body.fakes)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await hub.push_all()
