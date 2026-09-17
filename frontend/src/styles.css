@@ -1,0 +1,328 @@
+:root {
+  --bg: #14101f;
+  --panel: #1f1830;
+  --line: #37294f;
+  --text: #e8e2f4;
+  --dim: #9a8fb8;
+  --gold: #d8b45a;
+  --red: #c0392b;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+.page {
+  min-height: 100vh;
+  padding: 16px;
+}
+
+.center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  text-align: center;
+}
+
+.grow {
+  flex: 1;
+}
+
+.sub {
+  color: var(--dim);
+}
+
+.hint {
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.error {
+  color: #ff6b5e;
+  font-size: 14px;
+}
+
+h1 {
+  font-size: 26px;
+}
+
+h3 {
+  margin-bottom: 4px;
+}
+
+.input {
+  width: min(320px, 90vw);
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 16px;
+  outline: none;
+}
+
+.input:focus {
+  border-color: var(--gold);
+}
+
+.btn {
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn.primary {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: #241a05;
+  font-weight: 600;
+}
+
+.btn.danger {
+  border-color: var(--red);
+  color: #ff8a80;
+}
+
+.btn.small {
+  padding: 5px 10px;
+  font-size: 13px;
+}
+
+.btn.ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--dim);
+}
+
+/* ---- 角色卡 ---- */
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: min(420px, 92vw);
+  margin: 0 auto 14px;
+}
+
+.rolecard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot.ok {
+  background: #4cd964;
+}
+
+.dot.bad {
+  background: var(--red);
+}
+
+.card {
+  border: 2px solid var(--team, var(--gold));
+  border-radius: 16px;
+  padding: 22px 18px;
+  width: min(420px, 92vw);
+  background: var(--panel);
+  text-align: left;
+}
+
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.en {
+  color: var(--dim);
+  font-style: italic;
+  font-size: 13px;
+}
+
+.role-name {
+  font-size: 30px;
+  margin: 10px 0 8px;
+}
+
+.ability {
+  color: #cfc6e6;
+  line-height: 1.6;
+  font-size: 15px;
+}
+
+.death-note {
+  margin-top: 12px;
+  color: #ff8a80;
+  font-size: 14px;
+}
+
+.team-townsfolk {
+  --team: #5aa9e6;
+}
+
+.team-outsider {
+  --team: #8a76b8;
+}
+
+.team-minion {
+  --team: #e06c5a;
+}
+
+.team-demon {
+  --team: #ff3b30;
+}
+
+.team-badge {
+  --team: #555;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: #14101f;
+  font-weight: 600;
+  background: var(--team);
+  display: inline-block;
+}
+
+.card.dead {
+  filter: grayscale(0.8);
+  opacity: 0.75;
+}
+
+.card.dead .role-name {
+  text-decoration: line-through;
+}
+
+/* ---- 玩家列表 ---- */
+
+.players {
+  width: min(420px, 92vw);
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.player-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.player-row.dead,
+.st-players li.dead {
+  opacity: 0.45;
+}
+
+.pname {
+  flex: 1;
+}
+
+.pstate {
+  color: var(--dim);
+  font-size: 13px;
+}
+
+.seat {
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- 说书人 ---- */
+
+.st-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.st-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 10px;
+}
+
+.st-body {
+  display: flex;
+  gap: 24px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.st-left {
+  flex: 1;
+  min-width: 300px;
+}
+
+.st-right {
+  width: 260px;
+  text-align: center;
+}
+
+.st-players {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.st-players li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.qr {
+  border-radius: 12px;
+  background: #fff;
+  padding: 8px;
+  margin: 10px 0;
+  width: 220px;
+  height: 220px;
+}
+
+.url {
+  font-size: 13px;
+  color: var(--gold);
+  word-break: break-all;
+}

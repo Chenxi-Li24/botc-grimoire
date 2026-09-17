@@ -1,16 +1,52 @@
 # BOTC Grimoire 血染钟楼说书人工具
 
-局域网优先的多人设备说书人工具:说书人在 Mac 上运行本地服务器,玩家手机扫码即可获得私密角色卡。
+局域网优先的多设备说书人工具:说书人电脑运行本地服务器,玩家手机扫码即可获得私密角色卡。无需域名、无需公网,手机热点 / 路由器 / ESP32 盒子均可兼容。
 
 ## 架构
 
-- **后端**: Python + FastAPI + WebSocket(游戏状态机、夜晚流程)
-- **前端**: React + Vite(说书人魔典控制台 / 玩家端角色卡 / 可选公屏)
-- **部署**: 局域网 HTTP,手机热点 / 路由器 / ESP32 盒子均可兼容,无需域名
+- **后端** `backend/`:Python + FastAPI + WebSocket(游戏状态、实时推送)
+- **前端** `frontend/`:React + Vite(加入页 / 玩家角色卡 / 说书人魔典)
+- 单端口部署:FastAPI 托管 `frontend/dist`,所有设备访问同一个局域网地址
+
+## 快速开始
+
+```bash
+# 1. 后端依赖
+python -m venv backend/.venv
+backend/.venv/Scripts/python.exe -m pip install -r backend/requirements.txt
+
+# 2. 前端构建
+npm --prefix frontend install
+npm --prefix frontend run build
+
+# 3. 启动
+cd backend
+.venv\Scripts\python run.py
+```
+
+- **说书人**:浏览器打开 `http://localhost:8000/#/storyteller`(默认密码 `grimoire`,可用环境变量 `STORYTELLER_PASSWORD` 修改)
+- **玩家**:手机连同一 WiFi,扫描说书人界面上的二维码加入
+- Windows 首次运行会弹防火墙提示,勾选「专用网络」并**允许**,否则手机连不上
+
+前端开发调试(热更新):另开终端 `npm --prefix frontend run dev`,已配置 `/api`、`/ws` 代理到 8000。
+
+## v1 已实现
+
+- 玩家扫码/输入名字加入,身份存 localStorage,刷新不掉;断线自动重连
+- 说书人按暗流涌动官方配置表(5~15 人)随机分配角色,支持男爵 +2 外来者规则
+- 玩家手机实时收到私密角色卡(暗流涌动 22 个角色全收录)
+- 存活/死亡标记、移除玩家、重置本局,WebSocket 实时同步
 
 ## 路线图
 
-- [ ] v1 最小闭环:玩家扫码加入 → 说书人分配角色 → 玩家手机查看私密角色 → 存活/死亡标记
+- [x] v1 最小闭环:扫码加入 → 分配角色 → 私密角色卡 → 存活标记
 - [ ] v1 完整:夜晚流程助手、中毒/醉酒/疯狂状态标记、提名投票处决、存档
 - [ ] v2 硬件:ESP32-S3 便携热点盒子(≤9 人),GL.iNet 路由 + ESP32 屏幕(10~20 人)
 - [ ] v3 公网:云服务器 + 4G,跨场地大局
+
+## 已知限制
+
+- 角色文案为初版速写,校对只改 `backend/app/roles.py`
+- 目前仅收录暗流涌动(Trouble Brewing),黯月传奇 / 教派紫月待补
+- 状态存内存,服务器重启即重置(存档在路线图中)
+- 醉鬼伪装(玩家看到错误角色)未实现,分配后说书人需口头告知
