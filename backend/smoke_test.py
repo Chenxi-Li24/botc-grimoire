@@ -151,14 +151,18 @@ async def main() -> None:
     ids = [req("/api/join", "POST", {"name": f"预{i}"})["player_id"] for i in range(1, 7)]
     for seat, pid in enumerate(ids, 1):
         view = req(f"/api/player/{pid}/sit", "POST", {"seat": seat})
-        assert view["me"]["role"]["id"] == want[seat], f"座位 {seat} 应继承 {want[seat]}"
-        if seat == 3:
+        if seat < 6:
+            # 开局前不揭示身份:入座虽继承预发,但说书人开局才发身份
+            assert "role" not in view["me"], f"开局前座位 {seat} 不应看到角色"
             assert req("/api/state", "GET", headers=ST)["status"] == "lobby", "未满员不应开局"
+        else:
+            assert view["me"]["role"]["id"] == want[seat], f"满员自动开局后座位 {seat} 应继承 {want[seat]}"
+    assert req(f"/api/me/{ids[0]}")["me"]["role"]["id"] == "imp", "开局后其他玩家也拿到角色"
     state = req("/api/state", "GET", headers=ST)
     assert state["status"] == "playing", "最后一人入座后应自动开局"
     by_seat = {s["seat"]: s["player"]["role"]["id"] for s in state["seats"] if s["player"]}
     assert by_seat == want, f"预发继承结果不符 {by_seat}"
-    print("MANUAL 玩家随后入座继承预发身份,满员自动开局 OK")
+    print("MANUAL 玩家随后入座继承预发身份,开局前不见角色,满员自动开局 OK")
 
     # 重置后回到 lobby,座位清空
     state = req("/api/reset", "POST", headers=ST)
@@ -256,12 +260,9 @@ async def main() -> None:
     assert fake_steps and fake_steps[0]["key"] == "washerwoman", "夜晚步骤应含假角色步"
     print("FAKE  酒鬼看到洗衣妇,夜晚步骤含假角色步(座 6) OK")
 
-    # ---- 伪装:配版时选好,恶魔得知三个不在场好角色,仅恶魔可见 ----
+    # ---- 伪装:配版时选好;开局才发身份,会面推进到相应阶段才揭晓 ----
     req("/api/reset", "POST", headers=ST)
     req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 6}, ST)
-    b_ids = [req("/api/join", "POST", {"name": f"伪{i}"})["player_id"] for i in range(1, 7)]
-    for seat, pid in enumerate(b_ids, 1):
-        req(f"/api/player/{pid}/sit", "POST", {"seat": seat})
     pre = [{"seat": 1, "role": "imp"}, {"seat": 2, "role": "poisoner"},
            {"seat": 3, "role": "empath"}, {"seat": 4, "role": "chef"},
            {"seat": 5, "role": "investigator"}, {"seat": 6, "role": "drunk"}]
@@ -275,22 +276,47 @@ async def main() -> None:
             raise AssertionError(f"非法伪装未被拒绝 {bad}")
         except urllib.error.HTTPError as e:
             assert e.code == 400, f"非法伪装应 400,实际 {e.code}"
-    # 说书人指定伪装:配版时即生效
+    # 说书人指定伪装:配版时即生效;无人入座 → 保持 lobby
     want_bluffs = ["washerwoman", "soldier", "virgin"]
     state = req("/api/assign/manual", "POST", {"assignments": pre, "bluffs": want_bluffs}, ST)
     b = state["bluffs"]
     assert [r["id"] for r in b] == want_bluffs, "伪装应与说书人指定一致"
     in_play = {"imp", "poisoner", "empath", "chef", "investigator", "drunk"}
     assert not ({r["id"] for r in b} & in_play), "伪装必须不在场"
+    assert state["status"] == "lobby", "无人入座时应保持 lobby"
+    # 酒鬼认知覆盖(真实身份外来者,即使看到假镇民也不得伪装)
+    req("/api/fake", "POST", {"seat": 6, "role": "washerwoman"}, ST)
+    # 开局前:玩家入座继承预发但不揭示身份与伪装
+    b_ids = [req("/api/join", "POST", {"name": f"伪{i}"})["player_id"] for i in range(1, 6)]
+    for seat, pid in enumerate(b_ids, 1):
+        view = req(f"/api/player/{pid}/sit", "POST", {"seat": seat})
+        assert "role" not in view["me"], f"开局前座位 {seat} 不应看到角色"
     dview = req(f"/api/me/{b_ids[0]}")
-    assert [r["id"] for r in dview["bluffs"]] == [r["id"] for r in b], "恶魔应看到伪装"
+    assert "role" not in dview["me"] and "bluffs" not in dview, "开局前恶魔不应看到角色与伪装"
+    last = req("/api/join", "POST", {"name": "伪6"})["player_id"]
+    view = req(f"/api/player/{last}/sit", "POST", {"seat": 6})  # 满员自动开局
+    assert view["me"]["role"]["id"] == "washerwoman", "满员自动开局后酒鬼应看到假角色"
+    dview = req(f"/api/me/{b_ids[0]}")
+    assert dview["me"]["role"]["id"] == "imp", "开局后恶魔拿到角色"
+    assert "bluffs" not in dview and "minion_seats" not in dview, \
+        "恶魔会面前不应看到伪装与爪牙名单"
+    mview = req(f"/api/me/{b_ids[1]}")
+    assert "demon_seats" not in mview, "爪牙会面前不应看到恶魔名单"
     pview = req(f"/api/me/{b_ids[2]}")
     assert "bluffs" not in pview, "非恶魔不应看到伪装"
-    # 酒鬼看到假镇民角色,但真实身份是外来者,不应看到伪装
-    req("/api/fake", "POST", {"seat": 6, "role": "washerwoman"}, ST)
-    dview6 = req(f"/api/me/{b_ids[5]}")
+    # 推进到恶魔会面:伪装 + 爪牙名单揭晓;爪牙会面更早,爪牙同步拿到恶魔名单
+    steps = req("/api/state", "GET", headers=ST)["night"]["steps"]
+    demon_idx = next(i for i, s in enumerate(steps) if s["key"] == "demoninfo")
+    req("/api/night/goto", "POST", {"idx": demon_idx}, ST)
+    dview = req(f"/api/me/{b_ids[0]}")
+    assert [r["id"] for r in dview["bluffs"]] == [r["id"] for r in b], "恶魔会面后应看到伪装"
+    assert [m["seat"] for m in dview["minion_seats"]] == [2], "恶魔会面后应看到爪牙是谁"
+    mview = req(f"/api/me/{b_ids[1]}")
+    assert [d["seat"] for d in mview["demon_seats"]] == [1], "爪牙会面后应看到恶魔是谁"
+    dview6 = req(f"/api/me/{last}")
+    assert dview6["me"]["role"]["id"] == "washerwoman", "酒鬼应看到假角色"
     assert "bluffs" not in dview6, "酒鬼(假镇民)不应看到伪装"
-    print("BLUFF 配版时选伪装:指定生效、4 种非法拒绝、仅恶魔可见 OK")
+    print("BLUFF 开局才发身份+会面阶段揭晓伪装/爪牙/恶魔,仅当事人可见 OK")
 
     # ---- 人未齐也可开局:随机发牌覆盖空座;迟到玩家入座继承 ----
     req("/api/reset", "POST", headers=ST)

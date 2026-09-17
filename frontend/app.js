@@ -126,6 +126,7 @@ function renderPlayer(playerId) {
   app.replaceChildren(h('<div class="page center">连接中…</div>'))
   function paint(view) {
     const { me, status, seats, phase, night_no: nightNo, day_no: dayNo, current, bluffs,
+      demon_seats: demonSeats, minion_seats: minionSeats,
       script: scriptName, player_count: count, composition, sentinel: sentinelOn } = view
     // 官方配比(公开信息):只展示基础配比,实际调整(男爵/教父等)不给玩家
     const compLine = composition && composition.length === 4
@@ -163,10 +164,10 @@ function renderPlayer(playerId) {
 
     // ---- 已入座 ----
     const role = me.role
-    // 预发身份时入座即继承角色:只要有角色就显示角色卡(即使本局还在 lobby 等人)
+    // 开局前不揭示身份:说书人开始游戏玩家才拿到角色
     const card = !role
-      ? `<div class="center"><p class="sub">已入座,等待说书人分配角色…</p>
-         <p class="hint">开局前点其他空座位可以换座</p></div>`
+      ? `<div class="center"><p class="sub">${status === 'lobby' ? '已入座,等待说书人开始游戏…' : '等待说书人分配角色…'}</p>
+         ${status === 'lobby' ? '<p class="hint">开局前点其他空座位可以换座</p>' : ''}</div>`
       : `<div class="card team-${role.team} ${me.alive ? '' : 'dead'}">
           <div class="card-head">
             <span class="team-badge">${TEAM_LABEL[role.team]}</span>
@@ -183,9 +184,15 @@ function renderPlayer(playerId) {
     const voteLine = current
       ? `<p class="vote-public">🗳 座${current.nominator} 提名座${current.nominee} · 赞成 ${current.votes.length} 票</p>`
       : ''
-    // 伪装:仅恶魔(后端按真实身份判断)能看到三个不在场好角色
+    // 伪装:仅恶魔(后端按真实身份判断)能看到三个不在场好角色,恶魔会面推进后才揭晓
     const bluffLine = bluffs && bluffs.length
       ? `<p class="bluffs">🧪 伪装(不在场,可假装):${bluffs.map((r) => esc(r.name)).join(' · ')}</p>`
+      : ''
+    // 会面揭晓:爪牙会面后爪牙手机显示恶魔是谁,恶魔会面后恶魔手机显示爪牙是谁(信息不可收回)
+    const meetLine = demonSeats && demonSeats.length
+      ? `<p class="meet-line">😈 恶魔:${demonSeats.map((d) => `座${d.seat}${d.name ? ` ${esc(d.name)}` : ''}`).join(' · ')}</p>`
+      : minionSeats && minionSeats.length
+      ? `<p class="meet-line">🩸 爪牙:${minionSeats.map((m) => `座${m.seat}${m.name ? ` ${esc(m.name)}` : ''}`).join(' · ')}</p>`
       : ''
     app.replaceChildren(h(`<div class="page rolecard">
       <div class="topbar"><span>座位 ${me.seat} · ${esc(me.name)}${phaseTxt}</span><span class="dot ok" title="已连接"></span></div>
@@ -195,7 +202,7 @@ function renderPlayer(playerId) {
       ${sentinelNote}
       ${card}
       ${bluffLine}
-      ${role && status === 'lobby' ? '<p class="hint">身份已到手,等待其他玩家入座开局…</p>' : ''}
+      ${meetLine}
     </div>`))
     document.getElementById('circle').appendChild(seatCircle(seats, {
       voted: (s) => !!current && current.votes.includes(s.seat), // 举手票型公开,玩家也可见

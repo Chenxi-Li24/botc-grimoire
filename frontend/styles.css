@@ -764,7 +764,8 @@ h3 {
   margin: 6px 0;
 }
 
-.bluffs {
+.bluffs,
+.meet-line {
   font-size: 13px;
   color: var(--gold);
   margin-top: 8px;

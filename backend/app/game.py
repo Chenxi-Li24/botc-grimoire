@@ -537,9 +537,18 @@ class GameManager:
         """白天/夜晚进度(玩家与说书人都可见)。"""
         return {"phase": self.phase, "night_no": self.night_no, "day_no": self.day_no}
 
+    def _step_reached(self, key: str) -> bool:
+        """夜晚是否已推进到 key 步骤(信息一旦给出不可收回,之后一直可见)。"""
+        if self.status != "playing":
+            return False
+        if self.night_no > 1 or self.phase == "day":
+            return True  # 第 2 夜起 / 白天:首夜会面早已发生
+        return any(s["key"] == key for s in self.night_steps[:self.night_idx + 1])
+
     def player_view(self, player_id: str) -> dict:
         me = self.players[player_id]
         fake_id = self.seat_fakes.get(me.seat) if me.seat is not None else None
+        started = self.status == "playing"
         view = {
             "status": self.status,
             "script": SCRIPTS[self.script_id]["name"],
@@ -552,12 +561,23 @@ class GameManager:
             # 提名/投票是公开信息,实时推给玩家(举手、票型、处决)
             "nominations": self.nominations,
             "current": self.current,
-            "me": me.private(self.roles, fake_id),
+            # 开局前不揭示身份:说书人开始游戏玩家才拿到角色
+            "me": me.private(self.roles, fake_id) if started else me.public(),
             "seats": self._seat_slots(st_view=False, my_id=player_id),
         }
-        # 伪装:仅恶魔得知三个不在场好角色(按真实身份判断,酒鬼的假镇民角色不触发)
-        if self.bluffs and me.role_id and self.roles[me.role_id]["team"] == DEMON:
-            view["bluffs"] = [self.roles[rid] for rid in self.bluffs]
+        if not started:
+            return view
+        team = self.roles[me.role_id]["team"] if me.role_id else None
+        # 爪牙会面:恶魔是谁,推进到该步骤才揭晓
+        if team == MINION and self._step_reached("minioninfo"):
+            view["demon_seats"] = [{"seat": d["seat"], "name": d["name"]}
+                                   for d in self._team_seats(DEMON)]
+        # 恶魔会面:爪牙是谁 + 三个伪装,推进到该步骤才揭晓(按真实身份判断,酒鬼假镇民不触发)
+        if team == DEMON and self._step_reached("demoninfo"):
+            view["minion_seats"] = [{"seat": m["seat"], "name": m["name"]}
+                                    for m in self._team_seats(MINION)]
+            if self.bluffs:
+                view["bluffs"] = [self.roles[rid] for rid in self.bluffs]
         return view
 
     def storyteller_view(self) -> dict:
