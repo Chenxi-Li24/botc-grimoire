@@ -266,7 +266,8 @@ class GameManager:
         self.status = "playing"
         self._begin_night()  # 发完角色 → 第一夜开始
         self.save()
-        by_seat = sorted(self.players.values(), key=lambda p: p.seat)
+        by_seat = sorted((p for p in self.players.values() if p.seat is not None),
+                         key=lambda p: p.seat)  # 没入座的玩家(seat=None)不参与排序,否则 None 比较会 500
         return [p.storyteller(self.roles) for p in by_seat]
 
     def expected_composition(self, role_ids: list[str]) -> tuple:
@@ -337,7 +338,8 @@ class GameManager:
             self.status = "playing"  # 全员已入座 → 立即开局;否则等 sit() 补满自动开局
             self._begin_night()
         self.save()
-        by_seat = sorted(self.players.values(), key=lambda p: p.seat)
+        by_seat = sorted((p for p in self.players.values() if p.seat is not None),
+                         key=lambda p: p.seat)  # 没入座的玩家(seat=None)不参与排序,否则 None 比较会 500
         return [p.storyteller(self.roles) for p in by_seat]
 
     def start_game(self) -> None:
@@ -578,10 +580,12 @@ class GameManager:
         if not started:
             return view
         team = self.roles[me.role_id]["team"] if me.role_id else None
-        # 爪牙会面:恶魔是谁,推进到该步骤才揭晓
+        # 爪牙会面:所有爪牙同时醒来——知道恶魔是谁,也彼此看见对方(官方规则)
         if team == MINION and self._step_reached("minioninfo"):
             view["demon_seats"] = [{"seat": d["seat"], "name": d["name"]}
                                    for d in self._team_seats(DEMON)]
+            view["minion_seats"] = [{"seat": m["seat"], "name": m["name"]}
+                                    for m in self._team_seats(MINION)]
         # 恶魔会面:爪牙是谁 + 三个伪装,推进到该步骤才揭晓(按真实身份判断,酒鬼假镇民不触发)
         if team == DEMON and self._step_reached("demoninfo"):
             view["minion_seats"] = [{"seat": m["seat"], "name": m["name"]}

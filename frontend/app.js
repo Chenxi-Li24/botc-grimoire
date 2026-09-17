@@ -201,11 +201,13 @@ function renderPlayer(playerId) {
     const bluffLine = bluffs && bluffs.length
       ? `<p class="bluffs">🧪 伪装(不在场,可假装):${bluffs.map((r) => esc(r.name)).join(' · ')}</p>`
       : ''
-    // 会面揭晓:爪牙会面后爪牙手机显示恶魔是谁,恶魔会面后恶魔手机显示爪牙是谁(信息不可收回)
-    const meetLine = demonSeats && demonSeats.length
+    // 会面揭晓(信息不可收回):爪牙会面=所有爪牙同时醒来——爪牙手机显示恶魔是谁+其他爪牙(彼此可见);
+    // 恶魔会面=恶魔独醒——恶魔手机显示爪牙名单
+    const demonLine = demonSeats && demonSeats.length
       ? `<p class="meet-line">😈 恶魔:${demonSeats.map((d) => `座${d.seat}${d.name ? ` ${esc(d.name)}` : ''}`).join(' · ')}</p>`
-      : minionSeats && minionSeats.length
-      ? `<p class="meet-line">🩸 爪牙:${minionSeats.map((m) => `座${m.seat}${m.name ? ` ${esc(m.name)}` : ''}`).join(' · ')}</p>`
+      : ''
+    const minionLine = minionSeats && minionSeats.length
+      ? `<p class="meet-line">🩸 爪牙:${minionSeats.map((m) => `座${m.seat}${m.name ? ` ${esc(m.name)}` : ''}${m.seat === me.seat ? '(你)' : ''}`).join(' · ')}</p>`
       : ''
     app.replaceChildren(h(`<div class="page rolecard">
       <div class="topbar"><span>座位 ${me.seat} · ${esc(me.name)}${phaseTxt} · 🚪 ${esc(roomCode)}</span><span class="dot ok" title="已连接"></span></div>
@@ -215,7 +217,8 @@ function renderPlayer(playerId) {
       ${sentinelNote}
       ${card}
       ${bluffLine}
-      ${meetLine}
+      ${demonLine}
+      ${minionLine}
     </div>`))
     document.getElementById('circle').appendChild(seatCircle(seats, {
       voted: (s) => !!current && current.votes.includes(s.seat), // 举手票型公开,玩家也可见
@@ -552,10 +555,11 @@ function renderStoryteller() {
         ? '唤醒:' + wake.map((s) => `座${s.seat} ${esc(s.player.name)}${s.player.alive ? '' : ' ☠'}`).join('、')
         : (cur && cur.key !== 'dusk' && cur.key !== 'dawn' ? '该角色不在场,此步可跳过' : '')
       const fakeNote = cur && cur.fake_for != null ? ` · 🍺 酒鬼扮演(座${cur.fake_for})` : ''
-      // 会面步:告诉爪牙谁是恶魔 / 告诉恶魔谁是爪牙(空座预发也列出)
+      // 会面步:告诉爪牙谁是恶魔(爪牙同时醒来,彼此可见) / 告诉恶魔谁是爪牙(空座预发也列出)
       const seatTxt = (list) => list.map((d) => `座${d.seat} ${d.name ? esc(d.name) : '空(预发)'}`).join('、')
       const relationTxt = (cur && cur.key === 'minioninfo' && demonSeats && demonSeats.length)
-        ? `<div class="step-seats">👉 恶魔:${seatTxt(demonSeats)}</div>`
+        ? `<div class="step-seats">👉 恶魔:${seatTxt(demonSeats)}</div>
+           <div class="step-seats">👥 爪牙同时醒来,彼此可见:${seatTxt(minionSeats)}</div>`
         : (cur && cur.key === 'demoninfo' && minionSeats && minionSeats.length)
           ? `<div class="step-seats">👉 爪牙:${seatTxt(minionSeats)}</div>`
           : ''
