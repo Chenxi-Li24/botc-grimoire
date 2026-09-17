@@ -94,6 +94,8 @@ class ManualAssignBody(BaseModel):
 class FakeBody(BaseModel):
     seat: int
     role: str | None = None  # 玩家看到的假角色;None 表示清除认知覆盖
+    minions: list[int] | None = None  # 疯子:以为的爪牙座位(说书人选,不一定是真的)
+    bluffs: list[str] | None = None  # 疯子:3 个伪装(说书人选,不一定是恶魔的真伪装)
 
 
 class MarkerBody(BaseModel):
@@ -245,9 +247,9 @@ async def start() -> dict[str, Any]:
 
 @app.post("/api/fake", dependencies=[Depends(require_storyteller)])
 async def set_fake(body: FakeBody) -> dict[str, Any]:
-    """认知覆盖:说书人标记某座位玩家看到的假角色(酒鬼看到镇民)。"""
+    """认知覆盖:说书人标记某座位玩家看到的假角色(酒鬼看到镇民/疯子以为自己是恶魔)。"""
     try:
-        game.set_fake(body.seat, body.role)
+        game.set_fake(body.seat, body.role, body.minions, body.bluffs)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await hub.push_all()

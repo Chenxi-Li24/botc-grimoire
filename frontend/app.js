@@ -138,7 +138,7 @@ function renderPlayer(playerId) {
   app.replaceChildren(h('<div class="page center">连接中…</div>'))
   function paint(view) {
     const { me, status, seats, phase, night_no: nightNo, day_no: dayNo, current, bluffs,
-      demon_seats: demonSeats, minion_seats: minionSeats,
+      demon_seats: demonSeats, minion_seats: minionSeats, lunatic_seats: lunaticSeats,
       script: scriptName, player_count: count, composition, sentinel: sentinelOn,
       room_code: roomCode } = view
     // 官方配比(公开信息):只展示基础配比,实际调整(男爵/教父等)不给玩家
@@ -209,6 +209,10 @@ function renderPlayer(playerId) {
     const minionLine = minionSeats && minionSeats.length
       ? `<p class="meet-line">🩸 爪牙:${minionSeats.map((m) => `座${m.seat}${m.name ? ` ${esc(m.name)}` : ''}${m.seat === me.seat ? '(你)' : ''}`).join(' · ')}</p>`
       : ''
+    // 恶魔/爪牙都知道疯子是谁:他就是疯子,不是真恶魔
+    const lunaticLine = lunaticSeats && lunaticSeats.length
+      ? `<p class="meet-line">🌙 疯子:${lunaticSeats.map((l) => `座${l.seat}${l.name ? ` ${esc(l.name)}` : ''}`).join(' · ')}</p>`
+      : ''
     app.replaceChildren(h(`<div class="page rolecard">
       <div class="topbar"><span>座位 ${me.seat} · ${esc(me.name)}${phaseTxt} · 🚪 ${esc(roomCode)}</span><span class="dot ok" title="已连接"></span></div>
       <div id="circle"></div>
@@ -219,6 +223,7 @@ function renderPlayer(playerId) {
       ${bluffLine}
       ${demonLine}
       ${minionLine}
+      ${lunaticLine}
     </div>`))
     document.getElementById('circle').appendChild(seatCircle(seats, {
       voted: (s) => !!current && current.votes.includes(s.seat), // 举手票型公开,玩家也可见
@@ -282,7 +287,9 @@ function renderStoryteller() {
   let manual = false // 手动发身份模式
   let draft = {} // 手动模式草稿:座位号 → 角色 id
   let draftBluffs = [] // 手动模式伪装草稿:不在场好角色 id ×3(配版时选好)
-  let draftFakes = {} // 手动模式认知覆盖草稿:座位号 → 假角色 id(配版时选好)
+  let draftFakes = {} // 手动模式认知覆盖草稿:座位号 → 假角色 id(说书人显式选择)
+  let draftLunMinions = {} // 手动模式:疯子座位号 → 以为的爪牙座位列表
+  let draftLunBluffs = {} // 手动模式:疯子座位号 → 3 个伪装角色 id
   let godfatherAdj = 1 // 教父外来者调整:说书人可选 +1 或 −1,默认 +1
 
   function paint(view) {
@@ -290,10 +297,11 @@ function renderStoryteller() {
       adjust_roles, seat_roles, phase, night_no: nightNo, day_no: dayNo, night,
       nominations, current, alive_count: aliveCount, quorum, can_start: canStart,
       bluffs, demon_seats: demonSeats, minion_seats: minionSeats, sentinel, saved_at: savedAt,
-      fake_pools: fakePools, room_code: roomCode } = view
+      fake_pools: fakePools, lunatic_seats: lunaticSeats, lunatic_minions: lunaticMinions,
+      lunatic_bluffs: lunaticBluffs, fakes_pending: fakesPending, room_code: roomCode } = view
     const minP = scripts.find((s) => s.id === script)?.min || 5 // 该板子的人数下限(瓦釜雷鸣 7 人起)
     const seatedCount = seats.filter((s) => s.player).length
-    if (status === 'playing') { manual = false; draft = {}; draftFakes = {} } // 发牌完成后退出草稿
+    if (status === 'playing') { manual = false; draft = {}; draftFakes = {}; draftLunMinions = {}; draftLunBluffs = {} } // 发牌完成后退出草稿
     const allSeated = seatedCount === count
     const selSeat = seats.find((s) => s.seat === selected)
     const selP = selSeat && selSeat.player
@@ -482,33 +490,62 @@ function renderStoryteller() {
         bluffGroup.appendChild(chip)
       })
       box.appendChild(bluffGroup)
-      // 认知覆盖(配版时选定假身份):疯子以为自己是恶魔、酒鬼看到假镇民。
-      // 默认建议:疯子→在场的那名恶魔,酒鬼→第一个不在场镇民;说书人可改
+      // 认知覆盖由说书人显式选定:疯子以为自己是恶魔(还须指定假爪牙与 3 个假伪装)、酒鬼看到假镇民
       const FAKE_LABEL = { drunk: '🍺 酒鬼', lunatic: '🌙 疯子' }
       const fakeNeeded = Object.entries(draft).filter(([, rid]) => fakePools && fakePools[rid])
+      // 疯子的伪装候选:与真伪装同池(好角色 − 已进草稿/已选真伪装)
+      const lunBluffPool = roles.filter((r) => bluffTeams.includes(r.team)
+        && !Object.values(draft).includes(r.id) && !draftBluffs.includes(r.id))
       fakeNeeded.forEach(([seat, rid]) => {
         if (draftFakes[seat] && !(fakePools[rid].includes(roleById[draftFakes[seat]]?.team))) delete draftFakes[seat]
-        if (!draftFakes[seat]) {
-          const pool = roles.filter((r) => fakePools[rid].includes(r.team))
-          const inDraft = Object.values(draft)
-          const sugg = rid === 'lunatic'
-            ? pool.find((r) => inDraft.includes(r.id)) || pool[0]
-            : pool.find((r) => !inDraft.includes(r.id)) || pool[0]
-          draftFakes[seat] = sugg.id
-        }
+        if (!draftLunMinions[seat]) draftLunMinions[seat] = []
+        if (!draftLunBluffs[seat]) draftLunBluffs[seat] = []
+        draftLunBluffs[seat] = draftLunBluffs[seat].filter((b) => lunBluffPool.some((r) => r.id === b))
       })
+      const fakeOk = fakeNeeded.every(([seat, rid]) => draftFakes[seat]
+        && (rid !== 'lunatic' || (draftLunMinions[seat].length >= 1 && draftLunBluffs[seat].length === 3)))
       if (fakeNeeded.length) {
-        const fakeGroup = h(`<div class="role-group" style="--team: var(--gold); --team-text: var(--on-gold)"><span class="role-group-head">🧠 认知覆盖(配版时选定假身份)</span></div>`)
+        const fakeGroup = h(`<div class="role-group" style="--team: var(--gold); --team-text: var(--on-gold)"><span class="role-group-head">🧠 认知覆盖(说书人选定假身份${fakeOk ? '' : ' · 未选完'})</span></div>`)
         fakeNeeded.forEach(([seat, rid]) => {
           const row = h(`<label class="st-fake"><span class="hint">${FAKE_LABEL[rid] || '认知覆盖'} · 座${seat} 看到:</span>
-            <select data-fake-seat="${seat}">${roles.filter((r) => fakePools[rid].includes(r.team)).map((r) =>
-              `<option value="${r.id}" ${draftFakes[seat] === r.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select></label>`)
+            <select data-fake-seat="${seat}">
+              <option value="" ${!draftFakes[seat] ? 'selected' : ''}>选择假身份…</option>
+              ${roles.filter((r) => fakePools[rid].includes(r.team)).map((r) =>
+                `<option value="${r.id}" ${draftFakes[seat] === r.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}
+            </select></label>`)
           fakeGroup.appendChild(row)
+          if (rid === 'lunatic') {
+            const minRow = h(`<div class="st-fake"><span class="hint">以为爪牙是(点选座位):</span></div>`)
+            for (let s = 1; s <= count; s++) {
+              if (s === Number(seat)) continue
+              const on = draftLunMinions[seat].includes(s)
+              const chip = h(`<button class="chip ${on ? 'on' : ''}" data-lunmin="${seat}:${s}">座${s}</button>`)
+              chip.onclick = () => {
+                if (on) draftLunMinions[seat] = draftLunMinions[seat].filter((x) => x !== s)
+                else draftLunMinions[seat] = [...draftLunMinions[seat], s]
+                paint(view)
+              }
+              minRow.appendChild(chip)
+            }
+            fakeGroup.appendChild(minRow)
+            const bluffRow = h(`<div class="st-fake"><span class="hint">疯子伪装(3):</span></div>`)
+            lunBluffPool.forEach((r) => {
+              const on = draftLunBluffs[seat].includes(r.id)
+              const chip = h(`<button class="chip team-${r.team} ${on ? 'on' : ''}" data-lunbluff="${seat}:${r.id}" title="${esc(r.ability)}">${esc(r.name)}</button>`)
+              chip.onclick = () => {
+                if (on) draftLunBluffs[seat] = draftLunBluffs[seat].filter((x) => x !== r.id)
+                else if (draftLunBluffs[seat].length < 3) draftLunBluffs[seat] = [...draftLunBluffs[seat], r.id]
+                paint(view)
+              }
+              bluffRow.appendChild(chip)
+            })
+            fakeGroup.appendChild(bluffRow)
+          }
         })
         box.appendChild(fakeGroup)
       }
       box.appendChild(h(`<div class="st-detail-actions">
-        <button class="btn primary small" id="manual-confirm" ${full && ok && !hasDup && bluffOk ? '' : 'disabled'}>✅ 确认发身份</button>
+        <button class="btn primary small" id="manual-confirm" ${full && ok && !hasDup && bluffOk && fakeOk ? '' : 'disabled'}>✅ 确认发身份</button>
         <button class="btn small ghost" id="manual-cancel">取消</button>
       </div>`))
       detail.replaceChildren(box)
@@ -521,13 +558,18 @@ function renderStoryteller() {
       document.getElementById('manual-confirm').onclick = () => act(() => {
         const assignments = Object.entries(draft).map(([seat, role]) => ({ seat: Number(seat), role }))
         const fakes = Object.entries(draftFakes)
-          .filter(([seat]) => draft[seat] && fakePools && fakePools[draft[seat]])
-          .map(([seat, role]) => ({ seat: Number(seat), role }))
+          .filter(([seat]) => draft[seat] && fakePools && fakePools[draft[seat]] && draftFakes[seat])
+          .map(([seat, role]) => ({ seat: Number(seat), role,
+            ...(draft[seat] === 'lunatic'
+              ? { minions: draftLunMinions[seat], bluffs: draftLunBluffs[seat] }
+              : {}) }))
         return stApi('/api/assign/manual', { method: 'POST', body: JSON.stringify({ assignments, bluffs: draftBluffs, fakes }) })
-          .then((v) => { manual = false; draft = {}; draftBluffs = []; draftFakes = {}; selected = null; paint(v) })
+          .then((v) => { manual = false; draft = {}; draftBluffs = []; draftFakes = {}; draftLunMinions = {}; draftLunBluffs = {}; selected = null; paint(v) })
           // 空座预发时状态仍是 lobby,直接以响应视图重绘(不等推送)
       })
-      document.getElementById('manual-cancel').onclick = () => { manual = false; draft = {}; draftFakes = {}; paint(view) }
+      document.getElementById('manual-cancel').onclick = () => {
+        manual = false; draft = {}; draftFakes = {}; draftLunMinions = {}; draftLunBluffs = {}; paint(view)
+      }
     }
 
     // ---- 选中玩家详情条(夜晚/白天面板顶部复用) ----
@@ -586,33 +628,54 @@ function renderStoryteller() {
       const wakeTxt = wake.length
         ? '唤醒:' + wake.map((s) => `座${s.seat} ${esc(s.player.name)}${s.player.alive ? '' : ' ☠'}`).join('、')
         : (cur && cur.key !== 'dusk' && cur.key !== 'dawn' ? '该角色不在场,此步可跳过' : '')
-      const fakeNote = cur && cur.fake_for != null ? ` · 🍺 酒鬼扮演(座${cur.fake_for})` : ''
-      // 会面步:告诉爪牙谁是恶魔(爪牙同时醒来,彼此可见) / 告诉恶魔谁是爪牙(空座预发也列出)
+      const fakeNote = cur && cur.fake_for != null ? ` · 🎭 认知覆盖(座${cur.fake_for} 扮演)` : ''
+      // 会面步:告诉爪牙谁是恶魔、谁是疯子 / 告诉恶魔谁是爪牙、谁是疯子(空座预发也列出)
       const seatTxt = (list) => list.map((d) => `座${d.seat} ${d.name ? esc(d.name) : '空(预发)'}`).join('、')
+      const lunRelTxt = (lunaticSeats && lunaticSeats.length)
+        ? `<div class="step-seats">🌙 疯子:${seatTxt(lunaticSeats)}(他就是疯子,不是真恶魔)</div>`
+        : ''
       const relationTxt = (cur && cur.key === 'minioninfo' && demonSeats && demonSeats.length)
         ? `<div class="step-seats">👉 恶魔:${seatTxt(demonSeats)}</div>
-           <div class="step-seats">👥 爪牙同时醒来,彼此可见:${seatTxt(minionSeats)}</div>`
+           <div class="step-seats">👥 爪牙同时醒来,彼此可见:${seatTxt(minionSeats)}</div>
+           ${lunRelTxt}`
         : (cur && cur.key === 'demoninfo' && minionSeats && minionSeats.length)
-          ? `<div class="step-seats">👉 爪牙:${seatTxt(minionSeats)}</div>`
+          ? `<div class="step-seats">👉 爪牙:${seatTxt(minionSeats)}</div>${lunRelTxt}`
           : ''
+      // 疯子步骤(或其扮演恶魔的附加步):说书人按选定信息演戏——假爪牙 + 假伪装
+      const lunOf = (seat) => {
+        const mins = (lunaticMinions && lunaticMinions[String(seat)]) || []
+        const lbs = (lunaticBluffs && lunaticBluffs[String(seat)]) || []
+        return `🌙 疯子(座${seat}):以为爪牙是 ${mins.length ? mins.map((s) => `座${s}`).join('、') : '未定'} · 给他的伪装 ${lbs.length ? lbs.map((r) => esc(r.name)).join(' · ') : '未定'}`
+      }
+      const lunStepTxt = (cur && cur.key === 'lunatic' && lunaticSeats && lunaticSeats.length)
+        ? lunaticSeats.map((l) => `<div class="step-seats">${lunOf(l.seat)}</div>`).join('')
+        : (cur && cur.fake_for != null && lunaticMinions && lunaticMinions[String(cur.fake_for)] != null
+          ? `<div class="step-seats">${lunOf(cur.fake_for)}</div>`
+          : '')
       // 恶魔会面步:顺带展示三个伪装,说书人告知恶魔
       const bluffTxt = (cur && cur.key === 'demoninfo' && bluffs && bluffs.length)
         ? `<p class="bluffs">🧪 告知恶魔三个伪装:${bluffs.map((r) => esc(r.name)).join(' · ')}</p>`
+        : ''
+      // 认知覆盖待定:发牌后说书人还没选定假身份的座位,先别让玩家看卡
+      const pendingTxt = (fakesPending && fakesPending.length)
+        ? `<div class="step-seats">⚠ 认知覆盖待定:${fakesPending.map((f) => `座${f.seat} ${esc(f.role.name)}`).join(' · ')} — 选定假身份后再让玩家看卡</div>`
         : ''
       const box = h(`<div class="st-detail">
         ${strip}
         <div class="night-panel">
           <h3>🌙 第 ${nightNo} 夜 · 步骤 ${night.idx + 1}/${steps.length}</h3>
+          ${pendingTxt}
           ${cur ? `<div class="step-card">
             <div class="step-name">${esc(cur.name)}${fakeNote}</div>
             ${wakeTxt ? `<div class="step-seats">${wakeTxt}</div>` : ''}
             ${relationTxt}
+            ${lunStepTxt}
             <p class="step-hint">${esc(cur.hint)}</p>
             ${bluffTxt}
           </div>` : '<p class="hint">本夜没有步骤</p>'}
           <div class="step-list">
             ${steps.map((st, i) => `<button class="step-chip ${i < night.idx ? 'done' : ''} ${i === night.idx ? 'cur' : ''}"
-                title="${esc(st.name)}${st.fake_for != null ? ` · 酒鬼扮演(座${st.fake_for})` : ''}">${i + 1} ${esc(st.name)}${st.fake_for != null ? ' 🍺' : ''}</button>`).join('')}
+                title="${esc(st.name)}${st.fake_for != null ? ` · 认知覆盖(座${st.fake_for} 扮演)` : ''}">${i + 1} ${esc(st.name)}${st.fake_for != null ? ' 🎭' : ''}</button>`).join('')}
           </div>
           <div class="st-detail-actions">
             <button class="btn small ghost" id="night-prev" ${night.idx <= 0 ? 'disabled' : ''}>← 上一步</button>
@@ -717,18 +780,40 @@ function renderStoryteller() {
 
     // ---- 选中玩家详情 ----
     const detail = document.getElementById('detail')
-    // 认知覆盖:疯子/酒鬼座位由说书人标记「玩家看到哪个假角色」,真实身份只有说书人可见
+    // 认知覆盖:疯子/酒鬼座位由说书人标记「玩家看到哪个假角色」,真实身份只有说书人可见。
+    // 疯子额外由说书人选定:以为谁是爪牙(不一定是真的)+ 3 个伪装(不一定是恶魔的真伪装)
     const FAKE_LABEL = { drunk: '🍺 酒鬼', lunatic: '🌙 疯子' }
+    const inPlayIds = new Set(Object.values(seat_roles || {}))
+    seats.forEach((s) => {
+      const r = s.player ? s.player.role : s.assigned_role
+      if (r) inPlayIds.add(r.id)
+    })
+    const bluffTeamList = script === 'trouble-brewing' ? ['townsfolk'] : ['townsfolk', 'outsider']
+    const fakeBluffPool = roles.filter((r) => bluffTeamList.includes(r.team) && !inPlayIds.has(r.id))
     const fakeRow = (slot) => {
       const real = slot.player ? slot.player.role : slot.assigned_role
       if (!real || !fakePools || !fakePools[real.id]) return ''
       const cur = slot.fake_role
-      return `<div class="st-fake"><span class="hint">${FAKE_LABEL[real.id] || '认知覆盖'} 看到:</span>
+      const head = `<div class="st-fake"><span class="hint">${FAKE_LABEL[real.id] || '认知覆盖'} 看到:</span>
         <select id="fake-sel">
           <option value="">真实身份(${esc(real.name)})</option>
           ${roles.filter((r) => fakePools[real.id].includes(r.team)).map((r) =>
             `<option value="${r.id}" ${cur && cur.id === r.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}
         </select></div>`
+      if (real.id !== 'lunatic') return head
+      const seatKey = String(slot.seat)
+      const mins = (lunaticMinions && lunaticMinions[seatKey]) || []
+      const lbs = ((lunaticBluffs && lunaticBluffs[seatKey]) || []).map((r) => r.id)
+      const minRow = `<div class="st-fake"><span class="hint">以为爪牙是(点选):</span>${Array.from({ length: count }, (_, i) => i + 1)
+        .filter((s) => s !== slot.seat)
+        .map((s) => `<button class="chip ${mins.includes(s) ? 'on' : ''}" data-min-chip="${s}">座${s}</button>`).join('')}</div>`
+      const selOf = (i) => `<select data-lb="${i}"><option value="">-</option>
+        ${(lbs[i] && !fakeBluffPool.some((r) => r.id === lbs[i])
+          ? [{ id: lbs[i], name: roleById[lbs[i]] ? roleById[lbs[i]].name : lbs[i] }] : [])
+          .concat(fakeBluffPool).map((r) =>
+            `<option value="${r.id}" ${lbs[i] === r.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select>`
+      const bluffRow = `<div class="st-fake"><span class="hint">疯子伪装(3):</span>${selOf(0)}${selOf(1)}${selOf(2)}</div>`
+      return head + minRow + bluffRow
     }
     if (manual) {
       renderManualPicker(detail, selSeat)
@@ -751,10 +836,26 @@ function renderStoryteller() {
       detail.replaceChildren(h('<p class="hint">点击环形座位查看/操作玩家</p>'))
     }
     const fakeSelEl = document.getElementById('fake-sel')
-    if (fakeSelEl) fakeSelEl.onchange = () => act(() => stApi('/api/fake', {
-      method: 'POST',
-      body: JSON.stringify({ seat: selSeat.seat, role: fakeSelEl.value || null }),
-    }))
+    if (fakeSelEl) {
+      const real = selSeat.player ? selSeat.player.role : selSeat.assigned_role
+      // 疯子详情:改动任何一项都提交(未填全的字段不带上 → 后端保留已存值)
+      const submitFake = () => {
+        const body = { seat: selSeat.seat, role: fakeSelEl.value || null }
+        if (body.role && real && real.id === 'lunatic') {
+          const minVals = [...document.querySelectorAll('[data-min-chip].on')]
+            .map((c) => Number(c.dataset.minChip))
+          const lbVals = [...document.querySelectorAll('[data-lb]')].map((s) => s.value)
+          if (minVals.length) body.minions = minVals
+          if (lbVals.length === 3 && lbVals.every((v) => v !== '')) body.bluffs = lbVals
+        }
+        act(() => stApi('/api/fake', { method: 'POST', body: JSON.stringify(body) }))
+      }
+      fakeSelEl.onchange = submitFake
+      document.querySelectorAll('[data-min-chip]').forEach((c) => {
+        c.onclick = () => { c.classList.toggle('on'); submitFake() }
+      })
+      document.querySelectorAll('[data-lb]').forEach((s) => { s.onchange = submitFake })
+    }
 
     // ---- 配置 ----
     function doConfig(sc, n) {
@@ -787,7 +888,13 @@ function renderStoryteller() {
           ? Object.fromEntries(Object.entries(seat_roles).map(([s, r]) => [Number(s), r]))
           : {}
         draftFakes = {}
-        if (manual) seats.forEach((s) => { if (s.fake_role) draftFakes[s.seat] = s.fake_role.id })
+        draftLunMinions = {}
+        draftLunBluffs = {}
+        if (manual) {
+          seats.forEach((s) => { if (s.fake_role) draftFakes[s.seat] = s.fake_role.id })
+          Object.entries(lunaticMinions || {}).forEach(([s, ms]) => { draftLunMinions[Number(s)] = ms })
+          Object.entries(lunaticBluffs || {}).forEach(([s, bs]) => { draftLunBluffs[Number(s)] = bs.map((r) => r.id) })
+        }
         paint(view)
       }
     }

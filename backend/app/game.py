@@ -70,7 +70,9 @@ class GameManager:
         self.players: dict[str, Player] = {}
         self.status: str = "lobby"  # lobby | playing
         self.seat_roles: dict[int, str] = {}  # 预发身份:座位号 → 角色 id(未入座也能先发)
-        self.seat_fakes: dict[int, str] = {}  # 认知覆盖:座位号 → 玩家看到的假角色 id(酒鬼)
+        self.seat_fakes: dict[int, str] = {}  # 认知覆盖:座位号 → 玩家看到的假角色 id(酒鬼/疯子)
+        self.lunatic_minions: dict[int, list[int]] = {}  # 疯子:座位号 → 疯子以为的爪牙座位(说书人选,不一定是真爪牙)
+        self.lunatic_bluffs: dict[int, list[str]] = {}  # 疯子:座位号 → 说书人给疯子的 3 个伪装(不一定是恶魔的真伪装)
         self.seat_markers: dict[int, list] = {}  # 状态标记:座位号 → [poisoned/drunk/mad]
         self.phase: str | None = None  # None(大厅)| "night" | "day"
         self.night_no: int = 1  # 当前是第几夜(1 起)
@@ -103,6 +105,7 @@ class GameManager:
             "status": self.status, "script_id": self.script_id,
             "player_count": self.player_count,
             "seat_roles": self.seat_roles, "seat_fakes": self.seat_fakes,
+            "lunatic_minions": self.lunatic_minions, "lunatic_bluffs": self.lunatic_bluffs,
             "seat_markers": self.seat_markers,
             "phase": self.phase, "night_no": self.night_no, "day_no": self.day_no,
             "night_steps": self.night_steps, "night_idx": self.night_idx,
@@ -128,6 +131,8 @@ class GameManager:
                 setattr(self, key, d[key])
             self.sentinel = d.get("sentinel", 0)  # 旧存档没有哨兵字段 → 默认关
             self.room_code = d.get("room_code") or f"{random.randrange(10000):04d}"  # 旧存档没有房间号 → 现生成
+            self.lunatic_minions = d.get("lunatic_minions", {})  # 旧存档没有疯子假爪牙/伪装字段 → 空
+            self.lunatic_bluffs = d.get("lunatic_bluffs", {})
             self.saved_at = time.time()
         except (KeyError, TypeError, ValueError):
             pass  # 存档损坏 → 用干净状态开局
@@ -155,6 +160,8 @@ class GameManager:
             p.alive = True
         self.seat_roles = {}  # 预发身份一并清空
         self.seat_fakes = {}  # 认知覆盖一并清空
+        self.lunatic_minions = {}
+        self.lunatic_bluffs = {}
         self.seat_markers = {}  # 状态标记一并清空
         self.phase = None
         self.night_no, self.day_no = 1, 0
@@ -266,11 +273,10 @@ class GameManager:
             else:
                 self.seat_roles[seat] = rid  # 空座挂预发身份,等人迟到入座继承
         self.bluffs = self._pick_bluffs({r["id"] for r in pool})  # 配版时即抽好伪装
-        # 认知覆盖配版时决定:随机分配自动抽取假身份(酒鬼→不在场镇民,疯子→在场恶魔),说书人可随后在详情里改
-        present_ids = {r["id"] for r in pool}
-        self.seat_fakes = {seat: fake
-                           for seat, rid in enumerate([r["id"] for r in pool], start=1)
-                           if (fake := self._auto_fake(rid, present_ids))}
+        # 认知覆盖不自动抽:假身份由说书人显式选定(ST 面板提示待定座位,玩家卡先别给看)
+        self.seat_fakes = {}
+        self.lunatic_minions = {}
+        self.lunatic_bluffs = {}
         self.status = "playing"
         self._begin_night()  # 发完角色 → 第一夜开始
         self.save()
@@ -341,26 +347,42 @@ class GameManager:
                 if rid in picked.values():
                     raise ValueError(f"伪装必须不在场:{rid} 已分配给座位")
             self.bluffs = list(bluffs)
-        # 认知覆盖配版时决定:fakes 指定疯子/酒鬼看到的假身份,未指定的座位自动抽取
+        # 认知覆盖由说书人显式决定:fakes 给每个疯子/酒鬼座位指定看到的假身份;
+        # 疯子还须指定「以为谁是爪牙」(不一定是真爪牙)和 3 个伪装(不一定是恶魔的真伪装)
         present_ids = set(picked.values())
         new_fakes: dict[int, str] = {}
-        if fakes is not None:
-            for item in fakes:
-                seat, rid = item.get("seat"), item.get("role")
-                if not isinstance(seat, int) or seat not in picked:
-                    raise ValueError(f"伪造身份的座位 {seat} 无效")
-                real = picked[seat]
-                if real not in FAKE_POOLS:
-                    raise ValueError(f"座位 {seat} 的角色没有认知覆盖")
-                if rid not in self.roles or self.roles[rid]["team"] not in FAKE_POOLS[real]:
-                    raise ValueError(f"座位 {seat} 的伪造身份无效")
-                new_fakes[seat] = rid
+        new_lun_minions: dict[int, list[int]] = {}
+        new_lun_bluffs: dict[int, list[str]] = {}
+        for item in fakes or []:
+            seat, rid = item.get("seat"), item.get("role")
+            if not isinstance(seat, int) or seat not in picked:
+                raise ValueError(f"伪造身份的座位 {seat} 无效")
+            real = picked[seat]
+            if real not in FAKE_POOLS:
+                raise ValueError(f"座位 {seat} 的角色没有认知覆盖")
+            if rid not in self.roles or self.roles[rid]["team"] not in FAKE_POOLS[real]:
+                raise ValueError(f"座位 {seat} 的伪造身份无效")
+            new_fakes[seat] = rid
+            if real == "lunatic":
+                minions = item.get("minions") or []
+                if (not isinstance(minions, list) or not minions
+                        or any(not isinstance(m, int) or not 1 <= m <= self.player_count
+                               or m == seat for m in minions)
+                        or len(set(minions)) != len(minions)):
+                    raise ValueError(f"座位 {seat} 的疯子须指定至少一个假爪牙座位(1~{self.player_count},不含自己)")
+                bluffs = item.get("bluffs") or []
+                if (len(bluffs) != 3 or len(set(bluffs)) != 3
+                        or any(b not in self.roles or self.roles[b]["team"] not in self._bluff_teams()
+                               or b in present_ids for b in bluffs)):
+                    raise ValueError(f"座位 {seat} 的疯子伪装须为 3 个不重复的不在场好角色")
+                new_lun_minions[seat] = list(minions)
+                new_lun_bluffs[seat] = list(bluffs)
         for seat, real in picked.items():
             if real in FAKE_POOLS and seat not in new_fakes:
-                fake = self._auto_fake(real, present_ids)
-                if fake:
-                    new_fakes[seat] = fake
+                raise ValueError(f"座位 {seat} 的{self.roles[real]['name']}须指定看到的假身份")
         self.seat_fakes = new_fakes
+        self.lunatic_minions = new_lun_minions
+        self.lunatic_bluffs = new_lun_bluffs
         self.seat_roles = dict(picked)  # 身份挂在座位上,没人入座也可以先发
         for seat, player in seat_of.items():  # 已入座的玩家当场继承
             player.role_id = picked[seat]
@@ -400,20 +422,6 @@ class GameManager:
         pool = [r["id"] for r in self.roles.values()
                 if r["team"] in self._bluff_teams() and r["id"] not in present]
         return random.sample(pool, min(3, len(pool)))
-
-    def _auto_fake(self, rid: str, present: set[str]) -> str | None:
-        """配板时为认知覆盖角色选默认假身份:酒鬼→不在场镇民;疯子→在场的恶魔(多个则随机)。"""
-        pools = FAKE_POOLS.get(rid)
-        if not pools:
-            return None
-        cands = [r["id"] for r in self.roles.values() if r["team"] in pools]
-        if not cands:
-            return None
-        if rid == "lunatic":
-            in_play = [c for c in cands if c in present]
-            return in_play[0] if len(in_play) == 1 else random.choice(cands)
-        absent = [c for c in cands if c not in present]
-        return random.choice(absent or cands)
 
     def _begin_night(self) -> None:
         """进入夜晚:按本夜在场角色组装步骤表(酒鬼的假角色作为附加步骤)。"""
@@ -518,8 +526,10 @@ class GameManager:
             self.players[player_id].alive = not self.players[player_id].alive
             self.save()
 
-    def set_fake(self, seat: int, role_id: str | None) -> None:
-        """认知覆盖:标记该座位玩家看到的假角色(酒鬼看到镇民/疯子以为自己是恶魔)。None 清除标记。"""
+    def set_fake(self, seat: int, role_id: str | None,
+                 minions: list[int] | None = None, bluffs: list[str] | None = None) -> None:
+        """认知覆盖:标记该座位玩家看到的假角色(酒鬼看到镇民/疯子以为自己是恶魔)。
+        疯子还带假爪牙座位与 3 个伪装(说书人选,不一定是真的)。None 清除全部标记。"""
         if not 1 <= seat <= self.player_count:
             raise ValueError(f"座位需在 1~{self.player_count} 之间")
         p = self.seats.get(seat)
@@ -531,8 +541,26 @@ class GameManager:
                 raise ValueError("伪造身份需属于该角色允许的阵营")
         if role_id is None:
             self.seat_fakes.pop(seat, None)
+            self.lunatic_minions.pop(seat, None)
+            self.lunatic_bluffs.pop(seat, None)
         else:
             self.seat_fakes[seat] = role_id
+            # 疯子额外信息按增量更新:不给该字段就保留已存值(夜晚逐项设置友好),给了就校验替换
+            if real == "lunatic":
+                present = ({p.role_id for p in self.players.values() if p.role_id}
+                           | set(self.seat_roles.values()))
+                if minions is not None:
+                    if (not minions or any(not isinstance(m, int) or not 1 <= m <= self.player_count
+                                           or m == seat for m in minions)
+                            or len(set(minions)) != len(minions)):
+                        raise ValueError("疯子须指定至少一个假爪牙座位(不含自己)")
+                    self.lunatic_minions[seat] = list(minions)
+                if bluffs is not None:
+                    if (len(bluffs) != 3 or len(set(bluffs)) != 3
+                            or any(b not in self.roles or self.roles[b]["team"] not in self._bluff_teams()
+                                   or b in present for b in bluffs)):
+                        raise ValueError("疯子的伪装须为 3 个不重复的不在场好角色")
+                    self.lunatic_bluffs[seat] = list(bluffs)
         if self.phase == "night":
             self._begin_night()  # 夜晚中改认知覆盖 → 重算步骤表(假角色步骤随之增减)
         self.save()
@@ -568,6 +596,23 @@ class GameManager:
                 out.append({"seat": i, "name": p.name if p is not None else None,
                             "role": self.roles[rid]})
         return out
+
+    def _role_seats(self, rid: str) -> list[dict]:
+        """某角色的座位名单(在座或空座预发都列出):疯子等特定角色指向用。"""
+        out = []
+        for i in range(1, self.player_count + 1):
+            p = self.seats.get(i)
+            r = p.role_id if p is not None else None
+            if r is None:
+                r = self.seat_roles.get(i)
+            if r == rid:
+                out.append({"seat": i, "name": p.name if p is not None else None})
+        return out
+
+    def _seat_real_role(self, seat: int) -> str | None:
+        """座位的真实角色 id(在座玩家持有,或空座预发)。"""
+        p = self.seats.get(seat)
+        return p.role_id if p is not None else self.seat_roles.get(seat)
 
     def _seat_slots(self, st_view: bool, my_id: str | None = None) -> list[dict]:
         seat_of = self.seats
@@ -629,18 +674,32 @@ class GameManager:
         if not started:
             return view
         team = self.roles[me.role_id]["team"] if me.role_id else None
-        # 爪牙会面:所有爪牙同时醒来——知道恶魔是谁,也彼此看见对方(官方规则)
+        lunatic_seats = self._role_seats("lunatic")  # 真疯子:恶魔与爪牙都须知道他是谁
+        # 爪牙会面:所有爪牙同时醒来——知道恶魔是谁、谁是疯子,也彼此看见对方(官方规则)
         if team == MINION and self._step_reached("minioninfo"):
             view["demon_seats"] = [{"seat": d["seat"], "name": d["name"]}
                                    for d in self._team_seats(DEMON)]
             view["minion_seats"] = [{"seat": m["seat"], "name": m["name"]}
                                     for m in self._team_seats(MINION)]
+            if lunatic_seats:
+                view["lunatic_seats"] = [{"seat": l["seat"], "name": l["name"]} for l in lunatic_seats]
         # 恶魔会面:爪牙是谁 + 三个伪装,推进到该步骤才揭晓(按真实身份判断,酒鬼假镇民不触发)
         if team == DEMON and self._step_reached("demoninfo"):
             view["minion_seats"] = [{"seat": m["seat"], "name": m["name"]}
                                     for m in self._team_seats(MINION)]
+            if lunatic_seats:
+                view["lunatic_seats"] = [{"seat": l["seat"], "name": l["name"]} for l in lunatic_seats]
             if self.bluffs:
                 view["bluffs"] = [self.roles[rid] for rid in self.bluffs]
+        # 疯子自己:以为自己是恶魔——爪牙与伪装都是说书人选的(不一定是真的),疯子步骤/爪牙会面推进后揭晓
+        if me.role_id == "lunatic" and (self._step_reached("lunatic") or self._step_reached("minioninfo")):
+            fakes = self.lunatic_minions.get(me.seat, [])
+            bluffs = self.lunatic_bluffs.get(me.seat, [])
+            if fakes:
+                view["minion_seats"] = [{"seat": s, "name": self.seats[s].name if s in self.seats else None}
+                                        for s in fakes]
+            if bluffs:
+                view["bluffs"] = [self.roles[rid] for rid in bluffs]
         return view
 
     def storyteller_view(self) -> dict:
@@ -675,6 +734,14 @@ class GameManager:
             # 入夜会面:告诉爪牙谁是恶魔、告诉恶魔谁是爪牙(空座预发也列出)
             "demon_seats": self._team_seats(DEMON),
             "minion_seats": self._team_seats(MINION),
+            "lunatic_seats": self._role_seats("lunatic"),  # 真疯子座位:恶魔/爪牙会面时须一并指认
+            "lunatic_minions": {str(s): ms for s, ms in self.lunatic_minions.items()},  # 疯子以为的爪牙
+            "lunatic_bluffs": {str(s): [self.roles[rid] for rid in bs]
+                               for s, bs in self.lunatic_bluffs.items()},  # 疯子的伪装(说书人选,不一定是真的)
+            # 认知覆盖待定:发牌后说书人尚未选定假身份的座位(玩家卡先别给看)
+            "fakes_pending": [{"seat": i, "role": self.roles[rr]}
+                              for i in range(1, self.player_count + 1)
+                              if (rr := self._seat_real_role(i)) in FAKE_POOLS and i not in self.seat_fakes],
             "saved_at": self.saved_at,
             "room_code": self.room_code,  # 房间号:说书人可改,玩家加入须匹配
         }
