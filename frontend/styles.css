@@ -1,11 +1,27 @@
+/* 血月红黑主题:配色全部收进 :root 变量,换主题只改这一块 */
+
 :root {
-  --bg: #14101f;
-  --panel: #1f1830;
-  --line: #37294f;
-  --text: #e8e2f4;
-  --dim: #9a8fb8;
-  --gold: #d8b45a;
-  --red: #c0392b;
+  --bg: #0d0d0f;          /* 近黑 */
+  --panel: #1a1416;       /* 暗红棕面板 */
+  --line: #3a2226;        /* 干涸血痕描边 */
+  --text: #f2e9e6;        /* 暖白正文 */
+  --dim: #a8928c;         /* 灰褐次要文字 */
+  --accent: #c0392b;      /* 血红:主操作按钮/焦点/当前步骤 */
+  --gold: #d8b45a;        /* 鎏金:信息高亮文本(伪装/票数/调整提示) */
+  --on-accent: #fff5f2;   /* 血红底上的文字 */
+  --on-gold: #241a05;     /* 鎏金底上的文字 */
+  --text-bright: #d8c9c4; /* 次级正文(角色能力/唤醒名单) */
+  --panel2: #261517;      /* 内嵌卡片底(步骤卡/夜徽章) */
+  --danger: #ff8a80;      /* 危险/错误/死亡文本 */
+  --ok: #4cd964;          /* 在线点/投票达标/举手 */
+  --night-text: #d8b4b4;  /* 夜徽章 */
+  --night-line: #6a3a3a;
+  --day-text: #f0d48a;    /* 日徽章 */
+  --day-line: #8a7440;
+  --day-bg: #3d3320;
+  --m-poisoned: #b06ce0;  /* 状态标记(游戏语义,不随主题变) */
+  --m-drunk: #4f9be8;
+  --m-mad: #e8a33d;
 }
 
 * {
@@ -17,6 +33,7 @@
 body {
   background: var(--bg);
   color: var(--text);
+  color-scheme: dark;
   font-family: 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   min-height: 100vh;
 }
@@ -49,7 +66,7 @@ body {
 }
 
 .error {
-  color: #ff6b5e;
+  color: var(--danger);
   font-size: 14px;
 }
 
@@ -73,7 +90,7 @@ h3 {
 }
 
 .input:focus {
-  border-color: var(--gold);
+  border-color: var(--accent);
 }
 
 .btn {
@@ -92,15 +109,15 @@ h3 {
 }
 
 .btn.primary {
-  background: var(--gold);
-  border-color: var(--gold);
-  color: #241a05;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
   font-weight: 600;
 }
 
 .btn.danger {
-  border-color: var(--red);
-  color: #ff8a80;
+  border-color: var(--accent);
+  color: var(--danger);
 }
 
 .btn.small {
@@ -138,15 +155,15 @@ h3 {
 }
 
 .dot.ok {
-  background: #4cd964;
+  background: var(--ok);
 }
 
 .dot.bad {
-  background: var(--red);
+  background: var(--accent);
 }
 
 .card {
-  border: 2px solid var(--team, var(--gold));
+  border: 2px solid var(--team, var(--accent));
   border-radius: 16px;
   padding: 22px 18px;
   width: min(420px, 92vw);
@@ -172,41 +189,46 @@ h3 {
 }
 
 .ability {
-  color: #cfc6e6;
+  color: var(--text-bright);
   line-height: 1.6;
   font-size: 15px;
 }
 
 .death-note {
   margin-top: 12px;
-  color: #ff8a80;
+  color: var(--danger);
   font-size: 14px;
 }
 
+/* 阵营色(游戏语义)。--team-text 是阵营底色上的文字色,浅底用深字、深底用白字。
+   注意:不要再给 .team-badge/.chip 声明 --team 默认值,否则同优先级后者胜出会盖掉阵营色 */
 .team-townsfolk {
-  --team: #5aa9e6;
+  --team: #55b5ff;
+  --team-text: #101828;
 }
 
 .team-outsider {
-  --team: #8a76b8;
+  --team: #4a7fb5;
+  --team-text: #ffffff;
 }
 
 .team-minion {
-  --team: #e06c5a;
+  --team: #e92a2a;
+  --team-text: #ffffff;
 }
 
 .team-demon {
-  --team: #ff3b30;
+  --team: #8a1f1f;
+  --team-text: #ffffff;
 }
 
 .team-badge {
-  --team: #555;
   padding: 3px 10px;
   border-radius: 999px;
   font-size: 13px;
-  color: #14101f;
+  color: var(--team-text, #14101f);
   font-weight: 600;
-  background: var(--team);
+  background: var(--team, #555);
   display: inline-block;
 }
 
@@ -371,13 +393,13 @@ h3 {
 }
 
 .seat-node.free:hover {
-  border-color: var(--gold);
+  border-color: var(--accent);
   opacity: 1;
   cursor: pointer;
 }
 
 .seat-node.occ {
-  border-color: var(--team, var(--gold));
+  border-color: var(--team, var(--accent));
 }
 
 .seat-node.dead {
@@ -394,7 +416,7 @@ h3 {
 }
 
 .seat-node.mine {
-  box-shadow: 0 0 0 3px var(--gold);
+  box-shadow: 0 0 0 3px var(--accent);
 }
 
 /* ---- 说书人配置与详情 ---- */
@@ -464,7 +486,7 @@ h3 {
 }
 
 .manual-summary.warn {
-  color: #ff6b5e;
+  color: var(--danger);
 }
 
 .manual-summary .delta {
@@ -492,6 +514,7 @@ h3 {
 .manual-gf .chip.on {
   background: var(--gold);
   border-color: var(--gold);
+  color: var(--on-gold);
 }
 
 .st-fake {
@@ -519,10 +542,9 @@ h3 {
 }
 
 .chip {
-  --team: var(--line);
   padding: 4px 10px;
   border-radius: 14px;
-  border: 1px solid var(--team);
+  border: 1px solid var(--team, var(--line));
   background: var(--panel);
   color: var(--text);
   cursor: pointer;
@@ -530,13 +552,13 @@ h3 {
 }
 
 .chip:hover {
-  border-color: var(--gold);
+  border-color: var(--accent);
 }
 
 .chip.on {
-  background: var(--team, var(--gold));
-  border-color: var(--team, var(--gold));
-  color: #241a05;
+  background: var(--team, var(--accent));
+  border-color: var(--team, var(--accent));
+  color: var(--team-text, var(--on-accent));
   font-weight: 600;
 }
 
@@ -558,7 +580,7 @@ h3 {
   transform: translateX(-50%);
   font-size: 10px;
   background: var(--team, var(--gold));
-  color: #241a05;
+  color: var(--team-text, var(--on-gold));
   padding: 1px 6px;
   border-radius: 8px;
   white-space: nowrap;
@@ -576,19 +598,19 @@ h3 {
 }
 
 .phase-badge.night {
-  color: #b7a8e8;
-  border-color: #5a4a8a;
-  background: #241d3d;
+  color: var(--night-text);
+  border-color: var(--night-line);
+  background: var(--panel2);
 }
 
 .phase-badge.day {
-  color: #f0d48a;
-  border-color: #8a7440;
-  background: #3d3320;
+  color: var(--day-text);
+  border-color: var(--day-line);
+  background: var(--day-bg);
 }
 
 .seat-node.voted {
-  box-shadow: 0 0 0 3px #4cd964;
+  box-shadow: 0 0 0 3px var(--ok);
 }
 
 .marker-badge {
@@ -605,15 +627,15 @@ h3 {
 }
 
 .m-poisoned {
-  background: #b06ce0;
+  background: var(--m-poisoned);
 }
 
 .m-drunk {
-  background: #4f9be8;
+  background: var(--m-drunk);
 }
 
 .m-mad {
-  background: #e8a33d;
+  background: var(--m-mad);
 }
 
 .st-markers {
@@ -624,19 +646,23 @@ h3 {
   flex-wrap: wrap;
 }
 
+.marker-chip.on {
+  color: #14101f;
+}
+
 .marker-chip.on.m-poisoned {
-  background: #b06ce0;
-  border-color: #b06ce0;
+  background: var(--m-poisoned);
+  border-color: var(--m-poisoned);
 }
 
 .marker-chip.on.m-drunk {
-  background: #4f9be8;
-  border-color: #4f9be8;
+  background: var(--m-drunk);
+  border-color: var(--m-drunk);
 }
 
 .marker-chip.on.m-mad {
-  background: #e8a33d;
-  border-color: #e8a33d;
+  background: var(--m-mad);
+  border-color: var(--m-mad);
 }
 
 /* ---- 夜晚流程助手 ---- */
@@ -645,7 +671,7 @@ h3 {
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 10px;
-  background: #241d3d;
+  background: var(--panel2);
   text-align: left;
 }
 
@@ -658,7 +684,7 @@ h3 {
 
 .step-seats {
   font-size: 13px;
-  color: #cfc6e6;
+  color: var(--text-bright);
   margin-bottom: 4px;
 }
 
@@ -689,9 +715,9 @@ h3 {
 }
 
 .step-chip.cur {
-  background: var(--gold);
-  border-color: var(--gold);
-  color: #241a05;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
   font-weight: 700;
 }
 
@@ -713,12 +739,12 @@ h3 {
 .vote-line {
   font-size: 18px;
   font-weight: 700;
-  color: #ff8a80;
+  color: var(--danger);
   font-variant-numeric: tabular-nums;
 }
 
 .vote-line.ok {
-  color: #4cd964;
+  color: var(--ok);
 }
 
 .nom-start {
@@ -748,7 +774,7 @@ h3 {
 }
 
 .nom-row.exec {
-  color: #ff8a80;
+  color: var(--danger);
 }
 
 .day-panel h4,
