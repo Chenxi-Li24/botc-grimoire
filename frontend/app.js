@@ -90,22 +90,32 @@ function seatCircle(seats, opts = {}) {
 // ================= 加入页 =================
 
 function renderJoin() {
+  // 二维码/分享链接形如 #/?room=1234 → 扫码后自动预填房间号
+  const hashRoom = new URLSearchParams(location.hash.split('?')[1] || '').get('room') || ''
   app.replaceChildren(h(`<div class="page center">
     <h1>🩸 血染钟楼</h1>
-    <p class="sub">输入名字加入本局,然后选座入座</p>
+    <p class="sub">输入名字和房间号加入本局,然后选座入座</p>
     <input class="input" id="name" placeholder="你的名字" maxlength="20" autofocus>
+    <input class="input" id="room" placeholder="房间号(4位数字)" maxlength="4" inputmode="numeric" value="${esc(hashRoom)}">
     <button class="btn primary" id="join-btn">加入</button>
     <p class="error" id="err" style="display:none"></p>
   </div>`))
   const input = document.getElementById('name')
+  const roomInput = document.getElementById('room')
   const btn = document.getElementById('join-btn')
   const err = document.getElementById('err')
   async function join() {
     const name = input.value.trim()
+    const roomCode = roomInput.value.trim()
     if (!name) return
+    if (!/^\d{4}$/.test(roomCode)) {
+      err.textContent = '房间号需为 4 位数字'
+      err.style.display = ''
+      return
+    }
     btn.disabled = true
     try {
-      const res = await api('/api/join', { method: 'POST', body: JSON.stringify({ name }) })
+      const res = await api('/api/join', { method: 'POST', body: JSON.stringify({ name, room_code: roomCode }) })
       localStorage.setItem(PLAYER_ID_KEY, res.player_id)
       renderPlayer(res.player_id)
     } catch (e) {
@@ -115,9 +125,11 @@ function renderJoin() {
     }
   }
   btn.onclick = join
-  input.onkeydown = (e) => {
+  const onEnter = (e) => {
     if (e.key === 'Enter') join()
   }
+  input.onkeydown = onEnter
+  roomInput.onkeydown = onEnter
 }
 
 // ================= 玩家视图 =================
@@ -127,7 +139,8 @@ function renderPlayer(playerId) {
   function paint(view) {
     const { me, status, seats, phase, night_no: nightNo, day_no: dayNo, current, bluffs,
       demon_seats: demonSeats, minion_seats: minionSeats,
-      script: scriptName, player_count: count, composition, sentinel: sentinelOn } = view
+      script: scriptName, player_count: count, composition, sentinel: sentinelOn,
+      room_code: roomCode } = view
     // 官方配比(公开信息):只展示基础配比,实际调整(男爵/教父等)不给玩家
     const compLine = composition && composition.length === 4
       ? `<p class="hint">📋 ${esc(scriptName)} · ${count} 人 · 官方配比:${['townsfolk', 'outsider', 'minion', 'demon']
@@ -141,7 +154,7 @@ function renderPlayer(playerId) {
     // ---- 未入座:选座 ----
     if (me.seat == null) {
       app.replaceChildren(h(`<div class="page rolecard">
-        <div class="topbar"><span>${esc(me.name)}</span><span class="dot ok" title="已连接"></span></div>
+        <div class="topbar"><span>${esc(me.name)} · 🚪 ${esc(roomCode)}</span><span class="dot ok" title="已连接"></span></div>
         <div class="center grow">
           <p class="sub">${status === 'playing' ? '游戏已开始(迟到):点空座入座,继承该座预发身份' : '选择你的座位入座'}</p>
           ${compLine}
@@ -195,7 +208,7 @@ function renderPlayer(playerId) {
       ? `<p class="meet-line">🩸 爪牙:${minionSeats.map((m) => `座${m.seat}${m.name ? ` ${esc(m.name)}` : ''}`).join(' · ')}</p>`
       : ''
     app.replaceChildren(h(`<div class="page rolecard">
-      <div class="topbar"><span>座位 ${me.seat} · ${esc(me.name)}${phaseTxt}</span><span class="dot ok" title="已连接"></span></div>
+      <div class="topbar"><span>座位 ${me.seat} · ${esc(me.name)}${phaseTxt} · 🚪 ${esc(roomCode)}</span><span class="dot ok" title="已连接"></span></div>
       <div id="circle"></div>
       ${voteLine}
       ${compLine}
@@ -272,7 +285,8 @@ function renderStoryteller() {
     const { status, script, player_count: count, scripts, seats, roles, composition,
       adjust_roles, seat_roles, phase, night_no: nightNo, day_no: dayNo, night,
       nominations, current, alive_count: aliveCount, quorum, can_start: canStart,
-      bluffs, demon_seats: demonSeats, minion_seats: minionSeats, sentinel, saved_at: savedAt } = view
+      bluffs, demon_seats: demonSeats, minion_seats: minionSeats, sentinel, saved_at: savedAt,
+      room_code: roomCode } = view
     const minP = scripts.find((s) => s.id === script)?.min || 5 // 该板子的人数下限(瓦釜雷鸣 7 人起)
     const seatedCount = seats.filter((s) => s.player).length
     if (status === 'playing') { manual = false; draft = {} } // 发牌完成后退出草稿
@@ -316,6 +330,11 @@ function renderStoryteller() {
               <span class="count">${count}</span>
               <button class="btn small" id="inc" ${count >= 15 ? 'disabled' : ''}>＋</button>
             </label>
+            <label>房间号
+              <input class="input" id="room-code" maxlength="4" inputmode="numeric" style="width:4.5em"
+                value="${esc(roomCode)}">
+              <button class="btn small" id="room-random" title="随机换一个房间号">🎲</button>
+            </label>
             <span class="hint">修改板子/人数会清空座位,玩家需重新入座</span>
             <span class="hint">🧙 哨兵(神职角色,外来者数调整):
               ${[0, -1, 2, 1].map((v) => {
@@ -336,8 +355,8 @@ function renderStoryteller() {
         <div class="st-right">
           <div id="detail"></div>
           <h3>玩家加入</h3>
-          <img src="/api/qr" alt="加入二维码" class="qr">
-          <p class="hint">玩家手机连同一 WiFi 后,用相机扫码即可加入并选座</p>
+          <img src="/api/qr?t=${encodeURIComponent(roomCode)}" alt="加入二维码" class="qr">
+          <p class="hint">房间号 <b>${esc(roomCode)}</b> · 扫码自动预填,改号后请告知玩家新码</p>
         </div>
       </div>
     </div>`))
@@ -737,6 +756,22 @@ function renderStoryteller() {
     document.querySelectorAll('.sentinel-chip').forEach((b) => {
       b.onclick = () => act(() => stApi('/api/sentinel', { method: 'POST', body: JSON.stringify({ value: Number(b.dataset.sentinel) }) }))
     })
+    const roomInput = document.getElementById('room-code')
+    const applyRoom = () => {
+      const v = roomInput.value.trim()
+      if (!/^\d{4}$/.test(v)) {
+        err.textContent = '房间号需为 4 位数字'
+        err.style.display = ''
+        roomInput.value = roomCode
+        return
+      }
+      act(() => stApi('/api/room', { method: 'POST', body: JSON.stringify({ code: v }) }))
+    }
+    roomInput.onchange = applyRoom
+    document.getElementById('room-random').onclick = () => {
+      roomInput.value = String(Math.floor(Math.random() * 10000)).padStart(4, '0')
+      applyRoom()
+    }
 
     // ---- 分配 / 重置 / 读档 ----
     document.getElementById('assign-btn').onclick = () => act(() => stApi('/api/assign', { method: 'POST' }))

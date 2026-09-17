@@ -78,6 +78,7 @@ class GameManager:
         self.current: dict | None = None  # 进行中的提名 {nominator,nominee,votes}
         self.bluffs: list[str] = []  # 恶魔的三个伪装:不在场的好角色 id(开局时抽取)
         self.sentinel: int = 0  # 哨兵(神职角色):0=关 / +1 / -1 / 2=在场但不调整
+        self.room_code: str = f"{random.randrange(10000):04d}"  # 房间号:4 位数字,说书人可改,玩家凭名字+房号加入
         self.saved_at: float | None = None
 
     @property
@@ -103,7 +104,7 @@ class GameManager:
             "phase": self.phase, "night_no": self.night_no, "day_no": self.day_no,
             "night_steps": self.night_steps, "night_idx": self.night_idx,
             "nominations": self.nominations, "current": self.current,
-            "bluffs": self.bluffs, "sentinel": self.sentinel,
+            "bluffs": self.bluffs, "sentinel": self.sentinel, "room_code": self.room_code,
         }
         SAVE_PATH.parent.mkdir(exist_ok=True)
         tmp = SAVE_PATH.with_suffix(".tmp")
@@ -123,6 +124,7 @@ class GameManager:
                         "current", "bluffs"):
                 setattr(self, key, d[key])
             self.sentinel = d.get("sentinel", 0)  # 旧存档没有哨兵字段 → 默认关
+            self.room_code = d.get("room_code") or f"{random.randrange(10000):04d}"  # 旧存档没有房间号 → 现生成
             self.saved_at = time.time()
         except (KeyError, TypeError, ValueError):
             pass  # 存档损坏 → 用干净状态开局
@@ -169,6 +171,13 @@ class GameManager:
         if value == -1 and COMPOSITION[self.player_count][1] < 1:
             raise ValueError(f"{self.player_count} 人局官方配比没有外来者,哨兵不能 −1")
         self.sentinel = value
+        self.save()
+
+    def set_room_code(self, code: str) -> None:
+        """说书人设定房间号:4 位数字。随时可改(不限制 lobby),改号后新加入者需用新码。"""
+        if len(code) != 4 or not code.isdigit():
+            raise ValueError("房间号需为 4 位数字")
+        self.room_code = code
         self.save()
 
     # ---- 玩家进出 ----
@@ -563,6 +572,7 @@ class GameManager:
             "current": self.current,
             # 开局前不揭示身份:说书人开始游戏玩家才拿到角色
             "me": me.private(self.roles, fake_id) if started else me.public(),
+            "room_code": self.room_code,  # 玩家卡显示当前房间号
             "seats": self._seat_slots(st_view=False, my_id=player_id),
         }
         if not started:
@@ -612,4 +622,5 @@ class GameManager:
             "demon_seats": self._team_seats(DEMON),
             "minion_seats": self._team_seats(MINION),
             "saved_at": self.saved_at,
+            "room_code": self.room_code,  # 房间号:说书人可改,玩家加入须匹配
         }

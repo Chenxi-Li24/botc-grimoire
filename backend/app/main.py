@@ -69,6 +69,7 @@ hub = Hub()
 
 class JoinBody(BaseModel):
     name: str
+    room_code: str  # 4 位数字房间号,须与说书人设定一致
 
 
 class SitBody(BaseModel):
@@ -121,6 +122,10 @@ class SentinelBody(BaseModel):
     value: int  # -1 / 0 / +1 / 2:哨兵对外来者数量的调整(0 = 关,2 = 在场但不调整)
 
 
+class RoomBody(BaseModel):
+    code: str  # 4 位数字房间号
+
+
 def require_storyteller(x_password: str = Header(default="", alias="X-Storyteller-Password")) -> None:
     if x_password != STORYTELLER_PASSWORD:
         raise HTTPException(status_code=401, detail="说书人密码错误")
@@ -132,6 +137,8 @@ def require_storyteller(x_password: str = Header(default="", alias="X-Storytelle
 async def join(body: JoinBody) -> dict[str, Any]:
     if not body.name.strip():
         raise HTTPException(status_code=400, detail="请输入名字")
+    if body.room_code != game.room_code:
+        raise HTTPException(status_code=400, detail="房间号错误")
     player = game.add_player(body.name)
     await hub.push_all()
     return {"player_id": player.id}
@@ -207,6 +214,17 @@ async def set_sentinel(body: SentinelBody) -> dict[str, Any]:
     """哨兵(神职角色):说书人调整外来者 +1/−1。方向保密,玩家只知哨兵在场。"""
     try:
         game.set_sentinel(body.value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/room", dependencies=[Depends(require_storyteller)])
+async def set_room(body: RoomBody) -> dict[str, Any]:
+    """说书人设定 4 位数字房间号,玩家加入时须匹配。"""
+    try:
+        game.set_room_code(body.code)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await hub.push_all()
@@ -374,6 +392,7 @@ async def websocket_endpoint(ws: WebSocket, who: str = "", pw: str = "") -> None
 def qr() -> Response:
     # 公网穿透时设 PUBLIC_URL(如 https://xxx.sakurafrp.com),否则回退局域网 IP
     url = os.environ.get("PUBLIC_URL") or f"http://{get_lan_ip()}:8000/"
+    url += f"#/?room={game.room_code}"  # 扫码自动预填房间号
     buf = io.BytesIO()
     qrcode.make(url).save(buf, format="PNG")
     return Response(content=buf.getvalue(), media_type="image/png")
