@@ -747,7 +747,7 @@ h3 {
   border-color: var(--m-team-change);
 }
 
-/* 阵营转变配色:按新阵营上色(善良蓝/邪恶红)——说书人选择框、座位角标、玩家提示共用 */
+/* 阵营转变选择框:按新阵营上色(善良蓝/邪恶红) */
 .tc-good {
   background: #55b5ff;
   color: #101828;
@@ -758,46 +758,12 @@ h3 {
   color: #ffffff;
 }
 
-.marker-badge.tc-evil {
-  color: #ffffff;
-}
-
-.marker-chip.on.m-team-change.tc-good {
-  background: #55b5ff;
-  border-color: #55b5ff;
-}
-
-.marker-chip.on.m-team-change.tc-evil {
-  background: #e92a2a;
-  border-color: #e92a2a;
-}
-
-/* 角色转变框:按变成的新角色的阵营配色(座位角标 + 详情按钮),不再固定粉色 */
-.marker-badge.m-role-change.team-townsfolk,
-.marker-chip.on.m-role-change.team-townsfolk {
-  background: #55b5ff;
-  border-color: #55b5ff;
-}
-
-.marker-badge.m-role-change.team-outsider,
-.marker-chip.on.m-role-change.team-outsider {
-  background: #4a7fb5;
-  border-color: #4a7fb5;
-  color: #ffffff;
-}
-
-.marker-badge.m-role-change.team-minion,
-.marker-chip.on.m-role-change.team-minion {
-  background: #e92a2a;
-  border-color: #e92a2a;
-  color: #ffffff;
-}
-
-.marker-badge.m-role-change.team-demon,
-.marker-chip.on.m-role-change.team-demon {
-  background: #8a1f1f;
-  border-color: #8a1f1f;
-  color: #ffffff;
+/* 转变提示(角色/阵营转变的角标与详情按钮):无背景色,只留文字与描边 */
+.marker-badge.plain,
+.marker-chip.on.plain {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--text-bright);
 }
 
 /* ---- 夜晚流程助手 ---- */

@@ -79,7 +79,7 @@ function seatCircle(seats, opts = {}) {
       <span class="seat-num">${s.seat}</span>
       <span class="seat-name">${p ? esc(p.name) : (opts.freeLabel || '入座')}</span>
       ${badge ? `<span class="draft-badge team-${badge.team}">${esc(badge.name)}</span>` : ''}
-      ${markers.length || s.role_change || s.team_change ? `<span class="marker-badges">${markers.map((m) => `<span class="marker-badge m-${m}">${MARKER_CHAR[m] || '?'}</span>`).join('')}${s.role_change ? `<span class="marker-badge m-role-change team-${s.role_change.team}">🔄${esc(s.role_change.name)}</span>` : ''}${s.team_change ? `<span class="marker-badge m-team-change tc-${s.team_change}">⚖${s.team_change === 'good' ? '善良' : '邪恶'}</span>` : ''}</span>` : ''}
+      ${markers.length || s.role_change || s.team_change ? `<span class="marker-badges">${markers.map((m) => `<span class="marker-badge m-${m}">${MARKER_CHAR[m] || '?'}</span>`).join('')}${s.role_change ? `<span class="marker-badge plain">🔄${esc(s.role_change.name)}</span>` : ''}${s.team_change ? `<span class="marker-badge plain">⚖${s.team_change === 'good' ? '善良' : '邪恶'}</span>` : ''}</span>` : ''}
     </div>`)
     if (opts.clickSeat) node.addEventListener('click', () => opts.clickSeat(s))
     wrap.appendChild(node)
@@ -214,7 +214,13 @@ function renderPlayer(playerId) {
     const lunaticLine = lunaticSeats && lunaticSeats.length
       ? `<p class="meet-line">🌙 疯子:${lunaticSeats.map((l) => `座${l.seat}${l.name ? ` ${esc(l.name)}` : ''}`).join(' · ')}</p>`
       : ''
-    // 角色/阵营转变已直接反映在角色卡与阵营徽章上(卡框换色),不再单独出文字提醒框
+    // 角色/阵营转变:文字提示保留(无背景色),与角色卡/卡框换色同步展示
+    const roleChangeLine = roleChanged
+      ? `<p class="meet-line">🔄 角色转变:你的角色已变为「${esc(roleChanged.name)}」</p>`
+      : ''
+    const teamChangeLine = teamChanged
+      ? `<p class="meet-line">⚖ 阵营转变:你的阵营已变为 ${teamChanged === 'good' ? '善良' : '邪恶'}</p>`
+      : ''
     app.replaceChildren(h(`<div class="page rolecard">
       <div class="topbar"><span>座位 ${me.seat} · ${esc(me.name)}${phaseTxt} · 🚪 ${esc(roomCode)}</span><span class="dot ok" title="已连接"></span></div>
       <div id="circle"></div>
@@ -226,6 +232,8 @@ function renderPlayer(playerId) {
       ${demonLine}
       ${minionLine}
       ${lunaticLine}
+      ${roleChangeLine}
+      ${teamChangeLine}
     </div>`))
     document.getElementById('circle').appendChild(seatCircle(seats, {
       voted: (s) => !!current && current.votes.includes(s.seat), // 举手票型公开,玩家也可见
@@ -584,10 +592,10 @@ function renderStoryteller() {
       const tc = slot.team_change
       return `<div class="st-markers"><span class="hint">标记:</span>
         ${Object.entries(MARKER_LABEL).map(([k, l]) => {
-          if (k === 'role-change') // 角色转变带数据:选定后按钮显示变成的角色(按新角色阵营配色),再点=清除
-            return `<button class="chip ${rc ? 'on' : ''} marker-chip m-${k} ${rc ? 'team-' + rc.team : ''}" data-mk="${k}">${rc ? `角色转变→${esc(rc.name)}` : l}</button>`
-          if (k === 'team-change') // 阵营转变带数据:选定后按钮显示新阵营并按阵营配色,再点=清除
-            return `<button class="chip ${tc ? 'on' : ''} marker-chip m-${k} ${tc ? 'tc-' + tc : ''}" data-mk="${k}">${tc ? `阵营转变→${tc === 'good' ? '善良' : '邪恶'}` : l}</button>`
+          if (k === 'role-change') // 角色转变带数据:选定后按钮显示变成的角色(无背景色),再点=清除
+            return `<button class="chip ${rc ? 'on plain' : ''} marker-chip m-${k}" data-mk="${k}">${rc ? `角色转变→${esc(rc.name)}` : l}</button>`
+          if (k === 'team-change') // 阵营转变带数据:选定后按钮显示新阵营(无背景色),再点=清除
+            return `<button class="chip ${tc ? 'on plain' : ''} marker-chip m-${k}" data-mk="${k}">${tc ? `阵营转变→${tc === 'good' ? '善良' : '邪恶'}` : l}</button>`
           return `<button class="chip ${ms.includes(k) ? 'on' : ''} marker-chip m-${k}" data-mk="${k}">${l}</button>`
         }).join('')}
       </div>
