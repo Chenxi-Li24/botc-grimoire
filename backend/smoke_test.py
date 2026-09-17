@@ -8,6 +8,7 @@ import json
 import urllib.error
 import urllib.request
 from collections import Counter
+from pathlib import Path
 
 import websockets
 
@@ -159,6 +160,98 @@ async def main() -> None:
     assert state["status"] == "lobby" and all(s["player"] is None for s in state["seats"])
     print("RESET 回到 lobby、座位清空 OK")
 
+    # ---- v1 完整:夜晚流程 + 状态标记 + 提名处决 + 存档 ----
+    req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 6}, ST)
+    ids = [req("/api/join", "POST", {"name": f"夜{i}"})["player_id"] for i in range(1, 7)]
+    for seat, pid in enumerate(ids, 1):
+        req(f"/api/player/{pid}/sit", "POST", {"seat": seat})
+    state = req("/api/assign", "POST", headers=ST)
+    assert state["phase"] == "night" and state["night_no"] == 1
+    assert state["night"]["steps"][0]["key"] == "dusk"
+    assert state["night"]["steps"][-1]["key"] == "dawn"
+    print("NIGHT 开局进入第 1 夜,dusk 起 dawn 止 OK")
+
+    # 走到天亮
+    for _ in range(len(state["night"]["steps"])):
+        state = req("/api/night/next", "POST", headers=ST)
+    assert state["phase"] == "day" and state["day_no"] == 1
+    print("NIGHT 走完第 1 夜 → 第 1 天 OK")
+
+    # 标记:说书人可见,玩家不可见
+    req("/api/marker", "POST", {"seat": 1, "marker": "poisoned", "on": True}, ST)
+    req("/api/marker", "POST", {"seat": 1, "marker": "mad", "on": True}, ST)
+    state = req("/api/state", "GET", headers=ST)
+    assert state["seats"][0]["markers"] == ["mad", "poisoned"], state["seats"][0].get("markers")
+    pview = req(f"/api/me/{ids[0]}")
+    assert "markers" not in pview["seats"][0], "标记不应泄露给玩家"
+    req("/api/marker", "POST", {"seat": 1, "marker": "poisoned", "on": False}, ST)
+    state = req("/api/state", "GET", headers=ST)
+    assert state["seats"][0]["markers"] == ["mad"]
+    print("MARKER 标记说书人可见、玩家不可见,可增删 OK")
+
+    # 提名 → 投票 → 处决
+    req("/api/nomination", "POST", {"nominator": 2, "nominee": 3}, ST)
+    for s in (1, 2, 5, 6):
+        req("/api/nomination/vote", "POST", {"seat": s}, ST)
+    state = req("/api/state", "GET", headers=ST)
+    assert state["current"]["votes"] == [1, 2, 5, 6] and state["quorum"] == 4
+    # 投票中不能另起提名
+    try:
+        req("/api/nomination", "POST", {"nominator": 4, "nominee": 5}, ST)
+        raise AssertionError("投票中另起提名未被拒绝")
+    except urllib.error.HTTPError as e:
+        assert e.code == 400
+    req("/api/nomination/resolve", "POST", {"executed": True}, ST)
+    state = req("/api/state", "GET", headers=ST)
+    assert state["current"] is None
+    assert state["nominations"][-1]["executed"] and state["nominations"][-1]["votes"] == [1, 2, 5, 6]
+    assert state["seats"][2]["player"]["alive"] is False
+    print("NOM   提名→4 票→处决,座位 3 死亡 OK")
+
+    # 无效提名不处决
+    req("/api/nomination", "POST", {"nominator": 4, "nominee": 5}, ST)
+    req("/api/nomination/resolve", "POST", {"executed": False}, ST)
+    state = req("/api/state", "GET", headers=ST)
+    assert state["seats"][4]["player"]["alive"] is True
+    print("NOM   无效提名不处决 OK")
+
+    # 天黑 → 第 2 夜,首夜专用角色不再出现
+    state = req("/api/day/end", "POST", headers=ST)
+    assert state["phase"] == "night" and state["night_no"] == 2
+    keys = [s["key"] for s in state["night"]["steps"]]
+    assert "washerwoman" not in keys and "imp" in keys, keys
+    print("NIGHT 天黑 → 第 2 夜,首夜角色不再出现 OK")
+
+    # 存档:每次变更写盘;读档可撤销重置
+    save_file = Path(__file__).parent / "data" / "game.json"
+    assert save_file.exists(), "存档文件未生成"
+    assert json.loads(save_file.read_text(encoding="utf-8"))["night_no"] == 2
+    req("/api/reset", "POST", headers=ST)
+    state = req("/api/load", "POST", headers=ST)
+    assert state["status"] == "playing" and state["night_no"] == 2
+    assert state["seats"][2]["player"]["alive"] is False
+    print("SAVE  读档撤销重置,恢复第 2 夜与死者 OK")
+
+    # 酒鬼认知覆盖 → 夜晚步骤含假角色步骤(改认知覆盖会重算步骤表)
+    req("/api/reset", "POST", headers=ST)
+    req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 6}, ST)
+    ids2 = [req("/api/join", "POST", {"name": f"醉{i}"})["player_id"] for i in range(1, 7)]
+    for seat, pid in enumerate(ids2, 1):
+        req(f"/api/player/{pid}/sit", "POST", {"seat": seat})
+    pre = [{"seat": 1, "role": "imp"}, {"seat": 2, "role": "poisoner"},
+           {"seat": 3, "role": "empath"}, {"seat": 4, "role": "chef"},
+           {"seat": 5, "role": "investigator"}, {"seat": 6, "role": "drunk"}]
+    req("/api/assign/manual", "POST", {"assignments": pre}, ST)
+    req("/api/fake", "POST", {"seat": 6, "role": "washerwoman"}, ST)
+    pview = req(f"/api/me/{ids2[5]}")
+    assert pview["me"]["role"]["id"] == "washerwoman", "酒鬼应看到假角色"
+    state = req("/api/state", "GET", headers=ST)
+    fake_steps = [s for s in state["night"]["steps"] if s.get("fake_for") == 6]
+    assert fake_steps and fake_steps[0]["key"] == "washerwoman", "夜晚步骤应含假角色步"
+    print("FAKE  酒鬼看到洗衣妇,夜晚步骤含假角色步(座 6) OK")
+
+    req("/api/reset", "POST", headers=ST)
+    req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 6}, ST)
     print("ALL PASS")
 
 

@@ -6,6 +6,8 @@ const PLAYER_ID_KEY = 'botc_player_id'
 const TEAM_LABEL = { townsfolk: '镇民', outsider: '外来者', minion: '爪牙', demon: '恶魔' }
 const TEAM_INDEX = { townsfolk: 0, outsider: 1, minion: 2, demon: 3 } // 配比 [镇,外,爪,恶] 的下标
 const TEAM_ORDER = [['townsfolk', '镇民'], ['outsider', '外来者'], ['minion', '爪牙'], ['demon', '恶魔']]
+const MARKER_LABEL = { poisoned: '中毒', drunk: '醉酒', mad: '疯狂' }
+const MARKER_CHAR = { poisoned: '中', drunk: '醉', mad: '疯' }
 const app = document.getElementById('app')
 
 function h(html) {
@@ -70,11 +72,14 @@ function seatCircle(seats, opts = {}) {
     const p = s.player
     const teamCls = p && p.role ? `team-${p.role.team}` : ''
     const badge = opts.draftBadge ? opts.draftBadge(s) : null // { name, team }
-    const node = h(`<div class="seat-node ${p ? 'occ' : 'free'} ${p && !p.alive ? 'dead' : ''} ${s.is_me ? 'mine' : ''} ${teamCls}"
+    const voted = opts.voted ? opts.voted(s) : false // 投票中该座举手
+    const markers = opts.markers ? opts.markers(s) : [] // 状态标记(仅说书人)
+    const node = h(`<div class="seat-node ${p ? 'occ' : 'free'} ${p && !p.alive ? 'dead' : ''} ${s.is_me ? 'mine' : ''} ${voted ? 'voted' : ''} ${teamCls}"
         data-seat="${s.seat}" style="left:${(50 + 38 * Math.cos(a)).toFixed(2)}%;top:${(50 + 38 * Math.sin(a)).toFixed(2)}%">
       <span class="seat-num">${s.seat}</span>
       <span class="seat-name">${p ? esc(p.name) : (opts.freeLabel || '入座')}</span>
       ${badge ? `<span class="draft-badge team-${badge.team}">${esc(badge.name)}</span>` : ''}
+      ${markers.map((m) => `<span class="marker-badge m-${m}">${MARKER_CHAR[m]}</span>`).join('')}
     </div>`)
     if (opts.clickSeat) node.addEventListener('click', () => opts.clickSeat(s))
     wrap.appendChild(node)
@@ -120,7 +125,7 @@ function renderJoin() {
 function renderPlayer(playerId) {
   app.replaceChildren(h('<div class="page center">连接中…</div>'))
   function paint(view) {
-    const { me, status, seats } = view
+    const { me, status, seats, phase, night_no: nightNo, day_no: dayNo, current } = view
 
     // ---- 未入座:选座 ----
     if (me.seat == null) {
@@ -159,13 +164,22 @@ function renderPlayer(playerId) {
           <p class="ability">${esc(role.ability)}</p>
           ${me.alive ? '' : '<p class="death-note">☠ 你已死亡:夜晚请闭眼,白天可以继续发言</p>'}
         </div>`
+    // 白天/夜晚进度(公开)+ 投票实时票数(公开,举手票型)
+    const phaseTxt = status === 'playing'
+      ? (phase === 'night' ? ` · 🌙 第 ${nightNo} 夜` : phase === 'day' ? ` · ☀️ 第 ${dayNo} 天` : '')
+      : ''
+    const voteLine = current
+      ? `<p class="vote-public">🗳 座${current.nominator} 提名座${current.nominee} · 赞成 ${current.votes.length} 票</p>`
+      : ''
     app.replaceChildren(h(`<div class="page rolecard">
-      <div class="topbar"><span>座位 ${me.seat} · ${esc(me.name)}</span><span class="dot ok" title="已连接"></span></div>
+      <div class="topbar"><span>座位 ${me.seat} · ${esc(me.name)}${phaseTxt}</span><span class="dot ok" title="已连接"></span></div>
       <div id="circle"></div>
+      ${voteLine}
       ${card}
       ${role && status === 'lobby' ? '<p class="hint">身份已到手,等待其他玩家入座开局…</p>' : ''}
     </div>`))
     document.getElementById('circle').appendChild(seatCircle(seats, {
+      voted: (s) => !!current && current.votes.includes(s.seat), // 举手票型公开,玩家也可见
       clickSeat: (s) => {
         // 开局前可换座:点空座位移动过去
         if (!s.player && status === 'lobby') {
@@ -228,23 +242,32 @@ function renderStoryteller() {
   let godfatherAdj = 1 // 教父外来者调整:说书人可选 +1 或 −1,默认 +1
 
   function paint(view) {
-    const { status, script, player_count: count, scripts, seats, roles, composition, adjust_roles, seat_roles } = view
+    const { status, script, player_count: count, scripts, seats, roles, composition,
+      adjust_roles, seat_roles, phase, night_no: nightNo, day_no: dayNo, night,
+      nominations, current, alive_count: aliveCount, quorum, saved_at: savedAt } = view
     const minP = scripts.find((s) => s.id === script)?.min || 5 // 该板子的人数下限(瓦釜雷鸣 7 人起)
     const seatedCount = seats.filter((s) => s.player).length
     if (status === 'playing') { manual = false; draft = {} } // 发牌完成后退出草稿
     const allSeated = seatedCount === count
     const selSeat = seats.find((s) => s.seat === selected)
     const selP = selSeat && selSeat.player
+    const seatNames = {}
+    seats.forEach((s) => { if (s.player) seatNames[s.seat] = s.player.name })
+    const phaseTxt = status === 'playing'
+      ? (phase === 'night' ? `🌙 第 ${nightNo} 夜` : phase === 'day' ? `☀️ 第 ${dayNo} 天` : '')
+      : ''
 
     app.replaceChildren(h(`<div class="page st">
       <div class="st-head">
         <h1>🕯 魔典</h1>
-        <span class="sub">血染钟楼 · 说书人控制台</span>
+        <span class="sub">血染钟楼 · 说书人控制台${savedAt ? ' · 💾 自动存档' : ''}</span>
         <div class="st-actions">
+          ${status === 'playing' ? `<span class="phase-badge ${phase}">${phaseTxt}</span>` : ''}
           ${status === 'lobby'
             ? `<button class="btn ${manual ? 'primary' : ''}" id="manual-btn">${manual ? '✖ 退出手动' : '🃏 手动发身份'}</button>`
             : ''}
           <button class="btn primary" id="assign-btn" ${status === 'playing' || !allSeated || manual ? 'disabled' : ''}>🎲 随机分配角色</button>
+          <button class="btn small ghost" id="load-btn" title="从磁盘恢复上次自动存档">💾 读档</button>
           <button class="btn danger" id="reset-btn">重置本局</button>
         </div>
       </div>
@@ -386,6 +409,152 @@ function renderStoryteller() {
       document.getElementById('manual-cancel').onclick = () => { manual = false; draft = {}; paint(view) }
     }
 
+    // ---- 选中玩家详情条(夜晚/白天面板顶部复用) ----
+
+    function markerRow(slot) {
+      const ms = slot.markers || []
+      return `<div class="st-markers"><span class="hint">标记:</span>
+        ${Object.entries(MARKER_LABEL).map(([k, l]) =>
+          `<button class="chip ${ms.includes(k) ? 'on' : ''} marker-chip m-${k}" data-mk="${k}">${l}</button>`).join('')}
+      </div>`
+    }
+
+    function selPDetailHtml(slot, p) {
+      return `<div class="st-detail sel-strip ${p.alive ? '' : 'dead'}">
+        <h3>座位 ${p.seat} · ${esc(p.name)}</h3>
+        ${p.role
+          ? `<span class="team-badge team-${p.role.team}">${TEAM_LABEL[p.role.team]} · ${esc(p.role.name)}</span>`
+          : '<p class="hint">未分配角色</p>'}
+        ${fakeRow(slot)}
+        ${markerRow(slot)}
+        <div class="st-detail-actions">
+          <button class="btn small" id="act-alive">${p.alive ? '☠ 标记死亡' : '复活'}</button>
+          <button class="btn small ghost" id="act-remove">移除</button>
+        </div>
+      </div>`
+    }
+
+    function wireSelPDetail() {
+      const aliveBtn = document.getElementById('act-alive')
+      if (aliveBtn && selP) aliveBtn.onclick = () => act(() => stApi(`/api/player/${selP.id}/alive`, { method: 'POST' }))
+      const removeBtn = document.getElementById('act-remove')
+      if (removeBtn && selP) removeBtn.onclick = () => {
+        if (confirm(`移除 ${selP.name}?`)) act(() => stApi(`/api/player/${selP.id}/remove`, { method: 'POST' }))
+      }
+      detail.querySelectorAll('.marker-chip').forEach((c) => {
+        c.onclick = () => act(() => stApi('/api/marker', {
+          method: 'POST',
+          body: JSON.stringify({ seat: selSeat.seat, marker: c.dataset.mk, on: !(selSeat.markers || []).includes(c.dataset.mk) }),
+        }))
+      })
+    }
+
+    // ---- 夜晚流程助手 ----
+
+    function renderNightPanel(detail) {
+      const strip = selP ? selPDetailHtml(selSeat, selP) : ''
+      const steps = night.steps
+      const cur = steps[night.idx]
+      let wake = []
+      if (cur) {
+        if (cur.key === 'minioninfo') wake = seats.filter((s) => s.player && s.player.role && s.player.role.team === 'minion')
+        else if (cur.key === 'demoninfo') wake = seats.filter((s) => s.player && s.player.role && s.player.role.team === 'demon')
+        else if (cur.fake_for != null) wake = seats.filter((s) => s.seat === cur.fake_for)
+        else if (cur.key !== 'dusk' && cur.key !== 'dawn') wake = seats.filter((s) => s.player && s.player.role && s.player.role.id === cur.key)
+      }
+      const wakeTxt = wake.length
+        ? '唤醒:' + wake.map((s) => `座${s.seat} ${esc(s.player.name)}${s.player.alive ? '' : ' ☠'}`).join('、')
+        : (cur && cur.key !== 'dusk' && cur.key !== 'dawn' ? '该角色不在场,此步可跳过' : '')
+      const fakeNote = cur && cur.fake_for != null ? ` · 🍺 酒鬼扮演(座${cur.fake_for})` : ''
+      const box = h(`<div class="st-detail">
+        ${strip}
+        <div class="night-panel">
+          <h3>🌙 第 ${nightNo} 夜 · 步骤 ${night.idx + 1}/${steps.length}</h3>
+          ${cur ? `<div class="step-card">
+            <div class="step-name">${esc(cur.name)}${fakeNote}</div>
+            ${wakeTxt ? `<div class="step-seats">${wakeTxt}</div>` : ''}
+            <p class="step-hint">${esc(cur.hint)}</p>
+          </div>` : '<p class="hint">本夜没有步骤</p>'}
+          <div class="step-list">
+            ${steps.map((st, i) => `<button class="step-chip ${i < night.idx ? 'done' : ''} ${i === night.idx ? 'cur' : ''}"
+                title="${esc(st.name)}${st.fake_for != null ? ` · 酒鬼扮演(座${st.fake_for})` : ''}">${i + 1} ${esc(st.name)}${st.fake_for != null ? ' 🍺' : ''}</button>`).join('')}
+          </div>
+          <div class="st-detail-actions">
+            <button class="btn small ghost" id="night-prev" ${night.idx <= 0 ? 'disabled' : ''}>← 上一步</button>
+            ${night.idx + 1 < steps.length
+              ? '<button class="btn small primary" id="night-next">下一步 →</button>'
+              : '<button class="btn small primary" id="night-dawn">🌅 天亮</button>'}
+          </div>
+        </div>
+      </div>`)
+      detail.replaceChildren(box)
+      wireSelPDetail()
+      box.querySelectorAll('.step-chip').forEach((c, i) => {
+        c.onclick = () => act(() => stApi('/api/night/goto', { method: 'POST', body: JSON.stringify({ idx: i }) }))
+      })
+      const prev = document.getElementById('night-prev')
+      if (prev) prev.onclick = () => act(() => stApi('/api/night/prev', { method: 'POST' }))
+      const next = document.getElementById('night-next')
+      if (next) next.onclick = () => act(() => stApi('/api/night/next', { method: 'POST' }))
+      const dawn = document.getElementById('night-dawn')
+      if (dawn) dawn.onclick = () => act(() => stApi('/api/night/next', { method: 'POST' }))
+    }
+
+    // ---- 白天面板:提名 → 投票 → 处决 ----
+
+    function renderDayPanel(detail) {
+      const strip = selP ? selPDetailHtml(selSeat, selP) : ''
+      const seatOpts = seats.filter((s) => s.player)
+        .map((s) => `<option value="${s.seat}">座${s.seat} · ${esc(s.player.name)}${s.player.alive ? '' : ' ☠'}</option>`).join('')
+      const todays = nominations.filter((n) => n.day === dayNo)
+      const hist = todays.length
+        ? `<h4>今日提名</h4>` + todays.map((n) => `<div class="nom-row ${n.executed ? 'exec' : ''}">
+            座${n.nominator} ${esc(seatNames[n.nominator] || '?')} 提名 座${n.nominee} ${esc(seatNames[n.nominee] || '?')}
+            · ${n.votes.length} 票 ${n.executed ? '· ⚔ 处决' : '· 未处决'}</div>`).join('')
+        : '<p class="hint">今天还没有提名</p>'
+      const voting = current
+        ? `<div class="vote-box">
+            <p class="vote-title">🗳 座${current.nominator} ${esc(seatNames[current.nominator] || '?')} 提名
+              座${current.nominee} ${esc(seatNames[current.nominee] || '?')}</p>
+            <p class="vote-line ${current.votes.length >= quorum ? 'ok' : ''}">赞成 ${current.votes.length} 票 · 需 ≥${quorum} 票(存活 ${aliveCount} 人)</p>
+            <p class="hint">点击环形座位记录举手;死者投票由说书人把握</p>
+            <div class="st-detail-actions">
+              <button class="btn small danger" id="nom-exec">⚔ 处决</button>
+              <button class="btn small ghost" id="nom-skip">无效(不足/平票)</button>
+            </div>
+          </div>`
+        : `<div class="vote-box"><div class="nom-start">
+            <select id="nom-from">${seatOpts}</select><span class="hint">提名</span>
+            <select id="nom-to">${seatOpts}</select>
+            <button class="btn small primary" id="nom-go">发起提名</button>
+          </div></div>`
+      const box = h(`<div class="st-detail">
+        ${strip}
+        <div class="day-panel">
+          <h3>☀️ 第 ${dayNo} 天 · 存活 ${aliveCount} 人</h3>
+          ${voting}
+          ${hist}
+          <div class="st-detail-actions"><button class="btn small primary" id="day-end">🌙 天黑 → 第 ${nightNo + 1} 夜</button></div>
+        </div>
+      </div>`)
+      detail.replaceChildren(box)
+      wireSelPDetail()
+      const go = document.getElementById('nom-go')
+      if (go) go.onclick = () => {
+        const from = Number(document.getElementById('nom-from').value)
+        const to = Number(document.getElementById('nom-to').value)
+        act(() => stApi('/api/nomination', { method: 'POST', body: JSON.stringify({ nominator: from, nominee: to }) }))
+      }
+      const exe = document.getElementById('nom-exec')
+      if (exe) exe.onclick = () => {
+        if (confirm('⚔ 处决被提名者?')) act(() => stApi('/api/nomination/resolve', { method: 'POST', body: JSON.stringify({ executed: true }) }))
+      }
+      const skip = document.getElementById('nom-skip')
+      if (skip) skip.onclick = () => act(() => stApi('/api/nomination/resolve', { method: 'POST', body: JSON.stringify({ executed: false }) }))
+      const end = document.getElementById('day-end')
+      if (end) end.onclick = () => act(() => stApi('/api/day/end', { method: 'POST' }))
+    }
+
     // ---- 环形座位 ----
     document.getElementById('circle').appendChild(seatCircle(seats, {
       freeLabel: '空',
@@ -398,7 +567,14 @@ function renderStoryteller() {
         }
         return null
       },
+      voted: (s) => status === 'playing' && phase === 'day' && current && s.player && current.votes.includes(s.seat),
+      markers: (s) => s.markers || [],
       clickSeat: (s) => {
+        // 投票进行中:点座位 = 记录举手/放下
+        if (status === 'playing' && phase === 'day' && current && s.player) {
+          act(() => stApi('/api/nomination/vote', { method: 'POST', body: JSON.stringify({ seat: s.seat }) }))
+          return
+        }
         selected = s.seat
         paint(view)
       },
@@ -420,22 +596,13 @@ function renderStoryteller() {
     }
     if (manual) {
       renderManualPicker(detail, selSeat)
+    } else if (status === 'playing' && phase === 'night') {
+      renderNightPanel(detail) // 夜晚流程助手(顶部含选中玩家条)
+    } else if (status === 'playing' && phase === 'day') {
+      renderDayPanel(detail) // 白天提名投票(顶部含选中玩家条)
     } else if (selP) {
-      detail.replaceChildren(h(`<div class="st-detail ${selP.alive ? '' : 'dead'}">
-        <h3>座位 ${selP.seat} · ${esc(selP.name)}</h3>
-        ${selP.role
-          ? `<span class="team-badge team-${selP.role.team}">${TEAM_LABEL[selP.role.team]} · ${esc(selP.role.name)}</span>`
-          : '<p class="hint">未分配角色</p>'}
-        ${fakeRow(selSeat)}
-        <div class="st-detail-actions">
-          <button class="btn small" id="act-alive">${selP.alive ? '☠ 标记死亡' : '复活'}</button>
-          <button class="btn small ghost" id="act-remove">移除</button>
-        </div>
-      </div>`))
-      document.getElementById('act-alive').onclick = () => act(() => stApi(`/api/player/${selP.id}/alive`, { method: 'POST' }))
-      document.getElementById('act-remove').onclick = () => {
-        if (confirm(`移除 ${selP.name}?`)) act(() => stApi(`/api/player/${selP.id}/remove`, { method: 'POST' }))
-      }
+      detail.replaceChildren(h(selPDetailHtml(selSeat, selP)))
+      wireSelPDetail()
     } else if (selSeat && selSeat.assigned_role) {
       const r = selSeat.assigned_role
       detail.replaceChildren(h(`<div class="st-detail">
@@ -489,10 +656,13 @@ function renderStoryteller() {
     document.getElementById('dec').onclick = () => doConfig(script, count - 1)
     document.getElementById('inc').onclick = () => doConfig(script, count + 1)
 
-    // ---- 分配 / 重置 ----
+    // ---- 分配 / 重置 / 读档 ----
     document.getElementById('assign-btn').onclick = () => act(() => stApi('/api/assign', { method: 'POST' }))
     document.getElementById('reset-btn').onclick = () => {
       if (confirm('确定重置本局?所有玩家将退出。')) act(() => stApi('/api/reset', { method: 'POST' }))
+    }
+    document.getElementById('load-btn').onclick = () => {
+      if (confirm('从磁盘恢复上次自动存档?当前内存状态将被丢弃。')) act(() => stApi('/api/load', { method: 'POST' }))
     }
   }
 

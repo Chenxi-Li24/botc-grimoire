@@ -93,6 +93,29 @@ class FakeBody(BaseModel):
     role: str | None = None  # 玩家看到的假角色;None 表示清除认知覆盖
 
 
+class MarkerBody(BaseModel):
+    seat: int
+    marker: str  # poisoned | drunk | mad
+    on: bool
+
+
+class NominationBody(BaseModel):
+    nominator: int
+    nominee: int
+
+
+class VoteBody(BaseModel):
+    seat: int
+
+
+class ResolveBody(BaseModel):
+    executed: bool
+
+
+class GotoBody(BaseModel):
+    idx: int
+
+
 def require_storyteller(x_password: str = Header(default="", alias="X-Storyteller-Password")) -> None:
     if x_password != STORYTELLER_PASSWORD:
         raise HTTPException(status_code=401, detail="说书人密码错误")
@@ -185,6 +208,99 @@ async def set_fake(body: FakeBody) -> dict[str, Any]:
     return game.storyteller_view()
 
 
+@app.post("/api/marker", dependencies=[Depends(require_storyteller)])
+async def set_marker(body: MarkerBody) -> dict[str, Any]:
+    """状态标记:中毒/醉酒/疯狂,仅说书人可见。"""
+    try:
+        game.set_marker(body.seat, body.marker, body.on)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+# ---- 提名 / 投票 / 处决(说书人记录,票型公开推送) ----
+
+@app.post("/api/nomination", dependencies=[Depends(require_storyteller)])
+async def start_nomination(body: NominationBody) -> dict[str, Any]:
+    try:
+        game.start_nomination(body.nominator, body.nominee)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/nomination/vote", dependencies=[Depends(require_storyteller)])
+async def toggle_vote(body: VoteBody) -> dict[str, Any]:
+    try:
+        game.toggle_vote(body.seat)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/nomination/resolve", dependencies=[Depends(require_storyteller)])
+async def resolve_nomination(body: ResolveBody) -> dict[str, Any]:
+    try:
+        game.resolve_nomination(body.executed)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+# ---- 夜晚流程 / 存档 ----
+
+@app.post("/api/night/next", dependencies=[Depends(require_storyteller)])
+async def night_next() -> dict[str, Any]:
+    try:
+        game.night_next()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/night/prev", dependencies=[Depends(require_storyteller)])
+async def night_prev() -> dict[str, Any]:
+    try:
+        game.night_prev()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/night/goto", dependencies=[Depends(require_storyteller)])
+async def night_goto(body: GotoBody) -> dict[str, Any]:
+    try:
+        game.night_goto(body.idx)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/day/end", dependencies=[Depends(require_storyteller)])
+async def end_day() -> dict[str, Any]:
+    try:
+        game.end_day()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/load", dependencies=[Depends(require_storyteller)])
+async def load() -> dict[str, Any]:
+    """放弃当前内存状态,从磁盘恢复上次自动存档。"""
+    game.load()
+    await hub.push_all()
+    return game.storyteller_view()
+
+
 @app.post("/api/player/{player_id}/alive", dependencies=[Depends(require_storyteller)])
 async def toggle_alive(player_id: str) -> dict[str, Any]:
     if player_id not in game.players:
@@ -229,7 +345,8 @@ async def websocket_endpoint(ws: WebSocket, who: str = "", pw: str = "") -> None
 
 @app.get("/api/qr")
 def qr() -> Response:
-    url = f"http://{get_lan_ip()}:8000/"
+    # 公网穿透时设 PUBLIC_URL(如 https://xxx.sakurafrp.com),否则回退局域网 IP
+    url = os.environ.get("PUBLIC_URL") or f"http://{get_lan_ip()}:8000/"
     buf = io.BytesIO()
     qrcode.make(url).save(buf, format="PNG")
     return Response(content=buf.getvalue(), media_type="image/png")

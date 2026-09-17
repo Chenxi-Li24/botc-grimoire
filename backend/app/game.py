@@ -1,12 +1,29 @@
-"""游戏状态管理(单局、内存态):说书人配置板子/人数,玩家选环形座位入座。"""
+"""游戏状态管理(单局):说书人配置板子/人数,玩家选环形座位入座。
 
+v1 完整版新增:
+- 昼夜阶段(phase: night/day)与夜晚流程助手(按 NIGHT_ORDER 逐步推进)
+- 状态标记(中毒/醉酒/疯狂,仅说书人可见)
+- 白天提名→投票→处决
+- JSON 自动存档:每次变更即写盘,进程重启自动恢复
+"""
+
+import json
+import os
 import random
 import secrets
+import time
 from collections import Counter
 from dataclasses import dataclass
+from pathlib import Path
 
+from .night_order import NIGHT_ORDER
 from .roles import (COMPOSITION, DEMON, MINION, OUTSIDER, SCRIPTS,
                     SCRIPT_ADJUST_ROLES, ROLE_ADJUSTMENTS, TOWNSFOLK)
+
+SAVE_PATH = Path(__file__).resolve().parent.parent / "data" / "game.json"
+
+MARKERS = ("poisoned", "drunk", "mad")  # 说书人标记:中毒/醉酒/疯狂
+MARKER_LABELS = {"poisoned": "中毒", "drunk": "醉酒", "mad": "疯狂"}
 
 
 @dataclass
@@ -37,18 +54,29 @@ class Player:
 
 
 class GameManager:
-    """一局游戏的全部状态;重启进程即重置,存档留待后续。"""
+    """一局游戏的全部状态;每次变更自动存档,重启自动恢复。"""
 
     def __init__(self) -> None:
         self.reset()
         self.script_id: str = "trouble-brewing"  # 说书人可配置
         self.player_count: int = 6
+        self._restore_autosave()  # 进程重启 → 恢复上次存档(若有)
 
     def reset(self) -> None:
+        # 注意:reset 不写盘 → 误重置可用「读档」撤销;开始新局的第一次变更会覆盖存档
         self.players: dict[str, Player] = {}
         self.status: str = "lobby"  # lobby | playing
         self.seat_roles: dict[int, str] = {}  # 预发身份:座位号 → 角色 id(未入座也能先发)
         self.seat_fakes: dict[int, str] = {}  # 认知覆盖:座位号 → 玩家看到的假角色 id(酒鬼)
+        self.seat_markers: dict[int, list] = {}  # 状态标记:座位号 → [poisoned/drunk/mad]
+        self.phase: str | None = None  # None(大厅)| "night" | "day"
+        self.night_no: int = 1  # 当前是第几夜(1 起)
+        self.day_no: int = 0  # 当前是第几天(第一次天亮置 1)
+        self.night_steps: list[dict] = []  # 本夜步骤 [{key,name,hint,fake_for?}]
+        self.night_idx: int = 0  # 当前走到第几步
+        self.nominations: list[dict] = []  # 提名历史 [{day,nominator,nominee,votes,executed}]
+        self.current: dict | None = None  # 进行中的提名 {nominator,nominee,votes}
+        self.saved_at: float | None = None
 
     @property
     def roles(self) -> dict:
@@ -57,6 +85,49 @@ class GameManager:
     @property
     def seats(self) -> dict[int, Player]:
         return {p.seat: p for p in self.players.values() if p.seat is not None}
+
+    # ---- 存档 ----
+
+    def save(self) -> None:
+        """任何状态变更后调用:原子写盘(临时文件 + os.replace)。"""
+        payload = {
+            "players": {pid: {"id": p.id, "name": p.name, "seat": p.seat,
+                              "role_id": p.role_id, "alive": p.alive}
+                        for pid, p in self.players.items()},
+            "status": self.status, "script_id": self.script_id,
+            "player_count": self.player_count,
+            "seat_roles": self.seat_roles, "seat_fakes": self.seat_fakes,
+            "seat_markers": self.seat_markers,
+            "phase": self.phase, "night_no": self.night_no, "day_no": self.day_no,
+            "night_steps": self.night_steps, "night_idx": self.night_idx,
+            "nominations": self.nominations, "current": self.current,
+        }
+        SAVE_PATH.parent.mkdir(exist_ok=True)
+        tmp = SAVE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, SAVE_PATH)
+        self.saved_at = time.time()
+
+    def _restore_autosave(self) -> None:
+        if not SAVE_PATH.exists():
+            return
+        try:
+            d = json.loads(SAVE_PATH.read_text(encoding="utf-8"))
+            self.players = {pid: Player(**p) for pid, p in d["players"].items()}
+            for key in ("status", "script_id", "player_count", "seat_roles",
+                        "seat_fakes", "seat_markers", "phase", "night_no",
+                        "day_no", "night_steps", "night_idx", "nominations", "current"):
+                setattr(self, key, d[key])
+            self.saved_at = time.time()
+        except (KeyError, TypeError, ValueError):
+            pass  # 存档损坏 → 用干净状态开局
+
+    def load(self) -> None:
+        """说书人手动读档:放弃当前内存状态,从磁盘恢复。"""
+        self.reset()
+        self.script_id = "trouble-brewing"
+        self.player_count = 6
+        self._restore_autosave()
 
     # ---- 局配置 ----
 
@@ -74,13 +145,20 @@ class GameManager:
             p.alive = True
         self.seat_roles = {}  # 预发身份一并清空
         self.seat_fakes = {}  # 认知覆盖一并清空
+        self.seat_markers = {}  # 状态标记一并清空
+        self.phase = None
+        self.night_no, self.day_no = 1, 0
+        self.night_steps, self.night_idx = [], 0
+        self.nominations, self.current = [], None
         self.status = "lobby"
+        self.save()
 
     # ---- 玩家进出 ----
 
     def add_player(self, name: str) -> Player:
         player = Player(id=secrets.token_hex(4), name=name.strip()[:20])
         self.players[player.id] = player
+        self.save()
         return player
 
     def sit(self, player_id: str, seat: int) -> None:
@@ -99,11 +177,14 @@ class GameManager:
         if (self.status == "lobby" and self.seat_roles
                 and len(self.seats) == self.player_count):
             self.status = "playing"  # 预发身份全部入座 → 自动开局
+            self._begin_night()
+        self.save()
 
     def remove_player(self, player_id: str) -> None:
         if player_id not in self.players:
             return
         del self.players[player_id]  # 座位随玩家释放
+        self.save()
 
     # ---- 角色分配 ----
 
@@ -151,6 +232,8 @@ class GameManager:
         for player, role in zip(by_seat, pool):
             player.role_id = role["id"]
         self.status = "playing"
+        self._begin_night()  # 发完角色 → 第一夜开始
+        self.save()
         return [p.storyteller(self.roles) for p in by_seat]
 
     def expected_composition(self, role_ids: list[str]) -> tuple:
@@ -201,14 +284,110 @@ class GameManager:
             player.role_id = picked[seat]
         if len(seat_of) == self.player_count:
             self.status = "playing"  # 全员已入座 → 立即开局;否则等 sit() 补满自动开局
+            self._begin_night()
+        self.save()
         by_seat = sorted(self.players.values(), key=lambda p: p.seat)
         return [p.storyteller(self.roles) for p in by_seat]
+
+    # ---- 昼夜阶段与夜晚流程 ----
+
+    def _begin_night(self) -> None:
+        """进入夜晚:按本夜在场角色组装步骤表(酒鬼的假角色作为附加步骤)。"""
+        kind = "first" if self.night_no == 1 else "other"
+        sheet = NIGHT_ORDER[self.script_id][kind]
+        present = {p.role_id for p in self.players.values() if p.role_id}
+        fake_by_role: dict[str, list[int]] = {}
+        for seat, rid in self.seat_fakes.items():
+            fake_by_role.setdefault(rid, []).append(seat)
+        steps: list[dict] = []
+        for st in sheet:
+            key = st["key"]
+            if key in ("dusk", "dawn", "minioninfo", "demoninfo") or key in present:
+                steps.append(dict(st))
+            for seat in fake_by_role.get(key, []):  # 酒鬼扮演该角色:附加一步,标注座位
+                steps.append({**st, "fake_for": seat})
+        self.night_steps = steps
+        self.night_idx = 0
+        self.phase = "night"
+
+    def night_goto(self, idx: int) -> None:
+        if self.phase != "night":
+            raise ValueError("现在是白天,没有夜晚步骤")
+        if not 0 <= idx < len(self.night_steps):
+            raise ValueError(f"步骤需在 0~{len(self.night_steps) - 1} 之间")
+        self.night_idx = idx
+        self.save()
+
+    def night_next(self) -> None:
+        if self.phase != "night":
+            raise ValueError("现在是白天,不能推进夜晚")
+        if self.night_idx + 1 < len(self.night_steps):
+            self.night_idx += 1
+        else:  # 走完最后一步(dawn)→ 天亮
+            self.phase = "day"
+            self.day_no += 1
+        self.save()
+
+    def night_prev(self) -> None:
+        if self.phase != "night" or self.night_idx <= 0:
+            raise ValueError("已经在第一步,不能后退")
+        self.night_idx -= 1
+        self.save()
+
+    def end_day(self) -> None:
+        if self.phase != "day":
+            raise ValueError("现在是夜晚,不能结束白天")
+        self.night_no += 1
+        self._begin_night()
+        self.save()
+
+    # ---- 提名 / 投票 / 处决 ----
+
+    def start_nomination(self, nominator_seat: int, nominee_seat: int) -> None:
+        if self.phase != "day":
+            raise ValueError("白天才能发起提名")
+        if self.current:
+            raise ValueError("已有进行中的提名,先宣布结果")
+        seat_of = self.seats
+        if nominator_seat not in seat_of or nominee_seat not in seat_of:
+            raise ValueError("提名者与被提名者都需已入座")
+        if nominator_seat == nominee_seat:
+            raise ValueError("不能提名自己")
+        self.current = {"nominator": nominator_seat, "nominee": nominee_seat, "votes": []}
+        self.save()
+
+    def toggle_vote(self, seat: int) -> None:
+        if not self.current:
+            raise ValueError("没有进行中的提名")
+        if not 1 <= seat <= self.player_count or seat not in self.seats:
+            raise ValueError(f"座位 {seat} 无玩家")
+        votes = self.current["votes"]
+        if seat in votes:
+            votes.remove(seat)
+        else:
+            votes.append(seat)
+            votes.sort()
+        self.save()
+
+    def resolve_nomination(self, executed: bool) -> None:
+        """宣布本次提名结果;处决则被提名者死亡。"""
+        if not self.current:
+            raise ValueError("没有进行中的提名")
+        rec = {**self.current, "day": self.day_no, "executed": executed}
+        self.nominations.append(rec)
+        if executed:
+            player = self.seats.get(self.current["nominee"])
+            if player:
+                player.alive = False
+        self.current = None
+        self.save()
 
     # ---- 状态操作 ----
 
     def toggle_alive(self, player_id: str) -> None:
         if player_id in self.players:
             self.players[player_id].alive = not self.players[player_id].alive
+            self.save()
 
     def set_fake(self, seat: int, role_id: str | None) -> None:
         """认知覆盖:标记该座位玩家「实际是酒鬼,但看到的是 role_id 角色」。None 清除标记。"""
@@ -220,6 +399,26 @@ class GameManager:
             self.seat_fakes.pop(seat, None)
         else:
             self.seat_fakes[seat] = role_id
+        if self.phase == "night":
+            self._begin_night()  # 夜晚中改认知覆盖 → 重算步骤表(假角色步骤随之增减)
+        self.save()
+
+    def set_marker(self, seat: int, marker: str, on: bool) -> None:
+        """说书人标记:该座位玩家中毒/醉酒/疯狂。仅说书人可见,玩家无感知。"""
+        if not 1 <= seat <= self.player_count:
+            raise ValueError(f"座位需在 1~{self.player_count} 之间")
+        if marker not in MARKERS:
+            raise ValueError(f"未知标记 {marker}")
+        cur = set(self.seat_markers.get(seat, ()))
+        if on:
+            cur.add(marker)
+        else:
+            cur.discard(marker)
+        if cur:
+            self.seat_markers[seat] = sorted(cur)
+        else:
+            self.seat_markers.pop(seat, None)
+        self.save()
 
     # ---- 视图 ----
 
@@ -240,10 +439,16 @@ class GameManager:
             slot = {"seat": i, "player": entry}
             if st_view and i in self.seat_fakes:  # 认知覆盖标记,说书人可见
                 slot["fake_role"] = self.roles[self.seat_fakes[i]]
+            if st_view and i in self.seat_markers:  # 状态标记,仅说书人可见
+                slot["markers"] = self.seat_markers[i]
             if my_id is not None:  # is_me 属于座位槽位层,不属于 player
                 slot["is_me"] = p.id == my_id
             slots.append(slot)
         return slots
+
+    def _public_progress(self) -> dict:
+        """白天/夜晚进度(玩家与说书人都可见)。"""
+        return {"phase": self.phase, "night_no": self.night_no, "day_no": self.day_no}
 
     def player_view(self, player_id: str) -> dict:
         me = self.players[player_id]
@@ -252,11 +457,16 @@ class GameManager:
             "status": self.status,
             "script": SCRIPTS[self.script_id]["name"],
             "player_count": self.player_count,
+            **self._public_progress(),
+            # 提名/投票是公开信息,实时推给玩家(举手、票型、处决)
+            "nominations": self.nominations,
+            "current": self.current,
             "me": me.private(self.roles, fake_id),
             "seats": self._seat_slots(st_view=False, my_id=player_id),
         }
 
     def storyteller_view(self) -> dict:
+        alive_count = sum(1 for p in self.players.values() if p.alive)
         return {
             "status": self.status,
             "script": self.script_id,
@@ -271,4 +481,11 @@ class GameManager:
                              for rid in SCRIPT_ADJUST_ROLES.get(self.script_id, ())},
             "seat_roles": {str(seat): rid for seat, rid in self.seat_roles.items()},
             "seats": self._seat_slots(st_view=True),
+            **self._public_progress(),
+            "night": {"steps": self.night_steps, "idx": self.night_idx},
+            "nominations": self.nominations,
+            "current": self.current,
+            "alive_count": alive_count,
+            "quorum": alive_count // 2 + 1,  # 处决所需票数(存活玩家半数以上;死者投票由说书人掌握)
+            "saved_at": self.saved_at,
         }

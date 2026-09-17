@@ -563,3 +563,203 @@ h3 {
   border-radius: 8px;
   white-space: nowrap;
 }
+
+/* ---- 昼夜阶段与状态标记 ---- */
+
+.phase-badge {
+  align-self: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--line);
+}
+
+.phase-badge.night {
+  color: #b7a8e8;
+  border-color: #5a4a8a;
+  background: #241d3d;
+}
+
+.phase-badge.day {
+  color: #f0d48a;
+  border-color: #8a7440;
+  background: #3d3320;
+}
+
+.seat-node.voted {
+  box-shadow: 0 0 0 3px #4cd964;
+}
+
+.marker-badge {
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 8px;
+  color: #14101f;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.m-poisoned {
+  background: #b06ce0;
+}
+
+.m-drunk {
+  background: #4f9be8;
+}
+
+.m-mad {
+  background: #e8a33d;
+}
+
+.st-markers {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.marker-chip.on.m-poisoned {
+  background: #b06ce0;
+  border-color: #b06ce0;
+}
+
+.marker-chip.on.m-drunk {
+  background: #4f9be8;
+  border-color: #4f9be8;
+}
+
+.marker-chip.on.m-mad {
+  background: #e8a33d;
+  border-color: #e8a33d;
+}
+
+/* ---- 夜晚流程助手 ---- */
+
+.step-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  background: #241d3d;
+  text-align: left;
+}
+
+.step-name {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--gold);
+  margin-bottom: 4px;
+}
+
+.step-seats {
+  font-size: 13px;
+  color: #cfc6e6;
+  margin-bottom: 4px;
+}
+
+.step-hint {
+  font-size: 12px;
+  color: var(--dim);
+  line-height: 1.5;
+}
+
+.step-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.step-chip {
+  padding: 3px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--dim);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.step-chip.done {
+  opacity: 0.45;
+}
+
+.step-chip.cur {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: #241a05;
+  font-weight: 700;
+}
+
+/* ---- 白天提名投票 ---- */
+
+.vote-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.vote-title {
+  font-size: 14px;
+}
+
+.vote-line {
+  font-size: 18px;
+  font-weight: 700;
+  color: #ff8a80;
+  font-variant-numeric: tabular-nums;
+}
+
+.vote-line.ok {
+  color: #4cd964;
+}
+
+.nom-start {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.nom-start select {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 5px 6px;
+  font-size: 13px;
+  max-width: 110px;
+}
+
+.nom-row {
+  font-size: 12px;
+  color: var(--dim);
+  text-align: left;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.nom-row.exec {
+  color: #ff8a80;
+}
+
+.day-panel h4,
+.night-panel h4 {
+  margin-top: 4px;
+  color: var(--dim);
+  font-size: 13px;
+}
+
+.vote-public {
+  font-size: 13px;
+  color: var(--gold);
+  margin: 6px 0;
+}
