@@ -166,14 +166,15 @@ class GameManager:
             raise ValueError("玩家不存在")
         if not 1 <= seat <= self.player_count:
             raise ValueError(f"座位需在 1~{self.player_count} 之间")
-        if self.status == "playing":
+        me = self.players[player_id]
+        if self.status == "playing" and me.seat is not None:
             raise ValueError("游戏进行中,不能换座")
         owner = self.seats.get(seat)
         if owner and owner.id != player_id:
             raise ValueError(f"座位 {seat} 已被 {owner.name} 占用")
-        self.players[player_id].seat = seat
-        # 预发身份跟随座位:入座即继承该座已发的角色(没预发则该座无角色)
-        self.players[player_id].role_id = self.seat_roles.get(seat)
+        me.seat = seat
+        # 预发身份跟随座位:入座即继承该座已发的角色(开局后迟到的玩家同样继承)
+        me.role_id = self.seat_roles.get(seat)
         if (self.status == "lobby" and self.seat_roles
                 and len(self.seats) == self.player_count):
             self.status = "playing"  # 预发身份全部入座 → 自动开局
@@ -189,13 +190,11 @@ class GameManager:
     # ---- 角色分配 ----
 
     def assign_roles(self) -> list[dict]:
+        """随机分配角色。人未齐也能发牌:全部座位一次性抽出,空座挂预发身份,
+        迟到玩家入座自动继承。发完立即进入第一夜。"""
         n = self.player_count
         if self.status == "playing":
             raise ValueError("本局已开始,先重置")
-        if any(p.seat is None for p in self.players.values()):
-            raise ValueError("还有玩家未选择座位")
-        if len(self.players) < n:
-            raise ValueError(f"还有 {n - len(self.players)} 个空座位,等玩家入座")
 
         comp = list(COMPOSITION[n])
         by_team = {team: [r for r in SCRIPTS[self.script_id]["roles"] if r["team"] == team]
@@ -228,12 +227,18 @@ class GameManager:
                 break
         random.shuffle(pool)
 
-        by_seat = sorted(self.players.values(), key=lambda p: p.seat)
-        for player, role in zip(by_seat, pool):
-            player.role_id = role["id"]
+        self.seat_roles = {}  # 随机分配覆盖整局:清掉之前的预发草稿
+        for seat in range(1, n + 1):
+            rid = pool[seat - 1]["id"]
+            p = self.seats.get(seat)
+            if p:
+                p.role_id = rid
+            else:
+                self.seat_roles[seat] = rid  # 空座挂预发身份,等人迟到入座继承
         self.status = "playing"
         self._begin_night()  # 发完角色 → 第一夜开始
         self.save()
+        by_seat = sorted(self.players.values(), key=lambda p: p.seat)
         return [p.storyteller(self.roles) for p in by_seat]
 
     def expected_composition(self, role_ids: list[str]) -> tuple:
@@ -289,13 +294,32 @@ class GameManager:
         by_seat = sorted(self.players.values(), key=lambda p: p.seat)
         return [p.storyteller(self.roles) for p in by_seat]
 
+    def start_game(self) -> None:
+        """说书人强制开局:人未齐也能进入游戏。
+
+        前提是每个座位都已有身份(已入座玩家持有角色,或空座已预发)。
+        开局后迟到的玩家只能坐空座,入座即继承该座预发身份。
+        """
+        if self.status == "playing":
+            raise ValueError("本局已开始")
+        missing = [seat for seat in range(1, self.player_count + 1)
+                   if seat not in self.seat_roles
+                   and (self.seats.get(seat) is None or self.seats[seat].role_id is None)]
+        if missing:
+            raise ValueError(f"还有 {len(missing)} 个座位没有身份(座位 {','.join(map(str, missing))}),先分配角色")
+        self.status = "playing"
+        self._begin_night()  # 第 1 夜开始
+        self.save()
+
     # ---- 昼夜阶段与夜晚流程 ----
 
     def _begin_night(self) -> None:
         """进入夜晚:按本夜在场角色组装步骤表(酒鬼的假角色作为附加步骤)。"""
         kind = "first" if self.night_no == 1 else "other"
         sheet = NIGHT_ORDER[self.script_id][kind]
-        present = {p.role_id for p in self.players.values() if p.role_id}
+        # 在场角色 = 已入座玩家 + 空座预发身份(人未齐开局时,空座角色也排进夜晚)
+        present = ({p.role_id for p in self.players.values() if p.role_id}
+                   | set(self.seat_roles.values()))
         fake_by_role: dict[str, list[int]] = {}
         for seat, rid in self.seat_fakes.items():
             fake_by_role.setdefault(rid, []).append(seat)
@@ -487,5 +511,9 @@ class GameManager:
             "current": self.current,
             "alive_count": alive_count,
             "quorum": alive_count // 2 + 1,  # 处决所需票数(存活玩家半数以上;死者投票由说书人掌握)
+            # 人未齐开局:每个座位都有身份(在座持有或空座预发)即可强制开始
+            "can_start": self.status == "lobby" and all(
+                (self.seats.get(i) is not None and self.seats[i].role_id)
+                or i in self.seat_roles for i in range(1, self.player_count + 1)),
             "saved_at": self.saved_at,
         }

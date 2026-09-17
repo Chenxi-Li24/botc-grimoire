@@ -132,7 +132,7 @@ function renderPlayer(playerId) {
       app.replaceChildren(h(`<div class="page rolecard">
         <div class="topbar"><span>${esc(me.name)}</span><span class="dot ok" title="已连接"></span></div>
         <div class="center grow">
-          <p class="sub">选择你的座位入座</p>
+          <p class="sub">${status === 'playing' ? '游戏已开始(迟到):点空座入座,继承该座预发身份' : '选择你的座位入座'}</p>
           <div id="circle"></div>
           <p class="hint">${seats.length ? `共 ${seats.length} 个座位,点一个空座位入座` : '等待说书人设置本局人数…'}</p>
           <p class="error" id="sit-err" style="display:none"></p>
@@ -244,7 +244,8 @@ function renderStoryteller() {
   function paint(view) {
     const { status, script, player_count: count, scripts, seats, roles, composition,
       adjust_roles, seat_roles, phase, night_no: nightNo, day_no: dayNo, night,
-      nominations, current, alive_count: aliveCount, quorum, saved_at: savedAt } = view
+      nominations, current, alive_count: aliveCount, quorum, can_start: canStart,
+      saved_at: savedAt } = view
     const minP = scripts.find((s) => s.id === script)?.min || 5 // 该板子的人数下限(瓦釜雷鸣 7 人起)
     const seatedCount = seats.filter((s) => s.player).length
     if (status === 'playing') { manual = false; draft = {} } // 发牌完成后退出草稿
@@ -266,7 +267,10 @@ function renderStoryteller() {
           ${status === 'lobby'
             ? `<button class="btn ${manual ? 'primary' : ''}" id="manual-btn">${manual ? '✖ 退出手动' : '🃏 手动发身份'}</button>`
             : ''}
-          <button class="btn primary" id="assign-btn" ${status === 'playing' || !allSeated || manual ? 'disabled' : ''}>🎲 随机分配角色</button>
+          <button class="btn primary" id="assign-btn" ${status === 'playing' || manual ? 'disabled' : ''}>🎲 随机分配角色</button>
+          ${status === 'lobby' && canStart && !allSeated
+            ? '<button class="btn primary" id="start-btn">🌙 开始游戏(人未齐)</button>'
+            : ''}
           <button class="btn small ghost" id="load-btn" title="从磁盘恢复上次自动存档">💾 读档</button>
           <button class="btn danger" id="reset-btn">重置本局</button>
         </div>
@@ -289,7 +293,7 @@ function renderStoryteller() {
           </div>
           <div class="st-circle">
             <div id="circle"></div>
-            <p class="hint">已入座 ${seatedCount}/${count}${status === 'playing' ? ' · 游戏中' : ' · 等待开局'}${allSeated && status === 'lobby' ? ' · 可以分配角色' : ''}${!allSeated && seat_roles && Object.keys(seat_roles).length === count ? ' · 已预发身份,等玩家入座' : ''}</p>
+            <p class="hint">已入座 ${seatedCount}/${count}${status === 'playing' ? ' · 游戏中' : ' · 等待开局'}${allSeated && status === 'lobby' ? ' · 可以分配角色' : ''}${!allSeated && status === 'lobby' && canStart ? ' · 已预发全部身份,人未齐也可开始' : ''}${!allSeated && status === 'lobby' && !canStart ? ' · 人未齐:随机分配或手动发身份后即可开始' : ''}</p>
           </div>
         </div>
         <div class="st-right">
@@ -658,6 +662,8 @@ function renderStoryteller() {
 
     // ---- 分配 / 重置 / 读档 ----
     document.getElementById('assign-btn').onclick = () => act(() => stApi('/api/assign', { method: 'POST' }))
+    const startBtn = document.getElementById('start-btn')
+    if (startBtn) startBtn.onclick = () => act(() => stApi('/api/start', { method: 'POST' }))
     document.getElementById('reset-btn').onclick = () => {
       if (confirm('确定重置本局?所有玩家将退出。')) act(() => stApi('/api/reset', { method: 'POST' }))
     }

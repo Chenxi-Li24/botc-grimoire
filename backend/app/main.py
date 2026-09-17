@@ -197,6 +197,17 @@ async def assign_manual(body: ManualAssignBody) -> dict[str, Any]:
     return game.storyteller_view()
 
 
+@app.post("/api/start", dependencies=[Depends(require_storyteller)])
+async def start() -> dict[str, Any]:
+    """人未齐强制开局:空座需已预发身份,迟到玩家入座自动继承。"""
+    try:
+        game.start_game()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
 @app.post("/api/fake", dependencies=[Depends(require_storyteller)])
 async def set_fake(body: FakeBody) -> dict[str, Any]:
     """认知覆盖:说书人标记某座位玩家看到的假角色(酒鬼看到镇民)。"""

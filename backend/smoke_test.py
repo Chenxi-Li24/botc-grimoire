@@ -250,6 +250,54 @@ async def main() -> None:
     assert fake_steps and fake_steps[0]["key"] == "washerwoman", "夜晚步骤应含假角色步"
     print("FAKE  酒鬼看到洗衣妇,夜晚步骤含假角色步(座 6) OK")
 
+    # ---- 人未齐也可开局:随机发牌覆盖空座;迟到玩家入座继承 ----
+    req("/api/reset", "POST", headers=ST)
+    req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 6}, ST)
+    late_ids = [req("/api/join", "POST", {"name": f"迟{i}"})["player_id"] for i in range(1, 5)]
+    for seat, pid in enumerate(late_ids, 1):
+        req(f"/api/player/{pid}/sit", "POST", {"seat": seat})
+    state = req("/api/assign", "POST", headers=ST)  # 只 4 人入座也应能发牌并开局
+    assert state["status"] == "playing" and state["phase"] == "night" and state["night_no"] == 1
+    empty_roles = {str(seat): rid for seat, rid in state["seat_roles"].items()}
+    assert set(empty_roles) == {"5", "6"}, empty_roles
+    rids = {r["id"] for r in state["roles"]}
+    assert set(empty_roles.values()) <= rids, "空座预发角色应在板子角色表中"
+    late5 = req("/api/join", "POST", {"name": "迟到者5"})["player_id"]
+    view = req(f"/api/player/{late5}/sit", "POST", {"seat": 5})
+    assert view["me"]["role"]["id"] == empty_roles["5"], "迟到入座应继承预发身份"
+    assert view["status"] == "playing"
+    print("LATE  4 人随机发牌即开局,空座 5/6 挂预发身份,迟到者入座继承 OK")
+
+    # 进行中换座仍被拒绝
+    try:
+        req(f"/api/player/{late_ids[0]}/sit", "POST", {"seat": 6})
+        raise AssertionError("进行中换座未被拒绝")
+    except urllib.error.HTTPError as e:
+        assert e.code == 400
+    print("LATE  游戏进行中换座被拒绝 OK")
+
+    # ---- 手动预发 + 强制开始 ----
+    req("/api/reset", "POST", headers=ST)
+    req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 6}, ST)
+    ids3 = [req("/api/join", "POST", {"name": f"强{i}"})["player_id"] for i in range(1, 5)]
+    for seat, pid in enumerate(ids3, 1):
+        req(f"/api/player/{pid}/sit", "POST", {"seat": seat})
+    try:  # 没发身份就点开始应被拒绝
+        req("/api/start", "POST", headers=ST)
+        raise AssertionError("未发身份强制开局未被拒绝")
+    except urllib.error.HTTPError as e:
+        assert e.code == 400
+    pre = [{"seat": 1, "role": "imp"}, {"seat": 2, "role": "poisoner"},
+           {"seat": 3, "role": "empath"}, {"seat": 4, "role": "chef"},
+           {"seat": 5, "role": "investigator"}, {"seat": 6, "role": "drunk"}]
+    state = req("/api/assign/manual", "POST", {"assignments": pre}, ST)
+    assert state["status"] == "lobby" and state["can_start"] is True, "人未齐时手动发身份应保持 lobby 且可开始"
+    state = req("/api/start", "POST", headers=ST)
+    assert state["status"] == "playing" and state["phase"] == "night" and state["night_no"] == 1
+    keys = [s["key"] for s in state["night"]["steps"]]
+    assert "investigator" in keys, "空座 5 的调查员步骤应在夜晚表中"
+    print("START 手动预发 4/6 人强制开局成功,空座角色步骤在夜晚表中 OK")
+
     req("/api/reset", "POST", headers=ST)
     req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 6}, ST)
     print("ALL PASS")
