@@ -533,12 +533,31 @@ h3 {
   font-size: 13px;
 }
 
+/* 手动发身份:每个阵营一个分区块,顶部整行实心色条标题,角色小块在下方换行 */
 .role-group {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
-  margin: 2px 0;
+  margin: 4px 0;
+  padding: 6px;
+  border: 1px solid var(--team, var(--line));
+  border-radius: 10px;
+}
+
+.role-group-head {
+  width: 100%;
+  background: var(--team, var(--accent));
+  color: var(--team-text, var(--on-accent));
+  font-weight: 700;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.role-group .chip {
+  border-radius: 6px;
 }
 
 .chip {

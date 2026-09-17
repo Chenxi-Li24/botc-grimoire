@@ -447,7 +447,7 @@ function renderStoryteller() {
       const usedBy = {} // 角色 id → 已发的座位号(角色全局唯一,已发出的不可再发)
       for (const [seat, rid] of Object.entries(draft)) usedBy[rid] = Number(seat)
       TEAM_ORDER.forEach(([team, label]) => {
-        const group = h(`<div class="role-group"><span class="team-badge team-${team}">${label}</span></div>`)
+        const group = h(`<div class="role-group team-${team}"><span class="role-group-head">${label}</span></div>`)
         roles.filter((r) => r.team === team).forEach((r) => {
           const on = selSeat && draft[selSeat.seat] === r.id
           const usedSeat = usedBy[r.id]
@@ -465,7 +465,7 @@ function renderStoryteller() {
         })
         box.appendChild(group)
       })
-      const bluffGroup = h(`<div class="role-group"><span class="team-badge team-townsfolk">🧪 伪装(不在场好角色,点选 3 个)</span></div>`)
+      const bluffGroup = h(`<div class="role-group" style="--team: var(--gold); --team-text: var(--on-gold)"><span class="role-group-head">🧪 伪装(不在场好角色,点选 3 个)</span></div>`)
       bluffPool.forEach((r) => {
         const on = draftBluffs.includes(r.id)
         const chip = h(`<button class="chip team-${r.team} ${on ? 'on' : ''}" title="${esc(r.ability)}">${esc(r.name)}</button>`)
