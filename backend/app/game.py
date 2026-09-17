@@ -22,7 +22,8 @@ from .roles import (COMPOSITION, DEMON, MINION, OUTSIDER, SCRIPTS,
 
 SAVE_PATH = Path(__file__).resolve().parent.parent / "data" / "game.json"
 
-MARKERS = ("poisoned", "drunk", "mad")  # 说书人标记:中毒/醉酒/疯狂
+# 说书人标记:中毒/醉酒/疯狂/角色转变/阵营转变——同一座位可同时挂多个(列表存储)
+MARKERS = ("poisoned", "drunk", "mad", "role-change", "team-change")
 MARKER_LABELS = {"poisoned": "中毒", "drunk": "醉酒", "mad": "疯狂"}
 
 # 认知覆盖类角色 → 假身份可取阵营(配板时决定):酒鬼看到镇民,疯子以为自己是恶魔

@@ -22,6 +22,8 @@
   --m-poisoned: #b06ce0;  /* 状态标记(游戏语义,不随主题变) */
   --m-drunk: #4f9be8;
   --m-mad: #e8a33d;
+  --m-role-change: #e0527b;
+  --m-team-change: #43b581;
 }
 
 * {
@@ -634,17 +636,23 @@ h3 {
   box-shadow: 0 0 0 3px var(--ok);
 }
 
-.marker-badge {
+.marker-badges {
+  /* 多个标记可同时出现:横排并列,不互相遮挡 */
   position: absolute;
   top: -6px;
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.marker-badge {
   font-size: 10px;
   padding: 0 5px;
   border-radius: 8px;
   color: #14101f;
   font-weight: 700;
-  pointer-events: none;
 }
 
 .m-poisoned {
@@ -657,6 +665,14 @@ h3 {
 
 .m-mad {
   background: var(--m-mad);
+}
+
+.m-role-change {
+  background: var(--m-role-change);
+}
+
+.m-team-change {
+  background: var(--m-team-change);
 }
 
 .st-markers {
@@ -684,6 +700,16 @@ h3 {
 .marker-chip.on.m-mad {
   background: var(--m-mad);
   border-color: var(--m-mad);
+}
+
+.marker-chip.on.m-role-change {
+  background: var(--m-role-change);
+  border-color: var(--m-role-change);
+}
+
+.marker-chip.on.m-team-change {
+  background: var(--m-team-change);
+  border-color: var(--m-team-change);
 }
 
 /* ---- 夜晚流程助手 ---- */

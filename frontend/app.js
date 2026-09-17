@@ -6,8 +6,8 @@ const PLAYER_ID_KEY = 'botc_player_id'
 const TEAM_LABEL = { townsfolk: '镇民', outsider: '外来者', minion: '爪牙', demon: '恶魔' }
 const TEAM_INDEX = { townsfolk: 0, outsider: 1, minion: 2, demon: 3 } // 配比 [镇,外,爪,恶] 的下标
 const TEAM_ORDER = [['townsfolk', '镇民'], ['outsider', '外来者'], ['minion', '爪牙'], ['demon', '恶魔']]
-const MARKER_LABEL = { poisoned: '中毒', drunk: '醉酒', mad: '疯狂' }
-const MARKER_CHAR = { poisoned: '中', drunk: '醉', mad: '疯' }
+const MARKER_LABEL = { poisoned: '中毒', drunk: '醉酒', mad: '疯狂', 'role-change': '角色转变', 'team-change': '阵营转变' }
+const MARKER_CHAR = { poisoned: '中', drunk: '醉', mad: '疯', 'role-change': '🔄', 'team-change': '⚖' }
 const app = document.getElementById('app')
 
 function h(html) {
@@ -79,7 +79,7 @@ function seatCircle(seats, opts = {}) {
       <span class="seat-num">${s.seat}</span>
       <span class="seat-name">${p ? esc(p.name) : (opts.freeLabel || '入座')}</span>
       ${badge ? `<span class="draft-badge team-${badge.team}">${esc(badge.name)}</span>` : ''}
-      ${markers.map((m) => `<span class="marker-badge m-${m}">${MARKER_CHAR[m]}</span>`).join('')}
+      ${markers.length ? `<span class="marker-badges">${markers.map((m) => `<span class="marker-badge m-${m}">${MARKER_CHAR[m] || '?'}</span>`).join('')}</span>` : ''}
     </div>`)
     if (opts.clickSeat) node.addEventListener('click', () => opts.clickSeat(s))
     wrap.appendChild(node)
