@@ -71,6 +71,15 @@ class JoinBody(BaseModel):
     name: str
 
 
+class SitBody(BaseModel):
+    seat: int
+
+
+class ConfigBody(BaseModel):
+    script: str
+    player_count: int
+
+
 class PasswordBody(BaseModel):
     password: str
 
@@ -88,13 +97,23 @@ async def join(body: JoinBody) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="请输入名字")
     player = game.add_player(body.name)
     await hub.push_all()
-    return {"player_id": player.id, "seat": player.seat}
+    return {"player_id": player.id}
+
+
+@app.post("/api/player/{player_id}/sit")
+async def sit(player_id: str, body: SitBody) -> dict[str, Any]:
+    try:
+        game.sit(player_id, body.seat)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.player_view(player_id)
 
 
 @app.get("/api/info")
 def info() -> dict[str, Any]:
     return {"lan_ip": get_lan_ip(), "status": game.status,
-            "player_count": len(game.players), "script": game.script}
+            "script": game.script_id, "player_count": game.player_count}
 
 
 @app.get("/api/me/{player_id}")
@@ -109,6 +128,16 @@ def me(player_id: str) -> dict[str, Any]:
 @app.post("/api/login")
 def login(body: PasswordBody) -> dict[str, bool]:
     return {"ok": body.password == STORYTELLER_PASSWORD}
+
+
+@app.post("/api/config", dependencies=[Depends(require_storyteller)])
+async def config(body: ConfigBody) -> dict[str, Any]:
+    try:
+        game.configure(body.script, body.player_count)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
 
 
 @app.get("/api/state", dependencies=[Depends(require_storyteller)])

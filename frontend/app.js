@@ -50,12 +50,34 @@ function openSocket(query, onMessage, onFatal) {
   return ws
 }
 
+// ================= 环形座位 =================
+// 座位 1 在正上方,顺时针排布
+
+function seatCircle(seats, opts = {}) {
+  const wrap = h('<div class="circle-wrap"></div>')
+  const n = seats.length
+  if (n === 0) return wrap
+  seats.forEach((s) => {
+    const a = (2 * Math.PI / n) * (s.seat - 1) - Math.PI / 2
+    const p = s.player
+    const teamCls = p && p.role ? `team-${p.role.team}` : ''
+    const node = h(`<div class="seat-node ${p ? 'occ' : 'free'} ${p && !p.alive ? 'dead' : ''} ${s.is_me ? 'mine' : ''} ${teamCls}"
+        data-seat="${s.seat}" style="left:${(50 + 38 * Math.cos(a)).toFixed(2)}%;top:${(50 + 38 * Math.sin(a)).toFixed(2)}%">
+      <span class="seat-num">${s.seat}</span>
+      <span class="seat-name">${p ? esc(p.name) : (opts.freeLabel || '入座')}</span>
+    </div>`)
+    if (opts.clickSeat) node.addEventListener('click', () => opts.clickSeat(s))
+    wrap.appendChild(node)
+  })
+  return wrap
+}
+
 // ================= 加入页 =================
 
 function renderJoin() {
   app.replaceChildren(h(`<div class="page center">
     <h1>🩸 血染钟楼</h1>
-    <p class="sub">输入名字加入本局</p>
+    <p class="sub">输入名字加入本局,然后选座入座</p>
     <input class="input" id="name" placeholder="你的名字" maxlength="20" autofocus>
     <button class="btn primary" id="join-btn">加入</button>
     <p class="error" id="err" style="display:none"></p>
@@ -70,7 +92,7 @@ function renderJoin() {
     try {
       const res = await api('/api/join', { method: 'POST', body: JSON.stringify({ name }) })
       localStorage.setItem(PLAYER_ID_KEY, res.player_id)
-      renderRoleCard(res.player_id)
+      renderPlayer(res.player_id)
     } catch (e) {
       err.textContent = e.message
       err.style.display = ''
@@ -83,21 +105,40 @@ function renderJoin() {
   }
 }
 
-// ================= 玩家角色卡 =================
+// ================= 玩家视图 =================
 
-function renderRoleCard(playerId) {
+function renderPlayer(playerId) {
   app.replaceChildren(h('<div class="page center">连接中…</div>'))
   function paint(view) {
-    const { me, status, players } = view
+    const { me, status, seats } = view
+
+    // ---- 未入座:选座 ----
+    if (me.seat == null) {
+      app.replaceChildren(h(`<div class="page rolecard">
+        <div class="topbar"><span>${esc(me.name)}</span><span class="dot ok" title="已连接"></span></div>
+        <div class="center grow">
+          <p class="sub">选择你的座位入座</p>
+          <div id="circle"></div>
+          <p class="hint">${seats.length ? `共 ${seats.length} 个座位,点一个空座位入座` : '等待说书人设置本局人数…'}</p>
+          <p class="error" id="sit-err" style="display:none"></p>
+        </div>
+      </div>`))
+      const err = document.getElementById('sit-err')
+      document.getElementById('circle').appendChild(seatCircle(seats, {
+        clickSeat: (s) => {
+          if (s.player) return
+          api(`/api/player/${playerId}/sit`, { method: 'POST', body: JSON.stringify({ seat: s.seat }) })
+            .catch((e) => { err.textContent = e.message; err.style.display = '' })
+        },
+      }))
+      return
+    }
+
+    // ---- 已入座 ----
     const role = me.role
-    const rows = players.map((p) => `
-      <div class="player-row ${p.alive ? '' : 'dead'}">
-        <span class="seat">${p.seat}</span><span class="pname">${esc(p.name)}</span>
-        <span class="pstate">${p.alive ? '存活' : '☠'}</span>
-      </div>`).join('')
-    const body = status === 'lobby' || !role
-      ? `<div class="center grow"><p class="sub">已入座,等待说书人分配角色…</p>
-         <p class="hint">把手机收好,别让别人看到屏幕</p></div>`
+    const card = status === 'lobby' || !role
+      ? `<div class="center"><p class="sub">已入座,等待说书人分配角色…</p>
+         <p class="hint">开局前点其他空座位可以换座</p></div>`
       : `<div class="card team-${role.team} ${me.alive ? '' : 'dead'}">
           <div class="card-head">
             <span class="team-badge">${TEAM_LABEL[role.team]}</span>
@@ -109,9 +150,17 @@ function renderRoleCard(playerId) {
         </div>`
     app.replaceChildren(h(`<div class="page rolecard">
       <div class="topbar"><span>座位 ${me.seat} · ${esc(me.name)}</span><span class="dot ok" title="已连接"></span></div>
-      ${body}
-      <div class="players">${rows}</div>
+      <div id="circle"></div>
+      ${card}
     </div>`))
+    document.getElementById('circle').appendChild(seatCircle(seats, {
+      clickSeat: (s) => {
+        // 开局前可换座:点空座位移动过去
+        if (!s.player && status === 'lobby') {
+          api(`/api/player/${playerId}/sit`, { method: 'POST', body: JSON.stringify({ seat: s.seat }) }).catch(() => {})
+        }
+      },
+    }))
   }
   const ws = openSocket(`who=${playerId}`, paint, () => {
     // 身份失效(被移除/本局已重置)→ 回加入页
@@ -161,38 +210,50 @@ function renderStoryteller() {
   }
 
   app.replaceChildren(h('<div class="page center">连接魔典…</div>'))
+  let selected = null // 选中的座位号(点击环形座位)
+
   function paint(view) {
-    const players = view.players
-    const rows = players.length === 0
-      ? '<p class="hint">还没有玩家,让他们扫右边的二维码加入(至少 5 人才能分配角色)</p>'
-      : players.map((p) => `
-        <li class="${p.alive ? '' : 'dead'}" data-id="${p.id}">
-          <span class="seat">${p.seat}</span>
-          <span class="pname">${esc(p.name)}</span>
-          ${p.role ? `<span class="team-badge team-${p.role.team}">${TEAM_LABEL[p.role.team]} · ${esc(p.role.name)}</span>` : ''}
-          <span class="spacer"></span>
-          <button class="btn small act-alive">${p.alive ? '☠ 标记死亡' : '复活'}</button>
-          <button class="btn small ghost act-remove">移除</button>
-        </li>`).join('')
+    const { status, script, player_count: count, scripts, seats } = view
+    const seatedCount = seats.filter((s) => s.player).length
+    const allSeated = seatedCount === count
+    const selSeat = seats.find((s) => s.seat === selected)
+    const selP = selSeat && selSeat.player
+
     app.replaceChildren(h(`<div class="page st">
       <div class="st-head">
         <h1>🕯 魔典</h1>
         <span class="sub">血染钟楼 · 说书人控制台</span>
         <div class="st-actions">
-          <button class="btn primary" id="assign-btn" ${view.status === 'playing' ? 'disabled' : ''}>🎲 随机分配角色</button>
+          <button class="btn primary" id="assign-btn" ${status === 'playing' || !allSeated ? 'disabled' : ''}>🎲 随机分配角色</button>
           <button class="btn danger" id="reset-btn">重置本局</button>
         </div>
       </div>
       <p class="error" id="err" style="display:none"></p>
       <div class="st-body">
         <div class="st-left">
-          <h3>玩家 (${players.length} 人${view.status === 'playing' ? ' · 游戏中' : ' · 等待开局'})</h3>
-          <ul class="st-players">${rows}</ul>
+          <div class="st-config">
+            <label>板子
+              <select id="script-select">
+                ${scripts.map((s) => `<option value="${s.id}" ${s.id === script ? 'selected' : ''}>${esc(s.name)}( ${esc(s.en)} )</option>`).join('')}
+              </select>
+            </label>
+            <label>人数
+              <button class="btn small" id="dec" ${count <= 5 ? 'disabled' : ''}>−</button>
+              <span class="count">${count}</span>
+              <button class="btn small" id="inc" ${count >= 15 ? 'disabled' : ''}>＋</button>
+            </label>
+            <span class="hint">修改板子/人数会清空座位,玩家需重新入座</span>
+          </div>
+          <div class="st-circle">
+            <div id="circle"></div>
+            <p class="hint">已入座 ${seatedCount}/${count}${status === 'playing' ? ' · 游戏中' : ' · 等待开局'}${allSeated && status === 'lobby' ? ' · 可以分配角色' : ''}</p>
+          </div>
         </div>
         <div class="st-right">
+          <div id="detail"></div>
           <h3>玩家加入</h3>
           <img src="/api/qr" alt="加入二维码" class="qr">
-          <p class="hint">玩家手机连同一 WiFi 后,用相机扫码即可加入</p>
+          <p class="hint">玩家手机连同一 WiFi 后,用相机扫码即可加入并选座</p>
         </div>
       </div>
     </div>`))
@@ -206,24 +267,60 @@ function renderStoryteller() {
         err.style.display = ''
       }
     }
+
+    // ---- 环形座位 ----
+    document.getElementById('circle').appendChild(seatCircle(seats, {
+      freeLabel: '空',
+      clickSeat: (s) => {
+        selected = s.seat
+        paint(view)
+      },
+    }))
+
+    // ---- 选中玩家详情 ----
+    const detail = document.getElementById('detail')
+    if (selP) {
+      detail.replaceChildren(h(`<div class="st-detail ${selP.alive ? '' : 'dead'}">
+        <h3>座位 ${selP.seat} · ${esc(selP.name)}</h3>
+        ${selP.role
+          ? `<span class="team-badge team-${selP.role.team}">${TEAM_LABEL[selP.role.team]} · ${esc(selP.role.name)}</span>`
+          : '<p class="hint">未分配角色</p>'}
+        <div class="st-detail-actions">
+          <button class="btn small" id="act-alive">${selP.alive ? '☠ 标记死亡' : '复活'}</button>
+          <button class="btn small ghost" id="act-remove">移除</button>
+        </div>
+      </div>`))
+      document.getElementById('act-alive').onclick = () => act(() => stApi(`/api/player/${selP.id}/alive`, { method: 'POST' }))
+      document.getElementById('act-remove').onclick = () => {
+        if (confirm(`移除 ${selP.name}?`)) act(() => stApi(`/api/player/${selP.id}/remove`, { method: 'POST' }))
+      }
+    } else {
+      detail.replaceChildren(h('<p class="hint">点击环形座位查看/操作玩家</p>'))
+    }
+
+    // ---- 配置 ----
+    function doConfig(sc, n) {
+      const willClear = seats.some((s) => s.player) || status === 'playing'
+      if (willClear && !confirm('修改配置会清空所有座位和角色分配,继续?')) {
+        paint(view)
+        return
+      }
+      act(() => stApi('/api/config', { method: 'POST', body: JSON.stringify({ script: sc, player_count: n }) })
+        .then(() => { selected = null }))
+    }
+    document.getElementById('script-select').onchange = (e) => doConfig(e.target.value, count)
+    document.getElementById('dec').onclick = () => doConfig(script, count - 1)
+    document.getElementById('inc').onclick = () => doConfig(script, count + 1)
+
+    // ---- 分配 / 重置 ----
     document.getElementById('assign-btn').onclick = () => act(() => stApi('/api/assign', { method: 'POST' }))
     document.getElementById('reset-btn').onclick = () => {
       if (confirm('确定重置本局?所有玩家将退出。')) act(() => stApi('/api/reset', { method: 'POST' }))
     }
-    app.querySelectorAll('.act-alive').forEach((b) => {
-      b.onclick = () => act(() => stApi(`/api/player/${b.closest('li').dataset.id}/alive`, { method: 'POST' }))
-    })
-    app.querySelectorAll('.act-remove').forEach((b) => {
-      b.onclick = () => {
-        const li = b.closest('li')
-        const name = li.querySelector('.pname').textContent
-        if (confirm(`移除 ${name}?`)) act(() => stApi(`/api/player/${li.dataset.id}/remove`, { method: 'POST' }))
-      }
-    })
   }
+
   const pw = encodeURIComponent(localStorage.getItem(ST_PASSWORD_KEY) || '')
-  const ws = openSocket(`who=storyteller&pw=${pw}`, paint)
-  window.addEventListener('beforeunload', () => ws.close())
+  openSocket(`who=storyteller&pw=${pw}`, paint)
 }
 
 // ================= 入口(hash 路由) =================
@@ -234,7 +331,7 @@ if (location.hash.startsWith('#/storyteller')) {
   const playerId = localStorage.getItem(PLAYER_ID_KEY)
   if (playerId) {
     api(`/api/me/${playerId}`)
-      .then(() => renderRoleCard(playerId))
+      .then(() => renderPlayer(playerId))
       .catch(() => {
         localStorage.removeItem(PLAYER_ID_KEY)
         renderJoin()

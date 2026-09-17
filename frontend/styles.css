@@ -326,3 +326,132 @@ h3 {
   color: var(--gold);
   word-break: break-all;
 }
+
+/* ---- 环形座位 ---- */
+
+.circle-wrap {
+  position: relative;
+  width: min(76vw, 340px);
+  aspect-ratio: 1;
+  margin: 6px auto;
+}
+
+.seat-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.seat-node .seat-num {
+  font-size: 11px;
+  color: var(--dim);
+  line-height: 1.1;
+}
+
+.seat-node .seat-name {
+  font-size: 10px;
+  max-width: 68px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.seat-node.free {
+  border-style: dashed;
+  opacity: 0.55;
+}
+
+.seat-node.free:hover {
+  border-color: var(--gold);
+  opacity: 1;
+  cursor: pointer;
+}
+
+.seat-node.occ {
+  border-color: var(--team, var(--gold));
+}
+
+.seat-node.dead {
+  filter: grayscale(0.9);
+  opacity: 0.45;
+}
+
+.seat-node.dead::after {
+  content: '☠';
+  position: absolute;
+  top: -10px;
+  right: -8px;
+  font-size: 14px;
+}
+
+.seat-node.mine {
+  box-shadow: 0 0 0 3px var(--gold);
+}
+
+/* ---- 说书人配置与详情 ---- */
+
+.st-config {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.st-config label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.st-config select {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 14px;
+}
+
+.count {
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  min-width: 24px;
+  text-align: center;
+}
+
+.st-circle {
+  text-align: center;
+}
+
+.st-detail {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: center;
+}
+
+.st-detail.dead {
+  opacity: 0.6;
+}
+
+.st-detail-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
