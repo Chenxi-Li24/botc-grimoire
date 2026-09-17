@@ -76,6 +76,7 @@ class GameManager:
         self.night_idx: int = 0  # 当前走到第几步
         self.nominations: list[dict] = []  # 提名历史 [{day,nominator,nominee,votes,executed}]
         self.current: dict | None = None  # 进行中的提名 {nominator,nominee,votes}
+        self.bluffs: list[str] = []  # 恶魔的三个伪装:不在场的好角色 id(开局时抽取)
         self.saved_at: float | None = None
 
     @property
@@ -101,6 +102,7 @@ class GameManager:
             "phase": self.phase, "night_no": self.night_no, "day_no": self.day_no,
             "night_steps": self.night_steps, "night_idx": self.night_idx,
             "nominations": self.nominations, "current": self.current,
+            "bluffs": self.bluffs,
         }
         SAVE_PATH.parent.mkdir(exist_ok=True)
         tmp = SAVE_PATH.with_suffix(".tmp")
@@ -116,7 +118,8 @@ class GameManager:
             self.players = {pid: Player(**p) for pid, p in d["players"].items()}
             for key in ("status", "script_id", "player_count", "seat_roles",
                         "seat_fakes", "seat_markers", "phase", "night_no",
-                        "day_no", "night_steps", "night_idx", "nominations", "current"):
+                        "day_no", "night_steps", "night_idx", "nominations",
+                        "current", "bluffs"):
                 setattr(self, key, d[key])
             self.saved_at = time.time()
         except (KeyError, TypeError, ValueError):
@@ -150,6 +153,7 @@ class GameManager:
         self.night_no, self.day_no = 1, 0
         self.night_steps, self.night_idx = [], 0
         self.nominations, self.current = [], None
+        self.bluffs = []
         self.status = "lobby"
         self.save()
 
@@ -313,8 +317,17 @@ class GameManager:
 
     # ---- 昼夜阶段与夜晚流程 ----
 
+    def _assign_bluffs(self) -> None:
+        """开局抽取恶魔的三个伪装:不在场的好角色(暗流涌动限镇民,其余脚本镇民+外来者)。"""
+        present = set(self.seat_roles.values()) | {p.role_id for p in self.players.values() if p.role_id}
+        teams = (TOWNSFOLK,) if self.script_id == "trouble-brewing" else (TOWNSFOLK, OUTSIDER)
+        pool = [r["id"] for r in self.roles.values() if r["team"] in teams and r["id"] not in present]
+        self.bluffs = random.sample(pool, min(3, len(pool)))
+
     def _begin_night(self) -> None:
         """进入夜晚:按本夜在场角色组装步骤表(酒鬼的假角色作为附加步骤)。"""
+        if self.night_no == 1 and not self.bluffs:  # 第一夜开始时抽伪装,后续夜晚不再重抽
+            self._assign_bluffs()
         kind = "first" if self.night_no == 1 else "other"
         sheet = NIGHT_ORDER[self.script_id][kind]
         # 在场角色 = 已入座玩家 + 空座预发身份(人未齐开局时,空座角色也排进夜晚)
@@ -477,7 +490,7 @@ class GameManager:
     def player_view(self, player_id: str) -> dict:
         me = self.players[player_id]
         fake_id = self.seat_fakes.get(me.seat) if me.seat is not None else None
-        return {
+        view = {
             "status": self.status,
             "script": SCRIPTS[self.script_id]["name"],
             "player_count": self.player_count,
@@ -488,6 +501,10 @@ class GameManager:
             "me": me.private(self.roles, fake_id),
             "seats": self._seat_slots(st_view=False, my_id=player_id),
         }
+        # 伪装:仅恶魔得知三个不在场好角色(按真实身份判断,酒鬼的假镇民角色不触发)
+        if self.bluffs and me.role_id and self.roles[me.role_id]["team"] == DEMON:
+            view["bluffs"] = [self.roles[rid] for rid in self.bluffs]
+        return view
 
     def storyteller_view(self) -> dict:
         alive_count = sum(1 for p in self.players.values() if p.alive)
@@ -515,5 +532,6 @@ class GameManager:
             "can_start": self.status == "lobby" and all(
                 (self.seats.get(i) is not None and self.seats[i].role_id)
                 or i in self.seat_roles for i in range(1, self.player_count + 1)),
+            "bluffs": [self.roles[rid] for rid in self.bluffs],  # 恶魔的三个伪装(说书人可见)
             "saved_at": self.saved_at,
         }

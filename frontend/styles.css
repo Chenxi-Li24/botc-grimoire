@@ -763,3 +763,10 @@ h3 {
   color: var(--gold);
   margin: 6px 0;
 }
+
+.bluffs {
+  font-size: 13px;
+  color: var(--gold);
+  margin-top: 8px;
+  line-height: 1.6;
+}

@@ -250,6 +250,30 @@ async def main() -> None:
     assert fake_steps and fake_steps[0]["key"] == "washerwoman", "夜晚步骤应含假角色步"
     print("FAKE  酒鬼看到洗衣妇,夜晚步骤含假角色步(座 6) OK")
 
+    # ---- 伪装:恶魔得知三个不在场好角色,仅恶魔可见 ----
+    req("/api/reset", "POST", headers=ST)
+    req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 6}, ST)
+    b_ids = [req("/api/join", "POST", {"name": f"伪{i}"})["player_id"] for i in range(1, 7)]
+    for seat, pid in enumerate(b_ids, 1):
+        req(f"/api/player/{pid}/sit", "POST", {"seat": seat})
+    pre = [{"seat": 1, "role": "imp"}, {"seat": 2, "role": "poisoner"},
+           {"seat": 3, "role": "empath"}, {"seat": 4, "role": "chef"},
+           {"seat": 5, "role": "investigator"}, {"seat": 6, "role": "drunk"}]
+    state = req("/api/assign/manual", "POST", {"assignments": pre}, ST)
+    b = state["bluffs"]
+    assert len(b) == 3 and all(r["team"] == "townsfolk" for r in b), f"伪装应为 3 个镇民 {b}"
+    in_play = {"imp", "poisoner", "empath", "chef", "investigator", "drunk"}
+    assert not ({r["id"] for r in b} & in_play), "伪装必须不在场"
+    dview = req(f"/api/me/{b_ids[0]}")
+    assert [r["id"] for r in dview["bluffs"]] == [r["id"] for r in b], "恶魔应看到伪装"
+    pview = req(f"/api/me/{b_ids[2]}")
+    assert "bluffs" not in pview, "非恶魔不应看到伪装"
+    # 酒鬼看到假镇民角色,但真实身份是外来者,不应看到伪装
+    req("/api/fake", "POST", {"seat": 6, "role": "washerwoman"}, ST)
+    dview6 = req(f"/api/me/{b_ids[5]}")
+    assert "bluffs" not in dview6, "酒鬼(假镇民)不应看到伪装"
+    print("BLUFF 恶魔得知 3 个不在场镇民,仅恶魔可见,酒鬼假角色不触发 OK")
+
     # ---- 人未齐也可开局:随机发牌覆盖空座;迟到玩家入座继承 ----
     req("/api/reset", "POST", headers=ST)
     req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 6}, ST)
