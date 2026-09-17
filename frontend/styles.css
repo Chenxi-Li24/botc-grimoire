@@ -712,6 +712,31 @@ h3 {
   border-color: var(--m-team-change);
 }
 
+/* 阵营转变配色:按新阵营上色(善良蓝/邪恶红)——说书人选择框、座位角标、玩家提示共用 */
+.tc-good {
+  background: #55b5ff;
+  color: #101828;
+}
+
+.tc-evil {
+  background: #e92a2a;
+  color: #ffffff;
+}
+
+.marker-badge.tc-evil {
+  color: #ffffff;
+}
+
+.marker-chip.on.m-team-change.tc-good {
+  background: #55b5ff;
+  border-color: #55b5ff;
+}
+
+.marker-chip.on.m-team-change.tc-evil {
+  background: #e92a2a;
+  border-color: #e92a2a;
+}
+
 /* ---- 夜晚流程助手 ---- */
 
 .step-card {
