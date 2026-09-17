@@ -79,7 +79,7 @@ function seatCircle(seats, opts = {}) {
       <span class="seat-num">${s.seat}</span>
       <span class="seat-name">${p ? esc(p.name) : (opts.freeLabel || '入座')}</span>
       ${badge ? `<span class="draft-badge team-${badge.team}">${esc(badge.name)}</span>` : ''}
-      ${markers.length ? `<span class="marker-badges">${markers.map((m) => `<span class="marker-badge m-${m}">${MARKER_CHAR[m] || '?'}</span>`).join('')}</span>` : ''}
+      ${markers.length || s.role_change ? `<span class="marker-badges">${markers.map((m) => `<span class="marker-badge m-${m}">${MARKER_CHAR[m] || '?'}</span>`).join('')}${s.role_change ? `<span class="marker-badge m-role-change">🔄${esc(s.role_change.name)}</span>` : ''}</span>` : ''}
     </div>`)
     if (opts.clickSeat) node.addEventListener('click', () => opts.clickSeat(s))
     wrap.appendChild(node)
@@ -140,7 +140,7 @@ function renderPlayer(playerId) {
     const { me, status, seats, phase, night_no: nightNo, day_no: dayNo, current, bluffs,
       demon_seats: demonSeats, minion_seats: minionSeats, lunatic_seats: lunaticSeats,
       script: scriptName, player_count: count, composition, sentinel: sentinelOn,
-      room_code: roomCode } = view
+      room_code: roomCode, team_changed: teamChanged } = view
     // 官方配比(公开信息):只展示基础配比,实际调整(男爵/教父等)不给玩家
     const compLine = composition && composition.length === 4
       ? `<p class="hint">📋 ${esc(scriptName)} · ${count} 人 · 官方配比:${['townsfolk', 'outsider', 'minion', 'demon']
@@ -213,6 +213,10 @@ function renderPlayer(playerId) {
     const lunaticLine = lunaticSeats && lunaticSeats.length
       ? `<p class="meet-line">🌙 疯子:${lunaticSeats.map((l) => `座${l.seat}${l.name ? ` ${esc(l.name)}` : ''}`).join(' · ')}</p>`
       : ''
+    // 阵营转变:唯一会告知玩家的标记——玩家必须知道自己阵营已变
+    const teamChangeLine = teamChanged
+      ? '<p class="meet-line">⚖ 阵营转变:说书人标记你的阵营已改变</p>'
+      : ''
     app.replaceChildren(h(`<div class="page rolecard">
       <div class="topbar"><span>座位 ${me.seat} · ${esc(me.name)}${phaseTxt} · 🚪 ${esc(roomCode)}</span><span class="dot ok" title="已连接"></span></div>
       <div id="circle"></div>
@@ -224,6 +228,7 @@ function renderPlayer(playerId) {
       ${demonLine}
       ${minionLine}
       ${lunaticLine}
+      ${teamChangeLine}
     </div>`))
     document.getElementById('circle').appendChild(seatCircle(seats, {
       voted: (s) => !!current && current.votes.includes(s.seat), // 举手票型公开,玩家也可见
@@ -291,6 +296,7 @@ function renderStoryteller() {
   let draftLunMinions = {} // 手动模式:疯子座位号 → 以为的爪牙座位列表
   let draftLunBluffs = {} // 手动模式:疯子座位号 → 3 个伪装角色 id
   let godfatherAdj = 1 // 教父外来者调整:说书人可选 +1 或 −1,默认 +1
+  let rolePickSeat = null // 角色转变:正在为该座位选择「变成哪个角色」
 
   function paint(view) {
     const { status, script, player_count: count, scripts, seats, roles, composition,
@@ -575,10 +581,17 @@ function renderStoryteller() {
 
     function markerRow(slot) {
       const ms = slot.markers || []
+      const rc = slot.role_change
       return `<div class="st-markers"><span class="hint">标记:</span>
         ${Object.entries(MARKER_LABEL).map(([k, l]) =>
-          `<button class="chip ${ms.includes(k) ? 'on' : ''} marker-chip m-${k}" data-mk="${k}">${l}</button>`).join('')}
-      </div>`
+          k === 'role-change'
+            // 角色转变带数据:选定后按钮显示变成的角色,再点=清除
+            ? `<button class="chip ${rc ? 'on' : ''} marker-chip m-${k}" data-mk="${k}">${rc ? `角色转变→${esc(rc.name)}` : l}</button>`
+            : `<button class="chip ${ms.includes(k) ? 'on' : ''} marker-chip m-${k}" data-mk="${k}">${l}</button>`).join('')}
+      </div>
+      ${rolePickSeat === slot.seat ? `<div class="st-fake"><span class="hint">变成哪个角色(点选):</span>
+        ${roles.map((r) => `<button class="chip team-${r.team}" data-role-pick="${r.id}" title="${esc(r.ability)}">${esc(r.name)}</button>`).join('')}
+      </div>` : ''}`
     }
 
     function selPDetailHtml(slot, p) {
@@ -604,10 +617,28 @@ function renderStoryteller() {
         if (confirm(`移除 ${selP.name}?`)) act(() => stApi(`/api/player/${selP.id}/remove`, { method: 'POST' }))
       }
       detail.querySelectorAll('.marker-chip').forEach((c) => {
-        c.onclick = () => act(() => stApi('/api/marker', {
-          method: 'POST',
-          body: JSON.stringify({ seat: selSeat.seat, marker: c.dataset.mk, on: !(selSeat.markers || []).includes(c.dataset.mk) }),
-        }))
+        c.onclick = () => {
+          // 角色转变带数据:未选时点开角色选择行,已选时再点=清除
+          if (c.dataset.mk === 'role-change') {
+            if (selSeat.role_change) {
+              act(() => stApi('/api/marker', { method: 'POST', body: JSON.stringify({ seat: selSeat.seat, marker: 'role-change', on: false }) }))
+            } else {
+              rolePickSeat = selSeat.seat
+              paint(view)
+            }
+            return
+          }
+          act(() => stApi('/api/marker', {
+            method: 'POST',
+            body: JSON.stringify({ seat: selSeat.seat, marker: c.dataset.mk, on: !(selSeat.markers || []).includes(c.dataset.mk) }),
+          }))
+        }
+      })
+      detail.querySelectorAll('[data-role-pick]').forEach((b) => {
+        b.onclick = () => {
+          rolePickSeat = null
+          act(() => stApi('/api/marker', { method: 'POST', body: JSON.stringify({ seat: selSeat.seat, marker: 'role-change', on: true, role: b.dataset.rolePick }) }))
+        }
       })
     }
 

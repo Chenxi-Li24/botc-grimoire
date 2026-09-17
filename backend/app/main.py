@@ -100,8 +100,9 @@ class FakeBody(BaseModel):
 
 class MarkerBody(BaseModel):
     seat: int
-    marker: str  # poisoned | drunk | mad
+    marker: str  # poisoned | drunk | mad | role-change | team-change
     on: bool
+    role: str | None = None  # role-change 时必填:变成的角色 id
 
 
 class NominationBody(BaseModel):
@@ -258,9 +259,9 @@ async def set_fake(body: FakeBody) -> dict[str, Any]:
 
 @app.post("/api/marker", dependencies=[Depends(require_storyteller)])
 async def set_marker(body: MarkerBody) -> dict[str, Any]:
-    """状态标记:中毒/醉酒/疯狂,仅说书人可见。"""
+    """状态标记:中毒/醉酒/疯狂/角色转变/阵营转变。阵营转变会通知玩家本人。"""
     try:
-        game.set_marker(body.seat, body.marker, body.on)
+        game.set_marker(body.seat, body.marker, body.on, body.role)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await hub.push_all()

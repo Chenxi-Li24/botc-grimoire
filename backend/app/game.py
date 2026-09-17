@@ -74,7 +74,8 @@ class GameManager:
         self.seat_fakes: dict[int, str] = {}  # 认知覆盖:座位号 → 玩家看到的假角色 id(酒鬼/疯子)
         self.lunatic_minions: dict[int, list[int]] = {}  # 疯子:座位号 → 疯子以为的爪牙座位(说书人选,不一定是真爪牙)
         self.lunatic_bluffs: dict[int, list[str]] = {}  # 疯子:座位号 → 说书人给疯子的 3 个伪装(不一定是恶魔的真伪装)
-        self.seat_markers: dict[int, list] = {}  # 状态标记:座位号 → [poisoned/drunk/mad]
+        self.seat_markers: dict[int, list] = {}  # 状态标记:座位号 → [poisoned/drunk/mad/team-change]
+        self.seat_role_changes: dict[int, str] = {}  # 角色转变:座位号 → 变成的新角色 id(说书人选择标记)
         self.phase: str | None = None  # None(大厅)| "night" | "day"
         self.night_no: int = 1  # 当前是第几夜(1 起)
         self.day_no: int = 0  # 当前是第几天(第一次天亮置 1)
@@ -107,7 +108,7 @@ class GameManager:
             "player_count": self.player_count,
             "seat_roles": self.seat_roles, "seat_fakes": self.seat_fakes,
             "lunatic_minions": self.lunatic_minions, "lunatic_bluffs": self.lunatic_bluffs,
-            "seat_markers": self.seat_markers,
+            "seat_markers": self.seat_markers, "seat_role_changes": self.seat_role_changes,
             "phase": self.phase, "night_no": self.night_no, "day_no": self.day_no,
             "night_steps": self.night_steps, "night_idx": self.night_idx,
             "nominations": self.nominations, "current": self.current,
@@ -134,6 +135,7 @@ class GameManager:
             self.room_code = d.get("room_code") or f"{random.randrange(10000):04d}"  # 旧存档没有房间号 → 现生成
             self.lunatic_minions = d.get("lunatic_minions", {})  # 旧存档没有疯子假爪牙/伪装字段 → 空
             self.lunatic_bluffs = d.get("lunatic_bluffs", {})
+            self.seat_role_changes = d.get("seat_role_changes", {})  # 旧存档没有角色转变 → 空
             self.saved_at = time.time()
         except (KeyError, TypeError, ValueError):
             pass  # 存档损坏 → 用干净状态开局
@@ -164,6 +166,7 @@ class GameManager:
         self.lunatic_minions = {}
         self.lunatic_bluffs = {}
         self.seat_markers = {}  # 状态标记一并清空
+        self.seat_role_changes = {}  # 角色转变一并清空
         self.phase = None
         self.night_no, self.day_no = 1, 0
         self.night_steps, self.night_idx = [], 0
@@ -580,12 +583,22 @@ class GameManager:
             self._begin_night()  # 夜晚中改认知覆盖 → 重算步骤表(假角色步骤随之增减)
         self.save()
 
-    def set_marker(self, seat: int, marker: str, on: bool) -> None:
-        """说书人标记:该座位玩家中毒/醉酒/疯狂。仅说书人可见,玩家无感知。"""
+    def set_marker(self, seat: int, marker: str, on: bool, role: str | None = None) -> None:
+        """说书人标记:该座位玩家中毒/醉酒/疯狂/阵营转变(玩家对阵营转变可见)。
+        角色转变需附上「变成哪个角色」,由说书人从板子角色里选择。"""
         if not 1 <= seat <= self.player_count:
             raise ValueError(f"座位需在 1~{self.player_count} 之间")
         if marker not in MARKERS:
             raise ValueError(f"未知标记 {marker}")
+        if marker == "role-change":  # 带数据的标记单独存,角标显示新角色
+            if on:
+                if role is None or role not in self.roles:
+                    raise ValueError("角色转变需选择要变成的角色")
+                self.seat_role_changes[seat] = role
+            else:
+                self.seat_role_changes.pop(seat, None)
+            self.save()
+            return
         cur = set(self.seat_markers.get(seat, ()))
         if on:
             cur.add(marker)
@@ -640,6 +653,8 @@ class GameManager:
                     slot["assigned_role"] = self.roles[self.seat_roles[i]]
                 if st_view and i in self.seat_fakes:  # 空座也能先标记认知覆盖
                     slot["fake_role"] = self.roles[self.seat_fakes[i]]
+                if st_view and i in self.seat_role_changes:  # 空座也能标记角色转变
+                    slot["role_change"] = self.roles[self.seat_role_changes[i]]
                 slots.append(slot)
                 continue
             entry = p.storyteller(self.roles) if st_view else p.public()
@@ -648,6 +663,8 @@ class GameManager:
                 slot["fake_role"] = self.roles[self.seat_fakes[i]]
             if st_view and i in self.seat_markers:  # 状态标记,仅说书人可见
                 slot["markers"] = self.seat_markers[i]
+            if st_view and i in self.seat_role_changes:  # 角色转变:变成哪个角色,说书人可见
+                slot["role_change"] = self.roles[self.seat_role_changes[i]]
             if my_id is not None:  # is_me 属于座位槽位层,不属于 player
                 slot["is_me"] = p.id == my_id
             slots.append(slot)
@@ -689,6 +706,9 @@ class GameManager:
         if not started:
             return view
         team = self.roles[me.role_id]["team"] if me.role_id else None
+        # 阵营转变:必须告诉玩家(手机卡显示提醒),其他标记仅说书人可见
+        if me.seat is not None and "team-change" in self.seat_markers.get(me.seat, ()):
+            view["team_changed"] = True
         lunatic_seats = self._role_seats("lunatic")  # 真疯子:恶魔与爪牙都须知道他是谁
         # 爪牙会面:所有爪牙同时醒来——知道恶魔是谁、谁是疯子,也彼此看见对方(官方规则)
         if team == MINION and self._step_reached("minioninfo"):
