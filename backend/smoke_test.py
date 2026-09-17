@@ -169,6 +169,7 @@ async def main() -> None:
     assert state["phase"] == "night" and state["night_no"] == 1
     assert state["night"]["steps"][0]["key"] == "dusk"
     assert state["night"]["steps"][-1]["key"] == "dawn"
+    assert len(state["bluffs"]) == 3, "随机发牌时应同时抽好伪装"
     print("NIGHT 开局进入第 1 夜,dusk 起 dawn 止 OK")
 
     # 走到天亮
@@ -250,7 +251,7 @@ async def main() -> None:
     assert fake_steps and fake_steps[0]["key"] == "washerwoman", "夜晚步骤应含假角色步"
     print("FAKE  酒鬼看到洗衣妇,夜晚步骤含假角色步(座 6) OK")
 
-    # ---- 伪装:恶魔得知三个不在场好角色,仅恶魔可见 ----
+    # ---- 伪装:配版时选好,恶魔得知三个不在场好角色,仅恶魔可见 ----
     req("/api/reset", "POST", headers=ST)
     req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 6}, ST)
     b_ids = [req("/api/join", "POST", {"name": f"伪{i}"})["player_id"] for i in range(1, 7)]
@@ -259,9 +260,21 @@ async def main() -> None:
     pre = [{"seat": 1, "role": "imp"}, {"seat": 2, "role": "poisoner"},
            {"seat": 3, "role": "empath"}, {"seat": 4, "role": "chef"},
            {"seat": 5, "role": "investigator"}, {"seat": 6, "role": "drunk"}]
-    state = req("/api/assign/manual", "POST", {"assignments": pre}, ST)
+    # 非法伪装(提交失败不改变状态,可连续重试):在场 / 非好角色 / 数量不对 / 不属于板子
+    for bad in (["empath", "soldier", "virgin"],           # 共情者在场
+                ["washerwoman", "drunk", "virgin"],        # 酒鬼是外来者(TB 伪装限镇民)
+                ["washerwoman", "soldier"],                # 只给 2 个
+                ["washerwoman", "soldier", "balloonist"]):  # 不属于本板子
+        try:
+            req("/api/assign/manual", "POST", {"assignments": pre, "bluffs": bad}, ST)
+            raise AssertionError(f"非法伪装未被拒绝 {bad}")
+        except urllib.error.HTTPError as e:
+            assert e.code == 400, f"非法伪装应 400,实际 {e.code}"
+    # 说书人指定伪装:配版时即生效
+    want_bluffs = ["washerwoman", "soldier", "virgin"]
+    state = req("/api/assign/manual", "POST", {"assignments": pre, "bluffs": want_bluffs}, ST)
     b = state["bluffs"]
-    assert len(b) == 3 and all(r["team"] == "townsfolk" for r in b), f"伪装应为 3 个镇民 {b}"
+    assert [r["id"] for r in b] == want_bluffs, "伪装应与说书人指定一致"
     in_play = {"imp", "poisoner", "empath", "chef", "investigator", "drunk"}
     assert not ({r["id"] for r in b} & in_play), "伪装必须不在场"
     dview = req(f"/api/me/{b_ids[0]}")
@@ -272,7 +285,7 @@ async def main() -> None:
     req("/api/fake", "POST", {"seat": 6, "role": "washerwoman"}, ST)
     dview6 = req(f"/api/me/{b_ids[5]}")
     assert "bluffs" not in dview6, "酒鬼(假镇民)不应看到伪装"
-    print("BLUFF 恶魔得知 3 个不在场镇民,仅恶魔可见,酒鬼假角色不触发 OK")
+    print("BLUFF 配版时选伪装:指定生效、4 种非法拒绝、仅恶魔可见 OK")
 
     # ---- 人未齐也可开局:随机发牌覆盖空座;迟到玩家入座继承 ----
     req("/api/reset", "POST", headers=ST)
@@ -316,6 +329,7 @@ async def main() -> None:
            {"seat": 5, "role": "investigator"}, {"seat": 6, "role": "drunk"}]
     state = req("/api/assign/manual", "POST", {"assignments": pre}, ST)
     assert state["status"] == "lobby" and state["can_start"] is True, "人未齐时手动发身份应保持 lobby 且可开始"
+    assert len(state["bluffs"]) == 3, "未指定伪装时应自动抽好(配版时即定)"
     state = req("/api/start", "POST", headers=ST)
     assert state["status"] == "playing" and state["phase"] == "night" and state["night_no"] == 1
     keys = [s["key"] for s in state["night"]["steps"]]

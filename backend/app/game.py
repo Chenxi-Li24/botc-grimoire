@@ -239,6 +239,7 @@ class GameManager:
                 p.role_id = rid
             else:
                 self.seat_roles[seat] = rid  # 空座挂预发身份,等人迟到入座继承
+        self.bluffs = self._pick_bluffs({r["id"] for r in pool})  # 配版时即抽好伪装
         self.status = "playing"
         self._begin_night()  # 发完角色 → 第一夜开始
         self.save()
@@ -260,11 +261,12 @@ class GameManager:
             comp[1] = 0
         return tuple(comp)
 
-    def assign_manual(self, assignments: list[dict]) -> list[dict]:
+    def assign_manual(self, assignments: list[dict], bluffs: list[str] | None = None) -> list[dict]:
         """说书人手动发身份:为每个座位指定角色。
 
         硬校验:恶魔恰 1 名、爪牙至少 1 名;镇民/外来者配比只作提示(教父 ±1 等由说书人决定)。
         无需等玩家入座:身份先挂在座位上,玩家入座时自动继承;全员入座后自动开局。
+        伪装在配版时就选好:bluffs 给 3 个不在场好角色;不给则自动抽取。
         """
         if self.status == "playing":
             raise ValueError("本局已开始,先重置")
@@ -288,6 +290,20 @@ class GameManager:
             raise ValueError("必须且只能有 1 名恶魔")
         if teams.get(MINION, 0) < 1:
             raise ValueError("至少要有 1 名爪牙")
+        # 伪装:配版时选好(说书人指定 3 个不在场好角色,或自动抽取)
+        if bluffs is None:
+            self.bluffs = self._pick_bluffs(set(picked.values()))
+        else:
+            if len(bluffs) != 3 or len(set(bluffs)) != 3:
+                raise ValueError("伪装需为 3 个不重复角色")
+            for rid in bluffs:
+                if rid not in self.roles:
+                    raise ValueError(f"角色 {rid} 不属于当前板子")
+                if self.roles[rid]["team"] not in self._bluff_teams():
+                    raise ValueError("伪装必须是好角色(暗流涌动限镇民)")
+                if rid in picked.values():
+                    raise ValueError(f"伪装必须不在场:{rid} 已分配给座位")
+            self.bluffs = list(bluffs)
         self.seat_roles = dict(picked)  # 身份挂在座位上,没人入座也可以先发
         for seat, player in seat_of.items():  # 已入座的玩家当场继承
             player.role_id = picked[seat]
@@ -317,17 +333,21 @@ class GameManager:
 
     # ---- 昼夜阶段与夜晚流程 ----
 
-    def _assign_bluffs(self) -> None:
-        """开局抽取恶魔的三个伪装:不在场的好角色(暗流涌动限镇民,其余脚本镇民+外来者)。"""
-        present = set(self.seat_roles.values()) | {p.role_id for p in self.players.values() if p.role_id}
-        teams = (TOWNSFOLK,) if self.script_id == "trouble-brewing" else (TOWNSFOLK, OUTSIDER)
-        pool = [r["id"] for r in self.roles.values() if r["team"] in teams and r["id"] not in present]
-        self.bluffs = random.sample(pool, min(3, len(pool)))
+    def _bluff_teams(self) -> tuple[str, ...]:
+        """伪装可取的好角色阵营:暗流涌动限镇民,其余脚本镇民+外来者。"""
+        return (TOWNSFOLK,) if self.script_id == "trouble-brewing" else (TOWNSFOLK, OUTSIDER)
+
+    def _pick_bluffs(self, present: set[str]) -> list[str]:
+        """从不在场的好角色里随机抽三个伪装。"""
+        pool = [r["id"] for r in self.roles.values()
+                if r["team"] in self._bluff_teams() and r["id"] not in present]
+        return random.sample(pool, min(3, len(pool)))
 
     def _begin_night(self) -> None:
         """进入夜晚:按本夜在场角色组装步骤表(酒鬼的假角色作为附加步骤)。"""
-        if self.night_no == 1 and not self.bluffs:  # 第一夜开始时抽伪装,后续夜晚不再重抽
-            self._assign_bluffs()
+        if self.night_no == 1 and not self.bluffs:  # 兜底:老存档没伪装时第一夜补抽,后续夜不再重抽
+            present = set(self.seat_roles.values()) | {p.role_id for p in self.players.values() if p.role_id}
+            self.bluffs = self._pick_bluffs(present)
         kind = "first" if self.night_no == 1 else "other"
         sheet = NIGHT_ORDER[self.script_id][kind]
         # 在场角色 = 已入座玩家 + 空座预发身份(人未齐开局时,空座角色也排进夜晚)

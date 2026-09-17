@@ -244,6 +244,7 @@ function renderStoryteller() {
   let selected = null // 选中的座位号(点击环形座位)
   let manual = false // 手动发身份模式
   let draft = {} // 手动模式草稿:座位号 → 角色 id
+  let draftBluffs = [] // 手动模式伪装草稿:不在场好角色 id ×3(配版时选好)
   let godfatherAdj = 1 // 教父外来者调整:说书人可选 +1 或 −1,默认 +1
 
   function paint(view) {
@@ -298,7 +299,7 @@ function renderStoryteller() {
           </div>
           <div class="st-circle">
             <div id="circle"></div>
-            <p class="hint">已入座 ${seatedCount}/${count}${status === 'playing' ? ' · 游戏中' : ' · 等待开局'}${allSeated && status === 'lobby' ? ' · 可以分配角色' : ''}${!allSeated && status === 'lobby' && canStart ? ' · 已预发全部身份,人未齐也可开始' : ''}${!allSeated && status === 'lobby' && !canStart ? ' · 人未齐:随机分配或手动发身份后即可开始' : ''}</p>
+            <p class="hint">已入座 ${seatedCount}/${count}${status === 'playing' ? ' · 游戏中' : ' · 等待开局'}${allSeated && status === 'lobby' ? ' · 可以分配角色' : ''}${!allSeated && status === 'lobby' && canStart ? ' · 已预发全部身份,人未齐也可开始' : ''}${!allSeated && status === 'lobby' && !canStart ? ' · 人未齐:随机分配或手动发身份后即可开始' : ''}${bluffs && bluffs.length && !manual ? ' · 🧪 伪装:' + bluffs.map((r) => r.name).join('/') : ''}</p>
           </div>
         </div>
         <div class="st-right">
@@ -373,9 +374,16 @@ function renderStoryteller() {
         const exp = expected[i] !== composition[i] ? `<span class="delta">${expected[i]}</span>` : expected[i]
         return `${l} ${picked[i]}/${exp}`
       }).join(' · ')
+      // 伪装:发身份时选好 3 个不在场好角色(暗流涌动限镇民,其余脚本镇民+外来者)。
+      // 已进入草稿的角色从候选池剔除;进入手动模式时带回上次选好的伪装
+      const bluffTeams = script === 'trouble-brewing' ? ['townsfolk'] : ['townsfolk', 'outsider']
+      if (!draftBluffs.length && bluffs && bluffs.length) draftBluffs = bluffs.map((r) => r.id)
+      draftBluffs = draftBluffs.filter((rid) => !Object.values(draft).includes(rid)) // 被发到座位 → 自动移出伪装
+      const bluffPool = roles.filter((r) => bluffTeams.includes(r.team) && !Object.values(draft).includes(r.id))
+      const bluffOk = draftBluffs.length === 3
       const box = h(`<div class="st-detail">
         <h3>🃏 手动发身份${selSeat ? ` · 座位 ${selSeat.seat}${selSeat.player ? `(${esc(selSeat.player.name)})` : '(空)'}` : ''}</h3>
-        <p class="manual-summary ${full && ok && !hasDup ? '' : 'warn'}">${summaryTxt}${hasDup ? ' · ⚠ 角色重复,请先取消重复项' : ''}</p>
+        <p class="manual-summary ${full && ok && !hasDup ? '' : 'warn'}">${summaryTxt} · 🧪 伪装 ${draftBluffs.length}/3${hasDup ? ' · ⚠ 角色重复,请先取消重复项' : ''}</p>
         ${adjLine}
         ${gfChoice}
         <p class="hint">${selSeat ? (selSeat.player ? '点击角色发给该座位,再点一次取消' : '该座还没人:可以先发身份,玩家入座自动继承') : '先点击环形座位,再选角色'}</p>
@@ -401,8 +409,20 @@ function renderStoryteller() {
         })
         box.appendChild(group)
       })
+      const bluffGroup = h(`<div class="role-group"><span class="team-badge team-townsfolk">🧪 伪装(不在场好角色,点选 3 个)</span></div>`)
+      bluffPool.forEach((r) => {
+        const on = draftBluffs.includes(r.id)
+        const chip = h(`<button class="chip team-${r.team} ${on ? 'on' : ''}" title="${esc(r.ability)}">${esc(r.name)}</button>`)
+        chip.onclick = () => {
+          if (on) draftBluffs = draftBluffs.filter((x) => x !== r.id)
+          else if (draftBluffs.length < 3) draftBluffs.push(r.id)
+          paint(view)
+        }
+        bluffGroup.appendChild(chip)
+      })
+      box.appendChild(bluffGroup)
       box.appendChild(h(`<div class="st-detail-actions">
-        <button class="btn primary small" id="manual-confirm" ${full && ok && !hasDup ? '' : 'disabled'}>✅ 确认发身份</button>
+        <button class="btn primary small" id="manual-confirm" ${full && ok && !hasDup && bluffOk ? '' : 'disabled'}>✅ 确认发身份</button>
         <button class="btn small ghost" id="manual-cancel">取消</button>
       </div>`))
       detail.replaceChildren(box)
@@ -411,8 +431,8 @@ function renderStoryteller() {
       })
       document.getElementById('manual-confirm').onclick = () => act(() => {
         const assignments = Object.entries(draft).map(([seat, role]) => ({ seat: Number(seat), role }))
-        return stApi('/api/assign/manual', { method: 'POST', body: JSON.stringify({ assignments }) })
-          .then((v) => { manual = false; draft = {}; selected = null; paint(v) })
+        return stApi('/api/assign/manual', { method: 'POST', body: JSON.stringify({ assignments, bluffs: draftBluffs }) })
+          .then((v) => { manual = false; draft = {}; draftBluffs = []; selected = null; paint(v) })
           // 空座预发时状态仍是 lobby,直接以响应视图重绘(不等推送)
       })
       document.getElementById('manual-cancel').onclick = () => { manual = false; draft = {}; paint(view) }
