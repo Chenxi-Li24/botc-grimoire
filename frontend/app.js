@@ -126,11 +126,15 @@ function renderPlayer(playerId) {
   app.replaceChildren(h('<div class="page center">连接中…</div>'))
   function paint(view) {
     const { me, status, seats, phase, night_no: nightNo, day_no: dayNo, current, bluffs,
-      script: scriptName, player_count: count, composition } = view
+      script: scriptName, player_count: count, composition, sentinel: sentinelOn } = view
     // 官方配比(公开信息):只展示基础配比,实际调整(男爵/教父等)不给玩家
     const compLine = composition && composition.length === 4
       ? `<p class="hint">📋 ${esc(scriptName)} · ${count} 人 · 官方配比:${['townsfolk', 'outsider', 'minion', 'demon']
         .map((t, i) => `${TEAM_LABEL[t]} ${composition[i]}`).join(' · ')}</p>`
+      : ''
+    // 哨兵(神职角色)在场是公开信息;调整方向保密,玩家只知「可能 ±1」
+    const sentinelNote = sentinelOn
+      ? '<p class="hint">🧙 哨兵在场:外来者数量可能比官方配比 +1 或 −1</p>'
       : ''
 
     // ---- 未入座:选座 ----
@@ -140,6 +144,7 @@ function renderPlayer(playerId) {
         <div class="center grow">
           <p class="sub">${status === 'playing' ? '游戏已开始(迟到):点空座入座,继承该座预发身份' : '选择你的座位入座'}</p>
           ${compLine}
+          ${sentinelNote}
           <div id="circle"></div>
           <p class="hint">${seats.length ? `共 ${seats.length} 个座位,点一个空座位入座` : '等待说书人设置本局人数…'}</p>
           <p class="error" id="sit-err" style="display:none"></p>
@@ -187,6 +192,7 @@ function renderPlayer(playerId) {
       <div id="circle"></div>
       ${voteLine}
       ${compLine}
+      ${sentinelNote}
       ${card}
       ${bluffLine}
       ${role && status === 'lobby' ? '<p class="hint">身份已到手,等待其他玩家入座开局…</p>' : ''}
@@ -259,7 +265,7 @@ function renderStoryteller() {
     const { status, script, player_count: count, scripts, seats, roles, composition,
       adjust_roles, seat_roles, phase, night_no: nightNo, day_no: dayNo, night,
       nominations, current, alive_count: aliveCount, quorum, can_start: canStart,
-      bluffs, demon_seats: demonSeats, minion_seats: minionSeats, saved_at: savedAt } = view
+      bluffs, demon_seats: demonSeats, minion_seats: minionSeats, sentinel, saved_at: savedAt } = view
     const minP = scripts.find((s) => s.id === script)?.min || 5 // 该板子的人数下限(瓦釜雷鸣 7 人起)
     const seatedCount = seats.filter((s) => s.player).length
     if (status === 'playing') { manual = false; draft = {} } // 发牌完成后退出草稿
@@ -304,6 +310,13 @@ function renderStoryteller() {
               <button class="btn small" id="inc" ${count >= 15 ? 'disabled' : ''}>＋</button>
             </label>
             <span class="hint">修改板子/人数会清空座位,玩家需重新入座</span>
+            <span class="hint">🧙 哨兵(神职角色,外来者数调整):
+              ${[-1, 0, 1].map((v) => {
+                const off = status === 'playing' || (v === -1 && (composition[1] || 0) < 1)
+                return `<button class="chip small sentinel-chip ${sentinel === v ? 'on' : ''}" data-sentinel="${v}"
+                  ${off ? 'disabled' : ''}>${v === 0 ? '关' : (v > 0 ? '+1 外来者' : '−1 外来者')}</button>`
+              }).join('')}
+            </span>
           </div>
           <div class="st-circle">
             <div id="circle"></div>
@@ -350,6 +363,10 @@ function renderStoryteller() {
           expected[0] += adj[0]; expected[1] += adj[1]; expected[2] += adj[2]; expected[3] += adj[3]
         }
       }
+      if (sentinel) {
+        expected[1] += sentinel // 哨兵:说书人已选的外来者 +1/−1
+        expected[0] -= sentinel // 镇民反向调整,总人数保持不变
+      }
       if (expected[1] < 0) { expected[0] += expected[1]; expected[1] = 0 }
       const ok = picked[3] === 1 && picked[2] >= 1
       const full = Object.keys(draft).length === count
@@ -364,6 +381,7 @@ function renderStoryteller() {
           adjTexts.push(`${roleById[rid].name}:${parts.join('/')}`)
         }
       }
+      if (sentinel) adjTexts.push(`哨兵:${sentinel > 0 ? '+' : ''}${sentinel}外/${-sentinel > 0 ? '+' : ''}${-sentinel}镇`)
       const adjLine = adjTexts.length
         ? `<p class="manual-adjust">配比调整:${adjTexts.map(esc).join(' · ')}</p>`
         : ''
@@ -705,6 +723,9 @@ function renderStoryteller() {
     }
     document.getElementById('dec').onclick = () => doConfig(script, count - 1)
     document.getElementById('inc').onclick = () => doConfig(script, count + 1)
+    document.querySelectorAll('.sentinel-chip').forEach((b) => {
+      b.onclick = () => act(() => stApi('/api/sentinel', { method: 'POST', body: JSON.stringify({ value: Number(b.dataset.sentinel) }) }))
+    })
 
     // ---- 分配 / 重置 / 读档 ----
     document.getElementById('assign-btn').onclick = () => act(() => stApi('/api/assign', { method: 'POST' }))

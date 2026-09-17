@@ -117,6 +117,10 @@ class GotoBody(BaseModel):
     idx: int
 
 
+class SentinelBody(BaseModel):
+    value: int  # -1 / 0 / +1:哨兵对外来者数量的调整(0 = 未启用)
+
+
 def require_storyteller(x_password: str = Header(default="", alias="X-Storyteller-Password")) -> None:
     if x_password != STORYTELLER_PASSWORD:
         raise HTTPException(status_code=401, detail="说书人密码错误")
@@ -192,6 +196,17 @@ async def assign() -> dict[str, Any]:
 async def assign_manual(body: ManualAssignBody) -> dict[str, Any]:
     try:
         game.assign_manual(body.assignments, body.bluffs)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/sentinel", dependencies=[Depends(require_storyteller)])
+async def set_sentinel(body: SentinelBody) -> dict[str, Any]:
+    """哨兵(神职角色):说书人调整外来者 +1/−1。方向保密,玩家只知哨兵在场。"""
+    try:
+        game.set_sentinel(body.value)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await hub.push_all()

@@ -355,6 +355,54 @@ async def main() -> None:
     print("START 手动预发 4/6 人强制开局成功,空座角色步骤在夜晚表中 OK")
     print("MEET  会面名单:恶魔座 1(强1)、爪牙座 2(强2) OK")
 
+    # ---- 哨兵(神职角色):说书人调外来者数,方向保密、玩家只见「哨兵在场」 ----
+    req("/api/reset", "POST", headers=ST)
+    req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 6}, ST)
+    state = req("/api/state", "GET", headers=ST)
+    assert state["sentinel"] == 0
+    for bad in (2, -2):
+        try:
+            req("/api/sentinel", "POST", {"value": bad}, ST)
+            raise AssertionError(f"哨兵 {bad} 应被拒绝")
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+    state = req("/api/sentinel", "POST", {"value": 1}, ST)
+    assert state["sentinel"] == 1
+    pid = req("/api/join", "POST", {"name": "senti1"})["player_id"]
+    req(f"/api/player/{pid}/sit", "POST", {"seat": 1})
+    pview = req(f"/api/me/{pid}")
+    assert pview["sentinel"] is True and pview["composition"] == [3, 1, 1, 1], \
+        "玩家应知哨兵在场但不知方向、不见实际配比"
+    state = req("/api/assign", "POST", headers=ST)  # 随机发牌:+1 应作用于实际配比
+    teams = Counter(p["role"]["team"] for s in state["seats"] for p in [s["player"]] if p)
+    teams += Counter(next(r["team"] for r in state["roles"] if r["id"] == rid)
+                     for rid in state["seat_roles"].values())
+    assert teams.get("outsider", 0) in (2, 4), f"哨兵 +1 后外来者应为 2 或 4(视男爵),实际 {dict(teams)}"
+    try:  # 开局后不能再改哨兵
+        req("/api/sentinel", "POST", {"value": 0}, ST)
+        raise AssertionError("开局后改哨兵应被拒绝")
+    except urllib.error.HTTPError as e:
+        assert e.code == 400
+    print(f"SENTI 哨兵 +1:实际配比 {dict(teams)},玩家只见官方配比与在场提示 OK")
+
+    req("/api/reset", "POST", headers=ST)
+    req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 6}, ST)
+    req("/api/sentinel", "POST", {"value": -1}, ST)
+    state = req("/api/assign", "POST", headers=ST)
+    teams = Counter(next(r["team"] for r in state["roles"] if r["id"] == rid)
+                    for rid in state["seat_roles"].values())
+    assert teams.get("outsider", 0) in (0, 2), f"哨兵 -1 后外来者应为 0 或 2(视男爵),实际 {dict(teams)}"
+    print(f"SENTI 哨兵 -1:实际配比 {dict(teams)} OK")
+
+    req("/api/reset", "POST", headers=ST)
+    req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 5}, ST)
+    try:  # 5 人局官方配比没有外来者名额 -> -1 被拒绝
+        req("/api/sentinel", "POST", {"value": -1}, ST)
+        raise AssertionError("5 人局哨兵 -1 应被拒绝")
+    except urllib.error.HTTPError as e:
+        assert e.code == 400
+    print("SENTI 5 人局哨兵 -1 被拒绝 OK")
+
     req("/api/reset", "POST", headers=ST)
     req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 6}, ST)
     print("ALL PASS")
