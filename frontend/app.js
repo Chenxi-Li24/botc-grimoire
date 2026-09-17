@@ -406,6 +406,18 @@ function renderStoryteller() {
 
     // ---- 选中玩家详情 ----
     const detail = document.getElementById('detail')
+    // 认知覆盖:酒鬼座位由说书人标记「玩家看到哪个镇民角色」,真实身份只有说书人可见
+    const fakeRow = (slot) => {
+      const real = slot.player ? slot.player.role : slot.assigned_role
+      if (!real || real.id !== 'drunk') return ''
+      const cur = slot.fake_role
+      return `<div class="st-fake"><span class="hint">🍺 酒鬼看到:</span>
+        <select id="fake-sel">
+          <option value="">真实身份(酒鬼)</option>
+          ${roles.filter((r) => r.team === 'townsfolk').map((r) =>
+            `<option value="${r.id}" ${cur && cur.id === r.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}
+        </select></div>`
+    }
     if (manual) {
       renderManualPicker(detail, selSeat)
     } else if (selP) {
@@ -414,6 +426,7 @@ function renderStoryteller() {
         ${selP.role
           ? `<span class="team-badge team-${selP.role.team}">${TEAM_LABEL[selP.role.team]} · ${esc(selP.role.name)}</span>`
           : '<p class="hint">未分配角色</p>'}
+        ${fakeRow(selSeat)}
         <div class="st-detail-actions">
           <button class="btn small" id="act-alive">${selP.alive ? '☠ 标记死亡' : '复活'}</button>
           <button class="btn small ghost" id="act-remove">移除</button>
@@ -428,11 +441,17 @@ function renderStoryteller() {
       detail.replaceChildren(h(`<div class="st-detail">
         <h3>座位 ${selSeat.seat} · 空</h3>
         <span class="team-badge team-${r.team}">${TEAM_LABEL[r.team]} · ${esc(r.name)}</span>
+        ${fakeRow(selSeat)}
         <p class="hint">身份已预发,等玩家入座自动继承</p>
       </div>`))
     } else {
       detail.replaceChildren(h('<p class="hint">点击环形座位查看/操作玩家</p>'))
     }
+    const fakeSelEl = document.getElementById('fake-sel')
+    if (fakeSelEl) fakeSelEl.onchange = () => act(() => stApi('/api/fake', {
+      method: 'POST',
+      body: JSON.stringify({ seat: selSeat.seat, role: fakeSelEl.value || null }),
+    }))
 
     // ---- 配置 ----
     function doConfig(sc, n) {

@@ -20,11 +20,12 @@ class Player:
     def public(self) -> dict:
         return {"id": self.id, "name": self.name, "seat": self.seat, "alive": self.alive}
 
-    def private(self, roles: dict) -> dict:
-        """玩家自己看到的视图(醉鬼伪装等逻辑以后在这里扩展)。"""
+    def private(self, roles: dict, fake_id: str | None = None) -> dict:
+        """玩家自己看到的视图。fake_id 为认知覆盖:酒鬼看到说书人标记的假镇民角色。"""
         view = self.public()
-        if self.role_id:
-            view["role"] = roles[self.role_id]
+        rid = fake_id if (fake_id and self.role_id) else self.role_id
+        if rid:
+            view["role"] = roles[rid]
         return view
 
     def storyteller(self, roles: dict) -> dict:
@@ -47,6 +48,7 @@ class GameManager:
         self.players: dict[str, Player] = {}
         self.status: str = "lobby"  # lobby | playing
         self.seat_roles: dict[int, str] = {}  # 预发身份:座位号 → 角色 id(未入座也能先发)
+        self.seat_fakes: dict[int, str] = {}  # 认知覆盖:座位号 → 玩家看到的假角色 id(酒鬼)
 
     @property
     def roles(self) -> dict:
@@ -71,6 +73,7 @@ class GameManager:
             p.role_id = None
             p.alive = True
         self.seat_roles = {}  # 预发身份一并清空
+        self.seat_fakes = {}  # 认知覆盖一并清空
         self.status = "lobby"
 
     # ---- 玩家进出 ----
@@ -207,6 +210,17 @@ class GameManager:
         if player_id in self.players:
             self.players[player_id].alive = not self.players[player_id].alive
 
+    def set_fake(self, seat: int, role_id: str | None) -> None:
+        """认知覆盖:标记该座位玩家「实际是酒鬼,但看到的是 role_id 角色」。None 清除标记。"""
+        if not 1 <= seat <= self.player_count:
+            raise ValueError(f"座位需在 1~{self.player_count} 之间")
+        if role_id is not None and role_id not in self.roles:
+            raise ValueError(f"角色 {role_id} 不属于当前板子")
+        if role_id is None:
+            self.seat_fakes.pop(seat, None)
+        else:
+            self.seat_fakes[seat] = role_id
+
     # ---- 视图 ----
 
     def _seat_slots(self, st_view: bool, my_id: str | None = None) -> list[dict]:
@@ -218,10 +232,14 @@ class GameManager:
                 slot = {"seat": i, "player": None}
                 if st_view and i in self.seat_roles:  # 空座上的预发身份,说书人可见
                     slot["assigned_role"] = self.roles[self.seat_roles[i]]
+                if st_view and i in self.seat_fakes:  # 空座也能先标记认知覆盖
+                    slot["fake_role"] = self.roles[self.seat_fakes[i]]
                 slots.append(slot)
                 continue
             entry = p.storyteller(self.roles) if st_view else p.public()
             slot = {"seat": i, "player": entry}
+            if st_view and i in self.seat_fakes:  # 认知覆盖标记,说书人可见
+                slot["fake_role"] = self.roles[self.seat_fakes[i]]
             if my_id is not None:  # is_me 属于座位槽位层,不属于 player
                 slot["is_me"] = p.id == my_id
             slots.append(slot)
@@ -229,11 +247,12 @@ class GameManager:
 
     def player_view(self, player_id: str) -> dict:
         me = self.players[player_id]
+        fake_id = self.seat_fakes.get(me.seat) if me.seat is not None else None
         return {
             "status": self.status,
             "script": SCRIPTS[self.script_id]["name"],
             "player_count": self.player_count,
-            "me": me.private(self.roles),
+            "me": me.private(self.roles, fake_id),
             "seats": self._seat_slots(st_view=False, my_id=player_id),
         }
 

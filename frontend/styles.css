@@ -494,6 +494,22 @@ h3 {
   border-color: var(--gold);
 }
 
+.st-fake {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.st-fake select {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px 6px;
+  font-size: 13px;
+}
+
 .role-group {
   display: flex;
   flex-wrap: wrap;

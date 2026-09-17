@@ -88,6 +88,11 @@ class ManualAssignBody(BaseModel):
     assignments: list[dict]  # [{"seat": int, "role": str}, ...]
 
 
+class FakeBody(BaseModel):
+    seat: int
+    role: str | None = None  # 玩家看到的假角色;None 表示清除认知覆盖
+
+
 def require_storyteller(x_password: str = Header(default="", alias="X-Storyteller-Password")) -> None:
     if x_password != STORYTELLER_PASSWORD:
         raise HTTPException(status_code=401, detail="说书人密码错误")
@@ -163,6 +168,17 @@ async def assign() -> dict[str, Any]:
 async def assign_manual(body: ManualAssignBody) -> dict[str, Any]:
     try:
         game.assign_manual(body.assignments)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/fake", dependencies=[Depends(require_storyteller)])
+async def set_fake(body: FakeBody) -> dict[str, Any]:
+    """认知覆盖:说书人标记某座位玩家看到的假角色(酒鬼看到镇民)。"""
+    try:
+        game.set_fake(body.seat, body.role)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await hub.push_all()
