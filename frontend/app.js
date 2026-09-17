@@ -79,7 +79,7 @@ function seatCircle(seats, opts = {}) {
       <span class="seat-num">${s.seat}</span>
       <span class="seat-name">${p ? esc(p.name) : (opts.freeLabel || '入座')}</span>
       ${badge ? `<span class="draft-badge team-${badge.team}">${esc(badge.name)}</span>` : ''}
-      ${markers.length || s.role_change || s.team_change ? `<span class="marker-badges">${markers.map((m) => `<span class="marker-badge m-${m}">${MARKER_CHAR[m] || '?'}</span>`).join('')}${s.role_change ? `<span class="marker-badge m-role-change">🔄${esc(s.role_change.name)}</span>` : ''}${s.team_change ? `<span class="marker-badge m-team-change tc-${s.team_change}">⚖${s.team_change === 'good' ? '善良' : '邪恶'}</span>` : ''}</span>` : ''}
+      ${markers.length || s.role_change || s.team_change ? `<span class="marker-badges">${markers.map((m) => `<span class="marker-badge m-${m}">${MARKER_CHAR[m] || '?'}</span>`).join('')}${s.role_change ? `<span class="marker-badge m-role-change team-${s.role_change.team}">🔄${esc(s.role_change.name)}</span>` : ''}${s.team_change ? `<span class="marker-badge m-team-change tc-${s.team_change}">⚖${s.team_change === 'good' ? '善良' : '邪恶'}</span>` : ''}</span>` : ''}
     </div>`)
     if (opts.clickSeat) node.addEventListener('click', () => opts.clickSeat(s))
     wrap.appendChild(node)
@@ -176,14 +176,14 @@ function renderPlayer(playerId) {
     }
 
     // ---- 已入座 ----
-    const role = me.role
+    const role = roleChanged || me.role // 角色转变:角色卡直接展示新角色,框色随新角色阵营
     // 开局前不揭示身份:说书人开始游戏玩家才拿到角色
     const card = !role
       ? `<div class="center"><p class="sub">${status === 'lobby' ? '已入座,等待说书人开始游戏…' : '等待说书人分配角色…'}</p>
          ${status === 'lobby' ? '<p class="hint">开局前点其他空座位可以换座</p>' : ''}</div>`
-      : `<div class="card team-${role.team} ${me.alive ? '' : 'dead'}">
+      : `<div class="card team-${role.team} ${me.alive ? '' : 'dead'}" ${teamChanged ? `style="--team:${teamChanged === 'good' ? '#55b5ff' : '#e92a2a'};--team-text:${teamChanged === 'good' ? '#101828' : '#ffffff'}"` : ''}>
           <div class="card-head">
-            <span class="team-badge">${TEAM_LABEL[role.team]}</span>
+            <span class="team-badge">${teamChanged ? (teamChanged === 'good' ? '善良' : '邪恶') : TEAM_LABEL[role.team]}</span>
             <span class="en">${esc(role.en)}</span>
           </div>
           <h2 class="role-name">${esc(role.name)}</h2>
@@ -590,8 +590,8 @@ function renderStoryteller() {
       const tc = slot.team_change
       return `<div class="st-markers"><span class="hint">标记:</span>
         ${Object.entries(MARKER_LABEL).map(([k, l]) => {
-          if (k === 'role-change') // 角色转变带数据:选定后按钮显示变成的角色,再点=清除
-            return `<button class="chip ${rc ? 'on' : ''} marker-chip m-${k}" data-mk="${k}">${rc ? `角色转变→${esc(rc.name)}` : l}</button>`
+          if (k === 'role-change') // 角色转变带数据:选定后按钮显示变成的角色(按新角色阵营配色),再点=清除
+            return `<button class="chip ${rc ? 'on' : ''} marker-chip m-${k} ${rc ? 'team-' + rc.team : ''}" data-mk="${k}">${rc ? `角色转变→${esc(rc.name)}` : l}</button>`
           if (k === 'team-change') // 阵营转变带数据:选定后按钮显示新阵营并按阵营配色,再点=清除
             return `<button class="chip ${tc ? 'on' : ''} marker-chip m-${k} ${tc ? 'tc-' + tc : ''}" data-mk="${k}">${tc ? `阵营转变→${tc === 'good' ? '善良' : '邪恶'}` : l}</button>`
           return `<button class="chip ${ms.includes(k) ? 'on' : ''} marker-chip m-${k}" data-mk="${k}">${l}</button>`

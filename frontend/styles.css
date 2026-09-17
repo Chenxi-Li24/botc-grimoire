@@ -737,6 +737,34 @@ h3 {
   border-color: #e92a2a;
 }
 
+/* 角色转变框:按变成的新角色的阵营配色(座位角标 + 详情按钮),不再固定粉色 */
+.marker-badge.m-role-change.team-townsfolk,
+.marker-chip.on.m-role-change.team-townsfolk {
+  background: #55b5ff;
+  border-color: #55b5ff;
+}
+
+.marker-badge.m-role-change.team-outsider,
+.marker-chip.on.m-role-change.team-outsider {
+  background: #4a7fb5;
+  border-color: #4a7fb5;
+  color: #ffffff;
+}
+
+.marker-badge.m-role-change.team-minion,
+.marker-chip.on.m-role-change.team-minion {
+  background: #e92a2a;
+  border-color: #e92a2a;
+  color: #ffffff;
+}
+
+.marker-badge.m-role-change.team-demon,
+.marker-chip.on.m-role-change.team-demon {
+  background: #8a1f1f;
+  border-color: #8a1f1f;
+  color: #ffffff;
+}
+
 /* ---- 夜晚流程助手 ---- */
 
 .step-card {
