@@ -4,9 +4,11 @@
 
 ## 架构
 
-- **后端** `backend/`:Python + FastAPI + WebSocket(游戏状态、实时推送)
-- **前端** `frontend/`:React + Vite(加入页 / 玩家角色卡 / 说书人魔典)
-- 单端口部署:FastAPI 托管 `frontend/dist`,所有设备访问同一个局域网地址
+- **后端** `backend/`:Python + FastAPI + WebSocket(游戏状态、实时推送、二维码生成)
+- **前端** `frontend/`:纯 HTML/CSS/JS,**零构建零依赖**(加入页 / 玩家角色卡 / 说书人魔典),由 FastAPI 直接托管
+- 单端口部署:所有设备访问同一个局域网地址
+
+选择无构建前端的原因:开发机上 443 端口(HTTPS)网络不通,npm 依赖无法安装。纯 JS 版功能与 React 版一致,API 契约不变,网络恢复后想换回 React 随时可迁。
 
 ## 快速开始
 
@@ -14,12 +16,9 @@
 # 1. 后端依赖
 python -m venv backend/.venv
 backend/.venv/Scripts/python.exe -m pip install -r backend/requirements.txt
+#    (网络不通时:no_proxy='*' NO_PROXY='*' ... -i http://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com)
 
-# 2. 前端构建
-npm --prefix frontend install
-npm --prefix frontend run build
-
-# 3. 启动
+# 2. 启动(无需任何构建)
 cd backend
 .venv\Scripts\python run.py
 ```
@@ -28,14 +27,13 @@ cd backend
 - **玩家**:手机连同一 WiFi,扫描说书人界面上的二维码加入
 - Windows 首次运行会弹防火墙提示,勾选「专用网络」并**允许**,否则手机连不上
 
-前端开发调试(热更新):另开终端 `npm --prefix frontend run dev`,已配置 `/api`、`/ws` 代理到 8000。
-
 ## v1 已实现
 
 - 玩家扫码/输入名字加入,身份存 localStorage,刷新不掉;断线自动重连
 - 说书人按暗流涌动官方配置表(5~15 人)随机分配角色,支持男爵 +2 外来者规则
 - 玩家手机实时收到私密角色卡(暗流涌动 22 个角色全收录)
 - 存活/死亡标记、移除玩家、重置本局,WebSocket 实时同步
+- 冒烟测试 `backend/smoke_test.py` 覆盖 REST + WS 全链路(先启动 run.py 再运行)
 
 ## 路线图
 

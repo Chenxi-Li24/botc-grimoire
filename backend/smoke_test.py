@@ -32,7 +32,7 @@ async def main() -> None:
     assert state["status"] == "playing", "分配后应进入 playing"
     print("ASSIGN " + ", ".join(f"{p['seat']}:{p['role']['name']}" for p in state["players"]))
 
-    async with websockets.connect(f"ws://localhost:8000/ws?who=player:{ids[0]}") as ws:
+    async with websockets.connect(f"ws://localhost:8000/ws?who={ids[0]}") as ws:
         view = json.loads(await ws.recv())
         assert view["me"]["role"], "玩家应收到自己的角色"
         print(f"WS    玩家收到角色: {view['me']['role']['name']}")

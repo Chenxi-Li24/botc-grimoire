@@ -1,10 +1,12 @@
 """FastAPI 入口:REST 操作 + WebSocket 实时推送 + 前端静态托管。"""
 
+import io
 import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
+import qrcode
+from fastapi import Depends, FastAPI, Header, HTTPException, Response, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -73,7 +75,7 @@ class PasswordBody(BaseModel):
     password: str
 
 
-def require_storyteller(x_password: str = Header(default="")) -> None:
+def require_storyteller(x_password: str = Header(default="", alias="X-Storyteller-Password")) -> None:
     if x_password != STORYTELLER_PASSWORD:
         raise HTTPException(status_code=401, detail="说书人密码错误")
 
@@ -164,13 +166,17 @@ async def websocket_endpoint(ws: WebSocket, who: str = "", pw: str = "") -> None
         hub.disconnect(who, ws)
 
 
-# ---- 前端静态托管(frontend/dist 存在时) ----
+# ---- 加入二维码(后端生成,前端 <img src="/api/qr">) ----
 
-_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+@app.get("/api/qr")
+def qr() -> Response:
+    url = f"http://{get_lan_ip()}:8000/"
+    buf = io.BytesIO()
+    qrcode.make(url).save(buf, format="PNG")
+    return Response(content=buf.getvalue(), media_type="image/png")
 
-if _DIST.is_dir():
-    app.mount("/", StaticFiles(directory=str(_DIST), html=True), name="frontend")
-else:
-    @app.get("/")
-    def no_frontend() -> dict[str, str]:
-        return {"hint": "前端未构建:cd frontend && npm install && npm run build;开发调试可用 npm run dev"}
+
+# ---- 前端静态托管(frontend/ 无构建,直接托管) ----
+
+_FRONTEND = Path(__file__).resolve().parent.parent.parent / "frontend"
+app.mount("/", StaticFiles(directory=str(_FRONTEND), html=True), name="frontend")
