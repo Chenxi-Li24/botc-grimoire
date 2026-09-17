@@ -477,6 +477,23 @@ h3 {
   color: var(--gold);
 }
 
+.manual-gf {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.manual-gf .chip {
+  padding: 3px 9px;
+  font-size: 12px;
+}
+
+.manual-gf .chip.on {
+  background: var(--gold);
+  border-color: var(--gold);
+}
+
 .role-group {
   display: flex;
   flex-wrap: wrap;

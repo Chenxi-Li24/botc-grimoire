@@ -225,6 +225,7 @@ function renderStoryteller() {
   let selected = null // 选中的座位号(点击环形座位)
   let manual = false // 手动发身份模式
   let draft = {} // 手动模式草稿:座位号 → 角色 id
+  let godfatherAdj = 1 // 教父外来者调整:说书人可选 +1 或 −1,默认 +1
 
   function paint(view) {
     const { status, script, player_count: count, scripts, seats, roles, composition, adjust_roles, seat_roles } = view
@@ -297,9 +298,13 @@ function renderStoryteller() {
         const r = roleById[rid]
         if (r) picked[TEAM_INDEX[r.team]]++
       }
+      // 教父的外来者调整可 +1 可 −1(说书人选择),其余调整角色用固定值
+      const effAdj = (rid) => (rid === 'godfather' && adjust_roles[rid])
+        ? [-godfatherAdj, godfatherAdj, 0, 0]
+        : adjust_roles[rid]
       const expected = [...composition]
       for (const rid of draftRoles) {
-        const adj = adjust_roles[rid]
+        const adj = effAdj(rid)
         if (adj) {
           expected[0] += adj[0]; expected[1] += adj[1]; expected[2] += adj[2]; expected[3] += adj[3]
         }
@@ -311,7 +316,7 @@ function renderStoryteller() {
       const ADJ_NAMES = ['镇', '外', '爪', '恶']
       const adjTexts = []
       for (const rid of draftRoles) {
-        const adj = adjust_roles[rid]
+        const adj = effAdj(rid)
         if (adj) {
           const parts = []
           adj.forEach((d, i) => { if (d) parts.push(`${d > 0 ? '+' : ''}${d}${ADJ_NAMES[i]}`) })
@@ -323,6 +328,13 @@ function renderStoryteller() {
         : ''
       // 重复角色(如旧服务端残留的预发数据)禁止提交:与后端校验一致
       const hasDup = new Set(Object.values(draft)).size !== Object.keys(draft).length
+      // 教父在场时,外来者 ±1 由说书人选择(点按钮切换,配比与标注实时联动)
+      const gfChoice = draftRoles.includes('godfather') && adjust_roles.godfather
+        ? `<div class="manual-gf"><span class="hint">教父 外来者调整:</span>
+            <button class="chip ${godfatherAdj === 1 ? 'on' : ''}" data-gf="1">+1 外来者</button>
+            <button class="chip ${godfatherAdj === -1 ? 'on' : ''}" data-gf="-1">−1 外来者</button>
+          </div>`
+        : ''
       const summaryTxt = TEAM_ORDER.map(([t, l]) => {
         const i = TEAM_INDEX[t]
         // 与基础配比不同 → 目标数变金色,提示配比被调整角色改变了
@@ -333,6 +345,7 @@ function renderStoryteller() {
         <h3>🃏 手动发身份${selSeat ? ` · 座位 ${selSeat.seat}${selSeat.player ? `(${esc(selSeat.player.name)})` : '(空)'}` : ''}</h3>
         <p class="manual-summary ${full && ok && !hasDup ? '' : 'warn'}">${summaryTxt}${hasDup ? ' · ⚠ 角色重复,请先取消重复项' : ''}</p>
         ${adjLine}
+        ${gfChoice}
         <p class="hint">${selSeat ? (selSeat.player ? '点击角色发给该座位,再点一次取消' : '该座还没人:可以先发身份,玩家入座自动继承') : '先点击环形座位,再选角色'}</p>
       </div>`)
       const usedBy = {} // 角色 id → 已发的座位号(角色全局唯一,已发出的不可再发)
@@ -361,6 +374,9 @@ function renderStoryteller() {
         <button class="btn small ghost" id="manual-cancel">取消</button>
       </div>`))
       detail.replaceChildren(box)
+      box.querySelectorAll('[data-gf]').forEach((b) => {
+        b.onclick = () => { godfatherAdj = Number(b.dataset.gf); paint(view) }
+      })
       document.getElementById('manual-confirm').onclick = () => act(() => {
         const assignments = Object.entries(draft).map(([seat, role]) => ({ seat: Number(seat), role }))
         return stApi('/api/assign/manual', { method: 'POST', body: JSON.stringify({ assignments }) })
