@@ -177,14 +177,17 @@ function renderPlayer(playerId) {
     }
 
     // ---- 已入座 ----
-    const role = roleChanged || me.role // 角色转变:角色卡直接展示新角色,框色随新角色阵营
+    const role = roleChanged || me.role // 角色转变:角色卡直接展示新角色
+    // 阵营与角色分开算:只有说书人显式标记「阵营转变」才改阵营;角色转变不改阵营(换角色≠换阵营),
+    // 否则玩家角色一变,卡框颜色和阵营徽章也跟着变,等于偷偷替说书人做了阵营转变
+    const team = teamChanged || (me.role && me.role.team)
     // 开局前不揭示身份:说书人开始游戏玩家才拿到角色
     const card = !role
       ? `<div class="center"><p class="sub">${status === 'lobby' ? '已入座,等待说书人开始游戏…' : '等待说书人分配角色…'}</p>
          ${status === 'lobby' ? '<p class="hint">开局前点其他空座位可以换座</p>' : ''}</div>`
-      : `<div class="card team-${role.team} ${me.alive ? '' : 'dead'}" ${teamChanged ? `style="--team:${teamChanged === 'good' ? '#55b5ff' : '#e92a2a'};--team-text:${teamChanged === 'good' ? '#101828' : '#ffffff'}"` : ''}>
+      : `<div class="card team-${team} ${me.alive ? '' : 'dead'}" ${teamChanged ? `style="--team:${teamChanged === 'good' ? '#55b5ff' : '#e92a2a'};--team-text:${teamChanged === 'good' ? '#101828' : '#ffffff'}"` : ''}>
           <div class="card-head">
-            <span class="team-badge">${teamChanged ? (teamChanged === 'good' ? '善良' : '邪恶') : TEAM_LABEL[role.team]}</span>
+            <span class="team-badge">${teamChanged ? (teamChanged === 'good' ? '善良' : '邪恶') : TEAM_LABEL[team]}</span>
             <span class="en">${esc(role.en)}</span>
           </div>
           <h2 class="role-name">${esc(role.name)}</h2>
@@ -212,7 +215,7 @@ function renderPlayer(playerId) {
       : ''
     // 恶魔/爪牙都知道疯子是谁:他就是疯子,不是真恶魔
     const lunaticLine = lunaticSeats && lunaticSeats.length
-      ? `<p class="meet-line">🌙 疯子:${lunaticSeats.map((l) => `座${l.seat}${l.name ? ` ${esc(l.name)}` : ''}`).join(' · ')}</p>`
+      ? `<p class="meet-line">🩻 疯子:${lunaticSeats.map((l) => `座${l.seat}${l.name ? ` ${esc(l.name)}` : ''}`).join(' · ')}</p>`
       : ''
     // 角色/阵营转变:文字提示保留(无背景色),与角色卡/卡框换色同步展示
     const roleChangeLine = roleChanged

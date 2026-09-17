@@ -43,18 +43,18 @@ body {
 
 /* 黑夜/白天配色自动切换:JS 按 phase 设 body[data-phase],覆盖 :root 变量 */
 body[data-phase='night'] {
-  --bg: #070b16;           /* 深夜蓝黑 */
-  --panel: #101726;
-  --line: #2a3a5c;
+  --bg: #0e0e0e;           /* 深夜红黑 */
+  --panel: #130606;
+  --line: #5c2c2a;
   --text: #dde6f5;
   --dim: #7a8ab0;
-  --accent: #5b7cfa;       /* 月光蓝:主操作/当前步骤 */
+  --accent: #fa5b5b;       /* 月光蓝:主操作/当前步骤 */
   --on-accent: #eef2ff;
   --text-bright: #b9c4e0;
-  --panel2: #1a2340;
-  --night-text: #9db8ff;
-  --night-line: #33498a;
-  --day-bg: #2a3552;
+  --panel2: #0f0909;
+  --night-text: #ff9d9d;
+  --night-line: #8a3333;
+  --day-bg: #522a2a;
 }
 
 body[data-phase='day'] {
