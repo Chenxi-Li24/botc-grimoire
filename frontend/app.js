@@ -132,9 +132,9 @@ function renderPlayer(playerId) {
       ? `<p class="hint">📋 ${esc(scriptName)} · ${count} 人 · 官方配比:${['townsfolk', 'outsider', 'minion', 'demon']
         .map((t, i) => `${TEAM_LABEL[t]} ${composition[i]}`).join(' · ')}</p>`
       : ''
-    // 哨兵(神职角色)在场是公开信息;调整方向保密,玩家只知「可能 ±1」
+    // 哨兵(神职角色)在场是公开信息;调整方向保密,玩家只知「可能 ±1 或不变」
     const sentinelNote = sentinelOn
-      ? '<p class="hint">🧙 哨兵在场:外来者数量可能比官方配比 +1 或 −1</p>'
+      ? '<p class="hint">🧙 哨兵在场:外来者数量可能比官方配比 +1 或 −1,也可能不变</p>'
       : ''
 
     // ---- 未入座:选座 ----
@@ -311,10 +311,13 @@ function renderStoryteller() {
             </label>
             <span class="hint">修改板子/人数会清空座位,玩家需重新入座</span>
             <span class="hint">🧙 哨兵(神职角色,外来者数调整):
-              ${[-1, 0, 1].map((v) => {
-                const off = status === 'playing' || (v === -1 && (composition[1] || 0) < 1)
+              ${[0, -1, 2, 1].map((v) => {
+                // 关 / −1 / 不变 / +1;「不变」= 哨兵在场但不调整,方向保密玩家只知在场
+                const baseOut = (composition[1] || 0) - (sentinel === 1 ? 1 : 0) + (sentinel === -1 ? 1 : 0)
+                const off = status === 'playing' || (v === -1 && baseOut < 1)
+                const label = v === 0 ? '关' : v === 2 ? '不变' : v > 0 ? '+1 外来者' : '−1 外来者'
                 return `<button class="chip small sentinel-chip ${sentinel === v ? 'on' : ''}" data-sentinel="${v}"
-                  ${off ? 'disabled' : ''}>${v === 0 ? '关' : (v > 0 ? '+1 外来者' : '−1 外来者')}</button>`
+                  ${off ? 'disabled' : ''}>${label}</button>`
               }).join('')}
             </span>
           </div>
@@ -363,8 +366,8 @@ function renderStoryteller() {
           expected[0] += adj[0]; expected[1] += adj[1]; expected[2] += adj[2]; expected[3] += adj[3]
         }
       }
-      if (sentinel) {
-        expected[1] += sentinel // 哨兵:说书人已选的外来者 +1/−1
+      if (sentinel === 1 || sentinel === -1) {
+        expected[1] += sentinel // 哨兵:说书人已选的外来者 +1/−1(2=不变 不调整)
         expected[0] -= sentinel // 镇民反向调整,总人数保持不变
       }
       if (expected[1] < 0) { expected[0] += expected[1]; expected[1] = 0 }
@@ -381,7 +384,8 @@ function renderStoryteller() {
           adjTexts.push(`${roleById[rid].name}:${parts.join('/')}`)
         }
       }
-      if (sentinel) adjTexts.push(`哨兵:${sentinel > 0 ? '+' : ''}${sentinel}外/${-sentinel > 0 ? '+' : ''}${-sentinel}镇`)
+      if (sentinel) adjTexts.push(sentinel === 2 ? '哨兵:不变'
+        : `哨兵:${sentinel > 0 ? '+' : ''}${sentinel}外/${-sentinel > 0 ? '+' : ''}${-sentinel}镇`)
       const adjLine = adjTexts.length
         ? `<p class="manual-adjust">配比调整:${adjTexts.map(esc).join(' · ')}</p>`
         : ''

@@ -118,7 +118,7 @@ class GotoBody(BaseModel):
 
 
 class SentinelBody(BaseModel):
-    value: int  # -1 / 0 / +1:哨兵对外来者数量的调整(0 = 未启用)
+    value: int  # -1 / 0 / +1 / 2:哨兵对外来者数量的调整(0 = 关,2 = 在场但不调整)
 
 
 def require_storyteller(x_password: str = Header(default="", alias="X-Storyteller-Password")) -> None:

@@ -77,7 +77,7 @@ class GameManager:
         self.nominations: list[dict] = []  # 提名历史 [{day,nominator,nominee,votes,executed}]
         self.current: dict | None = None  # 进行中的提名 {nominator,nominee,votes}
         self.bluffs: list[str] = []  # 恶魔的三个伪装:不在场的好角色 id(开局时抽取)
-        self.sentinel: int = 0  # 哨兵(神职角色):说书人调整外来者数,0=未启用 / +1 / -1
+        self.sentinel: int = 0  # 哨兵(神职角色):0=关 / +1 / -1 / 2=在场但不调整
         self.saved_at: float | None = None
 
     @property
@@ -161,9 +161,9 @@ class GameManager:
         self.save()
 
     def set_sentinel(self, value: int) -> None:
-        """哨兵(神职角色):说书人选择外来者 +1/−1,0 关闭。仅开局前可改。"""
-        if value not in (-1, 0, 1):
-            raise ValueError("哨兵取值需为 -1 / 0 / +1")
+        """哨兵(神职角色):说书人选择外来者 +1/−1,2=在场但不调整,0 关闭。仅开局前可改。"""
+        if value not in (-1, 0, 1, 2):
+            raise ValueError("哨兵取值需为 -1 / 0 / +1 / 2(不变)")
         if self.status == "playing":
             raise ValueError("本局已开始,不能修改哨兵")
         if value == -1 and COMPOSITION[self.player_count][1] < 1:
@@ -270,8 +270,8 @@ class GameManager:
                 comp[1] += do
                 comp[2] += dm
                 comp[3] += dd
-        if self.sentinel:
-            comp[1] += self.sentinel  # 哨兵:说书人定的 +1/−1 外来者
+        if self.sentinel in (-1, 1):
+            comp[1] += self.sentinel  # 哨兵:说书人定的 +1/−1 外来者(2=不变 不调整)
             comp[0] -= self.sentinel  # 镇民反向调整,总人数保持不变
         if comp[1] < 0:
             comp[0] += comp[1]
@@ -587,7 +587,7 @@ class GameManager:
                 (self.seats.get(i) is not None and self.seats[i].role_id)
                 or i in self.seat_roles for i in range(1, self.player_count + 1)),
             "bluffs": [self.roles[rid] for rid in self.bluffs],  # 恶魔的三个伪装(说书人可见)
-            "sentinel": self.sentinel,  # 哨兵:+1/−1/0,说书人可见
+            "sentinel": self.sentinel,  # 哨兵:+1/−1/2(不变)/0(关),说书人可见
             # 入夜会面:告诉爪牙谁是恶魔、告诉恶魔谁是爪牙(空座预发也列出)
             "demon_seats": self._team_seats(DEMON),
             "minion_seats": self._team_seats(MINION),

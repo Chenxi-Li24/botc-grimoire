@@ -360,7 +360,7 @@ async def main() -> None:
     req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 6}, ST)
     state = req("/api/state", "GET", headers=ST)
     assert state["sentinel"] == 0
-    for bad in (2, -2):
+    for bad in (3, -2):
         try:
             req("/api/sentinel", "POST", {"value": bad}, ST)
             raise AssertionError(f"哨兵 {bad} 应被拒绝")
@@ -393,6 +393,23 @@ async def main() -> None:
                     for rid in state["seat_roles"].values())
     assert teams.get("outsider", 0) in (0, 2), f"哨兵 -1 后外来者应为 0 或 2(视男爵),实际 {dict(teams)}"
     print(f"SENTI 哨兵 -1:实际配比 {dict(teams)} OK")
+
+    req("/api/reset", "POST", headers=ST)
+    req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 6}, ST)
+    state = req("/api/sentinel", "POST", {"value": 2}, ST)
+    assert state["sentinel"] == 2, "哨兵「不变」应可保存(在场但不调整)"
+    pid = req("/api/join", "POST", {"name": "senti2"})["player_id"]
+    req(f"/api/player/{pid}/sit", "POST", {"seat": 1})
+    pview = req(f"/api/me/{pid}")
+    assert pview["sentinel"] is True and pview["composition"] == [3, 1, 1, 1], \
+        "哨兵不变:玩家应知在场但不知方向、配比仍是官方基础"
+    state = req("/api/assign", "POST", headers=ST)  # 不变:实际配比不因哨兵改变
+    teams = Counter(p["role"]["team"] for s in state["seats"] for p in [s["player"]] if p)
+    teams += Counter(next(r["team"] for r in state["roles"] if r["id"] == rid)
+                     for rid in state["seat_roles"].values())
+    assert teams.get("outsider", 0) in (1, 3), \
+        f"哨兵不变时外来者应为 1 或 3(仅视男爵),实际 {dict(teams)}"
+    print(f"SENTI 哨兵不变:实际配比 {dict(teams)},配比未因哨兵改变 OK")
 
     req("/api/reset", "POST", headers=ST)
     req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 5}, ST)
