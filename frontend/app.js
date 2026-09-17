@@ -338,9 +338,10 @@ function renderStoryteller() {
             <span class="hint">修改板子/人数会清空座位,玩家需重新入座</span>
             <span class="hint">🧙 哨兵(神职角色,外来者数调整):
               ${[0, -1, 2, 1].map((v) => {
-                // 关 / −1 / 不变 / +1;「不变」= 哨兵在场但不调整,方向保密玩家只知在场
-                const baseOut = (composition[1] || 0) - (sentinel === 1 ? 1 : 0) + (sentinel === -1 ? 1 : 0)
-                const off = status === 'playing' || (v === -1 && baseOut < 1)
+                // 关 / −1 / 不变 / +1;「不变」= 哨兵在场但不调整,方向保密玩家只知在场。
+                // −1 禁用只看官方基础配比有无外来者(与后端一致),不看当前哨兵选择——
+                // 之前扣回当前 delta 会误禁:+1 状态下想改 −1(基础外来者=1)会被错误禁用
+                const off = status === 'playing' || (v === -1 && (composition[1] || 0) < 1)
                 const label = v === 0 ? '关' : v === 2 ? '不变' : v > 0 ? '+1 外来者' : '−1 外来者'
                 return `<button class="chip small sentinel-chip ${sentinel === v ? 'on' : ''}" data-sentinel="${v}"
                   ${off ? 'disabled' : ''}>${label}</button>`
