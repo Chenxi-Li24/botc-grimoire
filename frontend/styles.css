@@ -455,3 +455,56 @@ h3 {
   gap: 8px;
   justify-content: center;
 }
+
+/* ---- 手动发身份 ---- */
+
+.manual-summary {
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.manual-summary.warn {
+  color: #ff6b5e;
+}
+
+.role-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 2px 0;
+}
+
+.chip {
+  padding: 4px 10px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.chip:hover {
+  border-color: var(--gold);
+}
+
+.chip.on {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: #241a05;
+  font-weight: 600;
+}
+
+.seat-node .draft-badge {
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  background: var(--gold);
+  color: #241a05;
+  padding: 1px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+}

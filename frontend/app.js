@@ -4,6 +4,8 @@
 const ST_PASSWORD_KEY = 'botc_st_password'
 const PLAYER_ID_KEY = 'botc_player_id'
 const TEAM_LABEL = { townsfolk: '镇民', outsider: '外来者', minion: '爪牙', demon: '恶魔' }
+const TEAM_INDEX = { townsfolk: 0, outsider: 1, minion: 2, demon: 3 } // 配比 [镇,外,爪,恶] 的下标
+const TEAM_ORDER = [['townsfolk', '镇民'], ['outsider', '外来者'], ['minion', '爪牙'], ['demon', '恶魔']]
 const app = document.getElementById('app')
 
 function h(html) {
@@ -61,10 +63,12 @@ function seatCircle(seats, opts = {}) {
     const a = (2 * Math.PI / n) * (s.seat - 1) - Math.PI / 2
     const p = s.player
     const teamCls = p && p.role ? `team-${p.role.team}` : ''
+    const draftName = opts.draftBadge ? opts.draftBadge(s) : null
     const node = h(`<div class="seat-node ${p ? 'occ' : 'free'} ${p && !p.alive ? 'dead' : ''} ${s.is_me ? 'mine' : ''} ${teamCls}"
         data-seat="${s.seat}" style="left:${(50 + 38 * Math.cos(a)).toFixed(2)}%;top:${(50 + 38 * Math.sin(a)).toFixed(2)}%">
       <span class="seat-num">${s.seat}</span>
       <span class="seat-name">${p ? esc(p.name) : (opts.freeLabel || '入座')}</span>
+      ${draftName ? `<span class="draft-badge">${esc(draftName)}</span>` : ''}
     </div>`)
     if (opts.clickSeat) node.addEventListener('click', () => opts.clickSeat(s))
     wrap.appendChild(node)
@@ -211,11 +215,14 @@ function renderStoryteller() {
 
   app.replaceChildren(h('<div class="page center">连接魔典…</div>'))
   let selected = null // 选中的座位号(点击环形座位)
+  let manual = false // 手动发身份模式
+  let draft = {} // 手动模式草稿:座位号 → 角色 id
 
   function paint(view) {
-    const { status, script, player_count: count, scripts, seats } = view
+    const { status, script, player_count: count, scripts, seats, roles, composition, adjust_roles } = view
     const minP = scripts.find((s) => s.id === script)?.min || 5 // 该板子的人数下限(瓦釜雷鸣 7 人起)
     const seatedCount = seats.filter((s) => s.player).length
+    if (status === 'playing') { manual = false; draft = {} } // 发牌完成后退出草稿
     const allSeated = seatedCount === count
     const selSeat = seats.find((s) => s.seat === selected)
     const selP = selSeat && selSeat.player
@@ -225,7 +232,10 @@ function renderStoryteller() {
         <h1>🕯 魔典</h1>
         <span class="sub">血染钟楼 · 说书人控制台</span>
         <div class="st-actions">
-          <button class="btn primary" id="assign-btn" ${status === 'playing' || !allSeated ? 'disabled' : ''}>🎲 随机分配角色</button>
+          ${status === 'lobby'
+            ? `<button class="btn ${manual ? 'primary' : ''}" id="manual-btn">${manual ? '✖ 退出手动' : '🃏 手动发身份'}</button>`
+            : ''}
+          <button class="btn primary" id="assign-btn" ${status === 'playing' || !allSeated || manual ? 'disabled' : ''}>🎲 随机分配角色</button>
           <button class="btn danger" id="reset-btn">重置本局</button>
         </div>
       </div>
@@ -269,9 +279,64 @@ function renderStoryteller() {
       }
     }
 
+    const roleById = Object.fromEntries(roles.map((r) => [r.id, r]))
+
+    // ---- 手动发身份面板(草稿只在前端,确认后才提交) ----
+    function renderManualPicker(detail, selSeat) {
+      const picked = [0, 0, 0, 0]
+      for (const rid of Object.values(draft)) {
+        const r = roleById[rid]
+        if (r) picked[TEAM_INDEX[r.team]]++
+      }
+      const expected = [...composition]
+      for (const rid of Object.values(draft)) {
+        const adj = adjust_roles[rid]
+        if (adj) {
+          expected[0] += adj[0]; expected[1] += adj[1]; expected[2] += adj[2]; expected[3] += adj[3]
+        }
+      }
+      if (expected[1] < 0) { expected[0] += expected[1]; expected[1] = 0 }
+      const ok = picked[3] === 1 && picked[2] >= 1
+      const full = Object.keys(draft).length === count
+      const box = h(`<div class="st-detail">
+        <h3>🃏 手动发身份${selSeat && selSeat.player ? ` · 座位 ${selSeat.seat}(${esc(selSeat.player.name)})` : ''}</h3>
+        <p class="manual-summary ${full && ok ? '' : 'warn'}">${TEAM_ORDER.map(([t, l]) => `${l} ${picked[TEAM_INDEX[t]]}/${expected[TEAM_INDEX[t]]}`).join(' · ')}</p>
+        <p class="hint">${selSeat ? (selSeat.player ? '点击角色发给该座位,再点一次取消' : '这个座位还没有人入座') : '先点击环形座位,再选角色'}</p>
+      </div>`)
+      TEAM_ORDER.forEach(([team, label]) => {
+        const group = h(`<div class="role-group"><span class="team-badge team-${team}">${label}</span></div>`)
+        roles.filter((r) => r.team === team).forEach((r) => {
+          const on = selSeat && draft[selSeat.seat] === r.id
+          const chip = h(`<button class="chip ${on ? 'on' : ''}" title="${esc(r.ability)}">${esc(r.name)}</button>`)
+          chip.onclick = () => {
+            if (!selSeat || !selSeat.player) return
+            if (draft[selSeat.seat] === r.id) delete draft[selSeat.seat]
+            else draft[selSeat.seat] = r.id
+            paint(view)
+          }
+          group.appendChild(chip)
+        })
+        box.appendChild(group)
+      })
+      box.appendChild(h(`<div class="st-detail-actions">
+        <button class="btn primary small" id="manual-confirm" ${full && ok ? '' : 'disabled'}>✅ 确认发身份</button>
+        <button class="btn small ghost" id="manual-cancel">取消</button>
+      </div>`))
+      detail.replaceChildren(box)
+      document.getElementById('manual-confirm').onclick = () => act(() => {
+        const assignments = Object.entries(draft).map(([seat, role]) => ({ seat: Number(seat), role }))
+        return stApi('/api/assign/manual', { method: 'POST', body: JSON.stringify({ assignments }) })
+          .then(() => { selected = null }) // 服务器推送 playing 视图,paint 会清空草稿
+      })
+      document.getElementById('manual-cancel').onclick = () => { manual = false; draft = {}; paint(view) }
+    }
+
     // ---- 环形座位 ----
     document.getElementById('circle').appendChild(seatCircle(seats, {
       freeLabel: '空',
+      draftBadge: (s) => (manual && draft[s.seat] && roleById[draft[s.seat]]
+        ? roleById[draft[s.seat]].name
+        : null),
       clickSeat: (s) => {
         selected = s.seat
         paint(view)
@@ -280,7 +345,9 @@ function renderStoryteller() {
 
     // ---- 选中玩家详情 ----
     const detail = document.getElementById('detail')
-    if (selP) {
+    if (manual) {
+      renderManualPicker(detail, selSeat)
+    } else if (selP) {
       detail.replaceChildren(h(`<div class="st-detail ${selP.alive ? '' : 'dead'}">
         <h3>座位 ${selP.seat} · ${esc(selP.name)}</h3>
         ${selP.role
@@ -313,6 +380,10 @@ function renderStoryteller() {
       // 切板子时若人数低于新板子下限(瓦釜雷鸣 7 人起),自动抬到下限
       const minNew = scripts.find((s) => s.id === e.target.value)?.min || 5
       doConfig(e.target.value, Math.max(count, minNew))
+    }
+    const manualBtn = document.getElementById('manual-btn')
+    if (manualBtn) {
+      manualBtn.onclick = () => { manual = !manual; draft = {}; paint(view) }
     }
     document.getElementById('dec').onclick = () => doConfig(script, count - 1)
     document.getElementById('inc').onclick = () => doConfig(script, count + 1)

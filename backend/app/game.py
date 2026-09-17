@@ -2,6 +2,7 @@
 
 import random
 import secrets
+from collections import Counter
 from dataclasses import dataclass
 
 from .roles import (COMPOSITION, DEMON, MINION, OUTSIDER, SCRIPTS,
@@ -110,27 +111,86 @@ class GameManager:
                    for team in (TOWNSFOLK, OUTSIDER, MINION, DEMON)}
 
         pool = random.sample(by_team[DEMON], comp[3])
-        minions = random.sample(by_team[MINION], comp[2])
-        pool += minions
-        # 脚本特殊调整(男爵/方古/亡骨魔/气球驾驶员/教父等改变配比,在抽外来者之前结算)
-        for rid in SCRIPT_ADJUST_ROLES.get(self.script_id, ()):
-            if any(r["id"] == rid for r in pool):
-                dt, do, dm, dd = ROLE_ADJUSTMENTS[rid]
-                comp[0] += dt
-                comp[1] += do
-                comp[2] += dm
-                comp[3] += dd
-        if comp[1] < 0:  # 外来者数不能为负(如亡骨魔 −1 遇上 0 外来者),差额还给镇民
-            comp[0] += comp[1]
-            comp[1] = 0
+        pool += random.sample(by_team[MINION], comp[2])
+        # 第一轮配比:已抽中的恶魔/爪牙触发调整(方古/亡骨魔/男爵/教父)
+        comp = list(self.expected_composition([r["id"] for r in pool]))
         pool += random.sample(by_team[OUTSIDER], comp[1])
         pool += random.sample(by_team[TOWNSFOLK], comp[0])
+        # 第二轮配比:镇民里的调整角色(气球驾驶员 +1 外来者)抽中后,按最终期望配比
+        # 用换人法对账。注意所有调整先叠加再钳制:亡骨魔 −1 与气球驾驶员 +1 恰好抵消时不做替换
+        adjust_ids = SCRIPT_ADJUST_ROLES.get(self.script_id, ())
+        final = list(self.expected_composition([r["id"] for r in pool]))
+        while True:
+            outsiders = sum(1 for r in pool if r["team"] == OUTSIDER)
+            if outsiders < final[1]:  # 缺外来者:换掉一名非调整镇民
+                victim = next((r for r in pool
+                               if r["team"] == TOWNSFOLK and r["id"] not in adjust_ids), None)
+                if victim is None:
+                    break
+                pool.remove(victim)
+                pool.append(random.sample(by_team[OUTSIDER], 1)[0])
+            elif outsiders > final[1]:  # 多外来者:换回一名镇民
+                victim = next(r for r in pool if r["team"] == OUTSIDER)
+                pool.remove(victim)
+                pool.append(random.sample(by_team[TOWNSFOLK], 1)[0])
+            else:
+                break
         random.shuffle(pool)
 
         by_seat = sorted(self.players.values(), key=lambda p: p.seat)
         for player, role in zip(by_seat, pool):
             player.role_id = role["id"]
         self.status = "playing"
+        return [p.storyteller(self.roles) for p in by_seat]
+
+    def expected_composition(self, role_ids: list[str]) -> tuple:
+        """按在场角色计算配比:基础表 + 脚本调整,外来者数钳制 ≥ 0。"""
+        comp = list(COMPOSITION[self.player_count])
+        for rid in SCRIPT_ADJUST_ROLES.get(self.script_id, ()):
+            if rid in role_ids:
+                dt, do, dm, dd = ROLE_ADJUSTMENTS[rid]
+                comp[0] += dt
+                comp[1] += do
+                comp[2] += dm
+                comp[3] += dd
+        if comp[1] < 0:
+            comp[0] += comp[1]
+            comp[1] = 0
+        return tuple(comp)
+
+    def assign_manual(self, assignments: list[dict]) -> list[dict]:
+        """说书人手动发身份:为每个座位指定角色。
+
+        硬校验:恶魔恰 1 名、爪牙至少 1 名;镇民/外来者配比只作提示(教父 ±1 等由说书人决定)。
+        """
+        if self.status == "playing":
+            raise ValueError("本局已开始,先重置")
+        if any(p.seat is None for p in self.players.values()):
+            raise ValueError("还有玩家未选择座位")
+        if len(self.players) < self.player_count:
+            raise ValueError(f"还有 {self.player_count - len(self.players)} 个空座位,等玩家入座")
+        seat_of = self.seats
+        if len(assignments) != self.player_count:
+            raise ValueError(f"需为全部 {self.player_count} 个座位指定角色")
+        picked: dict[int, str] = {}
+        for item in assignments:
+            seat, rid = item.get("seat"), item.get("role")
+            if not isinstance(seat, int) or seat not in seat_of:
+                raise ValueError(f"座位 {seat} 上没有玩家或座位无效")
+            if seat in picked:
+                raise ValueError(f"座位 {seat} 被重复分配")
+            if rid not in self.roles:
+                raise ValueError(f"角色 {rid} 不属于当前板子")
+            picked[seat] = rid
+        teams = Counter(self.roles[rid]["team"] for rid in picked.values())
+        if teams.get(DEMON, 0) != 1:
+            raise ValueError("必须且只能有 1 名恶魔")
+        if teams.get(MINION, 0) < 1:
+            raise ValueError("至少要有 1 名爪牙")
+        for seat, rid in picked.items():
+            seat_of[seat].role_id = rid
+        self.status = "playing"
+        by_seat = sorted(self.players.values(), key=lambda p: p.seat)
         return [p.storyteller(self.roles) for p in by_seat]
 
     # ---- 状态操作 ----
@@ -174,5 +234,10 @@ class GameManager:
             "scripts": [{"id": sid, "name": s["name"], "en": s["en"],
                          "min": s.get("min_players", 5)}
                         for sid, s in SCRIPTS.items()],
+            # 手动发身份用:当前板子的角色表 + 基础配比 + 调整角色
+            "roles": SCRIPTS[self.script_id]["roles"],
+            "composition": list(COMPOSITION[self.player_count]),
+            "adjust_roles": {rid: list(ROLE_ADJUSTMENTS[rid])
+                             for rid in SCRIPT_ADJUST_ROLES.get(self.script_id, ())},
             "seats": self._seat_slots(st_view=True),
         }

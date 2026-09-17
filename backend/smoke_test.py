@@ -95,6 +95,32 @@ async def main() -> None:
                               for s in state["seats"] if s["player"]))
     print(f"VAFU  配比 {dict(teams)}(恶魔决定 ±外来者)")
 
+    # ---- 手动发身份 ----
+    req("/api/reset", "POST", headers=ST)
+    req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 6}, ST)
+    ids = [req("/api/join", "POST", {"name": f"手{i}"})["player_id"] for i in range(1, 7)]
+    for seat, pid in enumerate(ids, 1):
+        req(f"/api/player/{pid}/sit", "POST", {"seat": seat})
+
+    # 两个恶魔应被拒绝
+    bad = [{"seat": s, "role": "imp" if s <= 2 else ("chef" if s <= 4 else "drunk")} for s in range(1, 7)]
+    try:
+        req("/api/assign/manual", "POST", {"assignments": bad}, ST)
+        raise AssertionError("两名恶魔未被拒绝")
+    except urllib.error.HTTPError as e:
+        assert e.code == 400
+    print("MANUAL 两名恶魔被拒绝 OK")
+
+    good = [{"seat": 1, "role": "imp"}, {"seat": 2, "role": "poisoner"},
+            {"seat": 3, "role": "empath"}, {"seat": 4, "role": "chef"},
+            {"seat": 5, "role": "investigator"}, {"seat": 6, "role": "drunk"}]
+    state = req("/api/assign/manual", "POST", {"assignments": good}, ST)
+    assert state["status"] == "playing"
+    by_seat = {s["seat"]: s["player"]["role"]["id"] for s in state["seats"] if s["player"]}
+    want = {1: "imp", 2: "poisoner", 3: "empath", 4: "chef", 5: "investigator", 6: "drunk"}
+    assert by_seat == want, f"手动分配结果不符 {by_seat}"
+    print("MANUAL 6 座手动发身份成功,角色与指定一致 OK")
+
     # 重置后回到 lobby,座位清空
     state = req("/api/reset", "POST", headers=ST)
     assert state["status"] == "lobby" and all(s["player"] is None for s in state["seats"])

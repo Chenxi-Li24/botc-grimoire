@@ -84,6 +84,10 @@ class PasswordBody(BaseModel):
     password: str
 
 
+class ManualAssignBody(BaseModel):
+    assignments: list[dict]  # [{"seat": int, "role": str}, ...]
+
+
 def require_storyteller(x_password: str = Header(default="", alias="X-Storyteller-Password")) -> None:
     if x_password != STORYTELLER_PASSWORD:
         raise HTTPException(status_code=401, detail="说书人密码错误")
@@ -149,6 +153,16 @@ def state() -> dict[str, Any]:
 async def assign() -> dict[str, Any]:
     try:
         game.assign_roles()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/assign/manual", dependencies=[Depends(require_storyteller)])
+async def assign_manual(body: ManualAssignBody) -> dict[str, Any]:
+    try:
+        game.assign_manual(body.assignments)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await hub.push_all()
