@@ -22,12 +22,18 @@ function esc(s) {
 
 async function api(path, init) {
   const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
     ...init,
+    // headers 必须放在 ...init 之后合并:否则 init.headers(如 X-Storyteller-Password)
+    // 会整体覆盖 Content-Type,浏览器默认 text/plain,FastAPI 收到字符串直接 422
+    headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
   })
   if (!res.ok) {
     const body = await res.json().catch(() => null)
-    throw new Error((body && body.detail) || `HTTP ${res.status}`)
+    // 422 校验失败时 detail 是数组:[{loc: ['body','player_count'], msg: ...}, ...]
+    const detail = Array.isArray(body && body.detail)
+      ? body.detail.map((d) => `${(d.loc || []).join('.')}: ${d.msg}`).join('; ')
+      : body && body.detail
+    throw new Error(detail || `HTTP ${res.status}`)
   }
   return res.json()
 }
@@ -383,6 +389,12 @@ function renderStoryteller() {
 
     // ---- 配置 ----
     function doConfig(sc, n) {
+      n = Number(n)
+      if (!Number.isInteger(n) || !sc) { // 参数异常直接提示,而不是发一个必然 422 的请求
+        err.textContent = `配置参数异常(板子=${sc}, 人数=${n}),请 Ctrl+F5 刷新后重试`
+        err.style.display = ''
+        return
+      }
       const willClear = seats.some((s) => s.player) || status === 'playing'
         || (seat_roles && Object.keys(seat_roles).length > 0)
       if (willClear && !confirm('修改配置会清空所有座位和角色分配,继续?')) {
