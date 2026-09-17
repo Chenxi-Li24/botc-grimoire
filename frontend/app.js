@@ -140,7 +140,8 @@ function renderPlayer(playerId) {
 
     // ---- 已入座 ----
     const role = me.role
-    const card = status === 'lobby' || !role
+    // 预发身份时入座即继承角色:只要有角色就显示角色卡(即使本局还在 lobby 等人)
+    const card = !role
       ? `<div class="center"><p class="sub">已入座,等待说书人分配角色…</p>
          <p class="hint">开局前点其他空座位可以换座</p></div>`
       : `<div class="card team-${role.team} ${me.alive ? '' : 'dead'}">
@@ -156,6 +157,7 @@ function renderPlayer(playerId) {
       <div class="topbar"><span>座位 ${me.seat} · ${esc(me.name)}</span><span class="dot ok" title="已连接"></span></div>
       <div id="circle"></div>
       ${card}
+      ${role && status === 'lobby' ? '<p class="hint">身份已到手,等待其他玩家入座开局…</p>' : ''}
     </div>`))
     document.getElementById('circle').appendChild(seatCircle(seats, {
       clickSeat: (s) => {
@@ -219,7 +221,7 @@ function renderStoryteller() {
   let draft = {} // 手动模式草稿:座位号 → 角色 id
 
   function paint(view) {
-    const { status, script, player_count: count, scripts, seats, roles, composition, adjust_roles } = view
+    const { status, script, player_count: count, scripts, seats, roles, composition, adjust_roles, seat_roles } = view
     const minP = scripts.find((s) => s.id === script)?.min || 5 // 该板子的人数下限(瓦釜雷鸣 7 人起)
     const seatedCount = seats.filter((s) => s.player).length
     if (status === 'playing') { manual = false; draft = {} } // 发牌完成后退出草稿
@@ -257,7 +259,7 @@ function renderStoryteller() {
           </div>
           <div class="st-circle">
             <div id="circle"></div>
-            <p class="hint">已入座 ${seatedCount}/${count}${status === 'playing' ? ' · 游戏中' : ' · 等待开局'}${allSeated && status === 'lobby' ? ' · 可以分配角色' : ''}</p>
+            <p class="hint">已入座 ${seatedCount}/${count}${status === 'playing' ? ' · 游戏中' : ' · 等待开局'}${allSeated && status === 'lobby' ? ' · 可以分配角色' : ''}${!allSeated && seat_roles && Object.keys(seat_roles).length === count ? ' · 已预发身份,等玩家入座' : ''}</p>
           </div>
         </div>
         <div class="st-right">
@@ -299,9 +301,9 @@ function renderStoryteller() {
       const ok = picked[3] === 1 && picked[2] >= 1
       const full = Object.keys(draft).length === count
       const box = h(`<div class="st-detail">
-        <h3>🃏 手动发身份${selSeat && selSeat.player ? ` · 座位 ${selSeat.seat}(${esc(selSeat.player.name)})` : ''}</h3>
+        <h3>🃏 手动发身份${selSeat ? ` · 座位 ${selSeat.seat}${selSeat.player ? `(${esc(selSeat.player.name)})` : '(空)'}` : ''}</h3>
         <p class="manual-summary ${full && ok ? '' : 'warn'}">${TEAM_ORDER.map(([t, l]) => `${l} ${picked[TEAM_INDEX[t]]}/${expected[TEAM_INDEX[t]]}`).join(' · ')}</p>
-        <p class="hint">${selSeat ? (selSeat.player ? '点击角色发给该座位,再点一次取消' : '这个座位还没有人入座') : '先点击环形座位,再选角色'}</p>
+        <p class="hint">${selSeat ? (selSeat.player ? '点击角色发给该座位,再点一次取消' : '该座还没人:可以先发身份,玩家入座自动继承') : '先点击环形座位,再选角色'}</p>
       </div>`)
       TEAM_ORDER.forEach(([team, label]) => {
         const group = h(`<div class="role-group"><span class="team-badge team-${team}">${label}</span></div>`)
@@ -309,7 +311,7 @@ function renderStoryteller() {
           const on = selSeat && draft[selSeat.seat] === r.id
           const chip = h(`<button class="chip ${on ? 'on' : ''}" title="${esc(r.ability)}">${esc(r.name)}</button>`)
           chip.onclick = () => {
-            if (!selSeat || !selSeat.player) return
+            if (!selSeat) return
             if (draft[selSeat.seat] === r.id) delete draft[selSeat.seat]
             else draft[selSeat.seat] = r.id
             paint(view)
@@ -326,7 +328,8 @@ function renderStoryteller() {
       document.getElementById('manual-confirm').onclick = () => act(() => {
         const assignments = Object.entries(draft).map(([seat, role]) => ({ seat: Number(seat), role }))
         return stApi('/api/assign/manual', { method: 'POST', body: JSON.stringify({ assignments }) })
-          .then(() => { selected = null }) // 服务器推送 playing 视图,paint 会清空草稿
+          .then((v) => { manual = false; draft = {}; selected = null; paint(v) })
+          // 空座预发时状态仍是 lobby,直接以响应视图重绘(不等推送)
       })
       document.getElementById('manual-cancel').onclick = () => { manual = false; draft = {}; paint(view) }
     }
@@ -334,9 +337,14 @@ function renderStoryteller() {
     // ---- 环形座位 ----
     document.getElementById('circle').appendChild(seatCircle(seats, {
       freeLabel: '空',
-      draftBadge: (s) => (manual && draft[s.seat] && roleById[draft[s.seat]]
-        ? roleById[draft[s.seat]].name
-        : null),
+      draftBadge: (s) => {
+        // 手动模式显示草稿;非手动时,空座上的预发身份也显示在徽章里
+        if (manual && draft[s.seat] && roleById[draft[s.seat]]) return roleById[draft[s.seat]].name
+        if (!s.player && seat_roles && seat_roles[s.seat] && roleById[seat_roles[s.seat]]) {
+          return roleById[seat_roles[s.seat]].name
+        }
+        return null
+      },
       clickSeat: (s) => {
         selected = s.seat
         paint(view)
@@ -362,6 +370,13 @@ function renderStoryteller() {
       document.getElementById('act-remove').onclick = () => {
         if (confirm(`移除 ${selP.name}?`)) act(() => stApi(`/api/player/${selP.id}/remove`, { method: 'POST' }))
       }
+    } else if (selSeat && selSeat.assigned_role) {
+      const r = selSeat.assigned_role
+      detail.replaceChildren(h(`<div class="st-detail">
+        <h3>座位 ${selSeat.seat} · 空</h3>
+        <span class="team-badge team-${r.team}">${TEAM_LABEL[r.team]} · ${esc(r.name)}</span>
+        <p class="hint">身份已预发,等玩家入座自动继承</p>
+      </div>`))
     } else {
       detail.replaceChildren(h('<p class="hint">点击环形座位查看/操作玩家</p>'))
     }
@@ -369,6 +384,7 @@ function renderStoryteller() {
     // ---- 配置 ----
     function doConfig(sc, n) {
       const willClear = seats.some((s) => s.player) || status === 'playing'
+        || (seat_roles && Object.keys(seat_roles).length > 0)
       if (willClear && !confirm('修改配置会清空所有座位和角色分配,继续?')) {
         paint(view)
         return
@@ -383,7 +399,14 @@ function renderStoryteller() {
     }
     const manualBtn = document.getElementById('manual-btn')
     if (manualBtn) {
-      manualBtn.onclick = () => { manual = !manual; draft = {}; paint(view) }
+      manualBtn.onclick = () => {
+        manual = !manual
+        // 进入手动模式时载入已预发的身份,便于微调;退出则清空草稿
+        draft = manual && seat_roles
+          ? Object.fromEntries(Object.entries(seat_roles).map(([s, r]) => [Number(s), r]))
+          : {}
+        paint(view)
+      }
     }
     document.getElementById('dec').onclick = () => doConfig(script, count - 1)
     document.getElementById('inc').onclick = () => doConfig(script, count + 1)

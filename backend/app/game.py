@@ -46,6 +46,7 @@ class GameManager:
     def reset(self) -> None:
         self.players: dict[str, Player] = {}
         self.status: str = "lobby"  # lobby | playing
+        self.seat_roles: dict[int, str] = {}  # 预发身份:座位号 → 角色 id(未入座也能先发)
 
     @property
     def roles(self) -> dict:
@@ -69,6 +70,7 @@ class GameManager:
             p.seat = None
             p.role_id = None
             p.alive = True
+        self.seat_roles = {}  # 预发身份一并清空
         self.status = "lobby"
 
     # ---- 玩家进出 ----
@@ -89,6 +91,11 @@ class GameManager:
         if owner and owner.id != player_id:
             raise ValueError(f"座位 {seat} 已被 {owner.name} 占用")
         self.players[player_id].seat = seat
+        # 预发身份跟随座位:入座即继承该座已发的角色(没预发则该座无角色)
+        self.players[player_id].role_id = self.seat_roles.get(seat)
+        if (self.status == "lobby" and self.seat_roles
+                and len(self.seats) == self.player_count):
+            self.status = "playing"  # 预发身份全部入座 → 自动开局
 
     def remove_player(self, player_id: str) -> None:
         if player_id not in self.players:
@@ -162,21 +169,18 @@ class GameManager:
         """说书人手动发身份:为每个座位指定角色。
 
         硬校验:恶魔恰 1 名、爪牙至少 1 名;镇民/外来者配比只作提示(教父 ±1 等由说书人决定)。
+        无需等玩家入座:身份先挂在座位上,玩家入座时自动继承;全员入座后自动开局。
         """
         if self.status == "playing":
             raise ValueError("本局已开始,先重置")
-        if any(p.seat is None for p in self.players.values()):
-            raise ValueError("还有玩家未选择座位")
-        if len(self.players) < self.player_count:
-            raise ValueError(f"还有 {self.player_count - len(self.players)} 个空座位,等玩家入座")
         seat_of = self.seats
         if len(assignments) != self.player_count:
             raise ValueError(f"需为全部 {self.player_count} 个座位指定角色")
         picked: dict[int, str] = {}
         for item in assignments:
             seat, rid = item.get("seat"), item.get("role")
-            if not isinstance(seat, int) or seat not in seat_of:
-                raise ValueError(f"座位 {seat} 上没有玩家或座位无效")
+            if not isinstance(seat, int) or not 1 <= seat <= self.player_count:
+                raise ValueError(f"座位 {seat} 无效")
             if seat in picked:
                 raise ValueError(f"座位 {seat} 被重复分配")
             if rid not in self.roles:
@@ -187,9 +191,11 @@ class GameManager:
             raise ValueError("必须且只能有 1 名恶魔")
         if teams.get(MINION, 0) < 1:
             raise ValueError("至少要有 1 名爪牙")
-        for seat, rid in picked.items():
-            seat_of[seat].role_id = rid
-        self.status = "playing"
+        self.seat_roles = dict(picked)  # 身份挂在座位上,没人入座也可以先发
+        for seat, player in seat_of.items():  # 已入座的玩家当场继承
+            player.role_id = picked[seat]
+        if len(seat_of) == self.player_count:
+            self.status = "playing"  # 全员已入座 → 立即开局;否则等 sit() 补满自动开局
         by_seat = sorted(self.players.values(), key=lambda p: p.seat)
         return [p.storyteller(self.roles) for p in by_seat]
 
@@ -207,7 +213,10 @@ class GameManager:
         for i in range(1, self.player_count + 1):
             p = seat_of.get(i)
             if p is None:
-                slots.append({"seat": i, "player": None})
+                slot = {"seat": i, "player": None}
+                if st_view and i in self.seat_roles:  # 空座上的预发身份,说书人可见
+                    slot["assigned_role"] = self.roles[self.seat_roles[i]]
+                slots.append(slot)
                 continue
             entry = p.storyteller(self.roles) if st_view else p.public()
             slot = {"seat": i, "player": entry}
@@ -239,5 +248,6 @@ class GameManager:
             "composition": list(COMPOSITION[self.player_count]),
             "adjust_roles": {rid: list(ROLE_ADJUSTMENTS[rid])
                              for rid in SCRIPT_ADJUST_ROLES.get(self.script_id, ())},
+            "seat_roles": {str(seat): rid for seat, rid in self.seat_roles.items()},
             "seats": self._seat_slots(st_view=True),
         }

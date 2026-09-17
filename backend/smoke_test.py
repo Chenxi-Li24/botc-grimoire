@@ -121,6 +121,29 @@ async def main() -> None:
     assert by_seat == want, f"手动分配结果不符 {by_seat}"
     print("MANUAL 6 座手动发身份成功,角色与指定一致 OK")
 
+    # ---- 手动发身份:无人入座也能先发,玩家入座自动继承 ----
+    req("/api/reset", "POST", headers=ST)
+    req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 6}, ST)
+    pre = [{"seat": s, "role": r} for s, r in zip(
+        range(1, 7), ["imp", "poisoner", "empath", "chef", "investigator", "drunk"])]
+    state = req("/api/assign/manual", "POST", {"assignments": pre}, ST)
+    assert state["status"] == "lobby", "无人入座时应保持 lobby"
+    assigned = {s["seat"]: (s.get("assigned_role") or {}).get("id") for s in state["seats"]}
+    assert assigned == want, f"空座预发身份不符 {assigned}"
+    print("MANUAL 无人入座预发身份成功,状态保持 lobby OK")
+
+    ids = [req("/api/join", "POST", {"name": f"预{i}"})["player_id"] for i in range(1, 7)]
+    for seat, pid in enumerate(ids, 1):
+        view = req(f"/api/player/{pid}/sit", "POST", {"seat": seat})
+        assert view["me"]["role"]["id"] == want[seat], f"座位 {seat} 应继承 {want[seat]}"
+        if seat == 3:
+            assert req("/api/state", "GET", headers=ST)["status"] == "lobby", "未满员不应开局"
+    state = req("/api/state", "GET", headers=ST)
+    assert state["status"] == "playing", "最后一人入座后应自动开局"
+    by_seat = {s["seat"]: s["player"]["role"]["id"] for s in state["seats"] if s["player"]}
+    assert by_seat == want, f"预发继承结果不符 {by_seat}"
+    print("MANUAL 玩家随后入座继承预发身份,满员自动开局 OK")
+
     # 重置后回到 lobby,座位清空
     state = req("/api/reset", "POST", headers=ST)
     assert state["status"] == "lobby" and all(s["player"] is None for s in state["seats"])
