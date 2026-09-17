@@ -111,6 +111,16 @@ async def main() -> None:
         assert e.code == 400
     print("MANUAL 两名恶魔被拒绝 OK")
 
+    # 重复角色应被拒绝(即使恶魔/爪牙数量合法)
+    dup = [{"seat": s, "role": r} for s, r in zip(
+        range(1, 7), ["imp", "poisoner", "chef", "chef", "investigator", "drunk"])]
+    try:
+        req("/api/assign/manual", "POST", {"assignments": dup}, ST)
+        raise AssertionError("重复角色未被拒绝")
+    except urllib.error.HTTPError as e:
+        assert e.code == 400
+    print("MANUAL 重复角色被拒绝 OK")
+
     good = [{"seat": 1, "role": "imp"}, {"seat": 2, "role": "poisoner"},
             {"seat": 3, "role": "empath"}, {"seat": 4, "role": "chef"},
             {"seat": 5, "role": "investigator"}, {"seat": 6, "role": "drunk"}]

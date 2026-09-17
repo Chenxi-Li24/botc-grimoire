@@ -187,6 +187,8 @@ class GameManager:
                 raise ValueError(f"角色 {rid} 不属于当前板子")
             picked[seat] = rid
         teams = Counter(self.roles[rid]["team"] for rid in picked.values())
+        if len(set(picked.values())) != len(picked):
+            raise ValueError("角色不能重复:每个角色在本局最多出现一次")
         if teams.get(DEMON, 0) != 1:
             raise ValueError("必须且只能有 1 名恶魔")
         if teams.get(MINION, 0) < 1:

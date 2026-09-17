@@ -69,12 +69,12 @@ function seatCircle(seats, opts = {}) {
     const a = (2 * Math.PI / n) * (s.seat - 1) - Math.PI / 2
     const p = s.player
     const teamCls = p && p.role ? `team-${p.role.team}` : ''
-    const draftName = opts.draftBadge ? opts.draftBadge(s) : null
+    const badge = opts.draftBadge ? opts.draftBadge(s) : null // { name, team }
     const node = h(`<div class="seat-node ${p ? 'occ' : 'free'} ${p && !p.alive ? 'dead' : ''} ${s.is_me ? 'mine' : ''} ${teamCls}"
         data-seat="${s.seat}" style="left:${(50 + 38 * Math.cos(a)).toFixed(2)}%;top:${(50 + 38 * Math.sin(a)).toFixed(2)}%">
       <span class="seat-num">${s.seat}</span>
       <span class="seat-name">${p ? esc(p.name) : (opts.freeLabel || '入座')}</span>
-      ${draftName ? `<span class="draft-badge">${esc(draftName)}</span>` : ''}
+      ${badge ? `<span class="draft-badge team-${badge.team}">${esc(badge.name)}</span>` : ''}
     </div>`)
     if (opts.clickSeat) node.addEventListener('click', () => opts.clickSeat(s))
     wrap.appendChild(node)
@@ -292,12 +292,13 @@ function renderStoryteller() {
     // ---- 手动发身份面板(草稿只在前端,确认后才提交) ----
     function renderManualPicker(detail, selSeat) {
       const picked = [0, 0, 0, 0]
-      for (const rid of Object.values(draft)) {
+      const draftRoles = [...new Set(Object.values(draft))] // 去重:旧服务端可能存有重复角色
+      for (const rid of draftRoles) {
         const r = roleById[rid]
         if (r) picked[TEAM_INDEX[r.team]]++
       }
       const expected = [...composition]
-      for (const rid of Object.values(draft)) {
+      for (const rid of draftRoles) {
         const adj = adjust_roles[rid]
         if (adj) {
           expected[0] += adj[0]; expected[1] += adj[1]; expected[2] += adj[2]; expected[3] += adj[3]
@@ -306,18 +307,47 @@ function renderStoryteller() {
       if (expected[1] < 0) { expected[0] += expected[1]; expected[1] = 0 }
       const ok = picked[3] === 1 && picked[2] >= 1
       const full = Object.keys(draft).length === count
+      // 调整角色导致的配比变化:标出是哪个角色、改了什么(如 方古:−1镇/+1外)
+      const ADJ_NAMES = ['镇', '外', '爪', '恶']
+      const adjTexts = []
+      for (const rid of draftRoles) {
+        const adj = adjust_roles[rid]
+        if (adj) {
+          const parts = []
+          adj.forEach((d, i) => { if (d) parts.push(`${d > 0 ? '+' : ''}${d}${ADJ_NAMES[i]}`) })
+          adjTexts.push(`${roleById[rid].name}:${parts.join('/')}`)
+        }
+      }
+      const adjLine = adjTexts.length
+        ? `<p class="manual-adjust">配比调整:${adjTexts.map(esc).join(' · ')}</p>`
+        : ''
+      // 重复角色(如旧服务端残留的预发数据)禁止提交:与后端校验一致
+      const hasDup = new Set(Object.values(draft)).size !== Object.keys(draft).length
+      const summaryTxt = TEAM_ORDER.map(([t, l]) => {
+        const i = TEAM_INDEX[t]
+        // 与基础配比不同 → 目标数变金色,提示配比被调整角色改变了
+        const exp = expected[i] !== composition[i] ? `<span class="delta">${expected[i]}</span>` : expected[i]
+        return `${l} ${picked[i]}/${exp}`
+      }).join(' · ')
       const box = h(`<div class="st-detail">
         <h3>🃏 手动发身份${selSeat ? ` · 座位 ${selSeat.seat}${selSeat.player ? `(${esc(selSeat.player.name)})` : '(空)'}` : ''}</h3>
-        <p class="manual-summary ${full && ok ? '' : 'warn'}">${TEAM_ORDER.map(([t, l]) => `${l} ${picked[TEAM_INDEX[t]]}/${expected[TEAM_INDEX[t]]}`).join(' · ')}</p>
+        <p class="manual-summary ${full && ok && !hasDup ? '' : 'warn'}">${summaryTxt}${hasDup ? ' · ⚠ 角色重复,请先取消重复项' : ''}</p>
+        ${adjLine}
         <p class="hint">${selSeat ? (selSeat.player ? '点击角色发给该座位,再点一次取消' : '该座还没人:可以先发身份,玩家入座自动继承') : '先点击环形座位,再选角色'}</p>
       </div>`)
+      const usedBy = {} // 角色 id → 已发的座位号(角色全局唯一,已发出的不可再发)
+      for (const [seat, rid] of Object.entries(draft)) usedBy[rid] = Number(seat)
       TEAM_ORDER.forEach(([team, label]) => {
         const group = h(`<div class="role-group"><span class="team-badge team-${team}">${label}</span></div>`)
         roles.filter((r) => r.team === team).forEach((r) => {
           const on = selSeat && draft[selSeat.seat] === r.id
-          const chip = h(`<button class="chip ${on ? 'on' : ''}" title="${esc(r.ability)}">${esc(r.name)}</button>`)
+          const usedSeat = usedBy[r.id]
+          const usedElsewhere = usedSeat != null && (!selSeat || usedSeat !== selSeat.seat)
+          const chip = h(`<button class="chip team-${r.team} ${on ? 'on' : ''} ${usedElsewhere ? 'used' : ''}"
+              title="${esc(r.ability)}${usedElsewhere ? `&#10;已发:座位 ${usedSeat}` : ''}">
+              ${esc(r.name)}${usedElsewhere ? `<span class="chip-used">座${usedSeat}</span>` : ''}</button>`)
           chip.onclick = () => {
-            if (!selSeat) return
+            if (!selSeat || usedElsewhere) return // 已发到别的座位 → 禁止重复发
             if (draft[selSeat.seat] === r.id) delete draft[selSeat.seat]
             else draft[selSeat.seat] = r.id
             paint(view)
@@ -327,7 +357,7 @@ function renderStoryteller() {
         box.appendChild(group)
       })
       box.appendChild(h(`<div class="st-detail-actions">
-        <button class="btn primary small" id="manual-confirm" ${full && ok ? '' : 'disabled'}>✅ 确认发身份</button>
+        <button class="btn primary small" id="manual-confirm" ${full && ok && !hasDup ? '' : 'disabled'}>✅ 确认发身份</button>
         <button class="btn small ghost" id="manual-cancel">取消</button>
       </div>`))
       detail.replaceChildren(box)
@@ -344,10 +374,11 @@ function renderStoryteller() {
     document.getElementById('circle').appendChild(seatCircle(seats, {
       freeLabel: '空',
       draftBadge: (s) => {
-        // 手动模式显示草稿;非手动时,空座上的预发身份也显示在徽章里
-        if (manual && draft[s.seat] && roleById[draft[s.seat]]) return roleById[draft[s.seat]].name
+        // 手动模式显示草稿;非手动时,空座上的预发身份也显示在徽章里。徽章按阵营配色
+        const badgeOf = (rid) => ({ name: roleById[rid].name, team: roleById[rid].team })
+        if (manual && draft[s.seat] && roleById[draft[s.seat]]) return badgeOf(draft[s.seat])
         if (!s.player && seat_roles && seat_roles[s.seat] && roleById[seat_roles[s.seat]]) {
-          return roleById[seat_roles[s.seat]].name
+          return badgeOf(seat_roles[s.seat])
         }
         return null
       },
