@@ -73,8 +73,9 @@ function seatCircle(seats, opts = {}) {
     const teamCls = p && p.role ? `team-${p.role.team}` : ''
     const badge = opts.draftBadge ? opts.draftBadge(s) : null // { name, team }
     const voted = opts.voted ? opts.voted(s) : false // 投票中该座举手
+    const deadVote = p && !p.alive && s.dead_vote_left // 死者死票未交出:骷髅左边常驻 🗳,举手交出死票后消失
     const markers = opts.markers ? opts.markers(s) : [] // 状态标记(仅说书人)
-    const node = h(`<div class="seat-node ${p ? 'occ' : 'free'} ${p && !p.alive ? 'dead' : ''} ${s.is_me ? 'mine' : ''} ${voted ? 'voted' : ''} ${teamCls}"
+    const node = h(`<div class="seat-node ${p ? 'occ' : 'free'} ${p && !p.alive ? 'dead' : ''} ${s.is_me ? 'mine' : ''} ${voted ? 'voted' : ''} ${deadVote ? 'dead-vote' : ''} ${teamCls}"
         data-seat="${s.seat}" style="left:${(50 + 38 * Math.cos(a)).toFixed(2)}%;top:${(50 + 38 * Math.sin(a)).toFixed(2)}%">
       <span class="seat-num">${s.seat}</span>
       <span class="seat-name">${p ? esc(p.name) : (opts.freeLabel || '入座')}</span>
@@ -138,10 +139,11 @@ function renderPlayer(playerId) {
   app.replaceChildren(h('<div class="page center">连接中…</div>'))
   function paint(view) {
     document.body.dataset.phase = view.phase || '' // 黑夜/白天自动切换配色(body[data-phase] 变量覆盖)
-    const { me, status, seats, phase, night_no: nightNo, day_no: dayNo, current, bluffs,
+    const { me, status, seats, phase, night_no: nightNo, day_no: dayNo, current, nominations, bluffs,
       demon_seats: demonSeats, minion_seats: minionSeats, lunatic_seats: lunaticSeats,
       script: scriptName, player_count: count, composition, sentinel: sentinelOn,
-      room_code: roomCode, team_changed: teamChanged, role_changed: roleChanged } = view
+      room_code: roomCode, team_changed: teamChanged, role_changed: roleChanged,
+      deaths } = view
     // 官方配比(公开信息):只展示基础配比,实际调整(男爵/教父等)不给玩家
     const compLine = composition && composition.length === 4
       ? `<p class="hint">📋 ${esc(scriptName)} · ${count} 人 · 官方配比:${['townsfolk', 'outsider', 'minion', 'demon']
@@ -198,8 +200,21 @@ function renderPlayer(playerId) {
     const phaseTxt = status === 'playing'
       ? (phase === 'night' ? ` · 🌙 第 ${nightNo} 夜` : phase === 'day' ? ` · ☀️ 第 ${dayNo} 天` : '')
       : ''
+    // 计票器:实时票型公开——谁提名谁、谁投了票(死票会在座位骷髅左边显示 🗳 标记)
+    const seatNames = {}
+    seats.forEach((s) => { if (s.player) seatNames[s.seat] = s.player.name })
     const voteLine = current
-      ? `<p class="vote-public">🗳 座${current.nominator} 提名座${current.nominee} · 赞成 ${current.votes.length} 票</p>`
+      ? `<div class="vote-public"><p class="vote-title-p">🗳 ${current.nominator}号 ${esc(seatNames[current.nominator] || '?')} 提名 ${current.nominee}号 ${esc(seatNames[current.nominee] || '?')}</p>
+          <p class="vote-count-p">赞成(${current.votes.length}票):${current.votes.length ? current.votes.map((v) => `${v}号 ${esc(seatNames[v] || '?')}`).join('、') : '暂无'}</p></div>`
+      : ''
+    // 历史投票:按天分组,每天谁提名谁、谁投票、是否处决
+    const histByDay = {}
+    ;(nominations || []).forEach((n) => { (histByDay[n.day] = histByDay[n.day] || []).push(n) })
+    const voteHist = (nominations || []).length
+      ? `<div class="vote-hist"><h4>📜 投票记录</h4>${Object.entries(histByDay).map(([day, ns]) =>
+          `<p class="hist-day">第${day}天</p>` + ns.map((n) =>
+            `<p class="hist-line">${n.nominator}号 ${esc(seatNames[n.nominator] || '?')} 提名 ${n.nominee}号 ${esc(seatNames[n.nominee] || '?')} · 赞成 ${n.votes.length} 票${n.votes.length ? ':' + n.votes.map((v) => `${v}号 ${esc(seatNames[v] || '?')}`).join('、') : ''}${n.executed ? ' · ⚔ 处决' : ' · 未处决'}</p>`).join('')
+        ).join('')}</div>`
       : ''
     // 伪装:仅恶魔(后端按真实身份判断)能看到三个不在场好角色,恶魔会面推进后才揭晓
     const bluffLine = bluffs && bluffs.length
@@ -208,14 +223,14 @@ function renderPlayer(playerId) {
     // 会面揭晓(信息不可收回):爪牙会面=所有爪牙同时醒来——爪牙手机显示恶魔是谁+其他爪牙(彼此可见);
     // 恶魔会面=恶魔独醒——恶魔手机显示爪牙名单
     const demonLine = demonSeats && demonSeats.length
-      ? `<p class="meet-line">😈 恶魔:${demonSeats.map((d) => `座${d.seat}${d.name ? ` ${esc(d.name)}` : ''}`).join(' · ')}</p>`
+      ? `<p class="meet-line">😈 恶魔:${demonSeats.map((d) => `${d.seat}号${d.name ? ` ${esc(d.name)}` : ''}`).join(' · ')}</p>`
       : ''
     const minionLine = minionSeats && minionSeats.length
-      ? `<p class="meet-line">🩸 爪牙:${minionSeats.map((m) => `座${m.seat}${m.name ? ` ${esc(m.name)}` : ''}${m.seat === me.seat ? '(你)' : ''}`).join(' · ')}</p>`
+      ? `<p class="meet-line">🩸 爪牙:${minionSeats.map((m) => `${m.seat}号${m.name ? ` ${esc(m.name)}` : ''}${m.seat === me.seat ? '(你)' : ''}`).join(' · ')}</p>`
       : ''
     // 恶魔/爪牙都知道疯子是谁:他就是疯子,不是真恶魔
     const lunaticLine = lunaticSeats && lunaticSeats.length
-      ? `<p class="meet-line">🩻 疯子:${lunaticSeats.map((l) => `座${l.seat}${l.name ? ` ${esc(l.name)}` : ''}`).join(' · ')}</p>`
+      ? `<p class="meet-line">🩻 疯子:${lunaticSeats.map((l) => `${l.seat}号${l.name ? ` ${esc(l.name)}` : ''}`).join(' · ')}</p>`
       : ''
     // 角色/阵营转变:文字提示保留(无背景色),与角色卡/卡框换色同步展示
     const roleChangeLine = roleChanged
@@ -224,13 +239,22 @@ function renderPlayer(playerId) {
     const teamChangeLine = teamChanged
       ? `<p class="meet-line">⚖ 阵营转变:你的阵营已变为 ${teamChanged === 'good' ? '善良' : '邪恶'}</p>`
       : ''
+    // 已死亡名单按天分组换行(后端按 day 排序,夜里刚死的人天亮才出现在名单里)
+    const deathsByDay = {}
+    ;(deaths || []).forEach((d) => { (deathsByDay[d.day] = deathsByDay[d.day] || []).push(d) })
+    const deadLine = (deaths || []).length
+      ? `<div class="dead-announce">☠ 已死亡:${Object.entries(deathsByDay).map(([day, list]) =>
+          `<span class="dead-day">第${day}天:${list.map((d) => `${d.seat}号 ${esc(d.name)}`).join('、')}</span>`).join('')}</div>`
+      : ''
     app.replaceChildren(h(`<div class="page rolecard">
       <div class="topbar"><span>座位 ${me.seat} · ${esc(me.name)}${phaseTxt} · 🚪 ${esc(roomCode)}</span><span class="dot ok" title="已连接"></span></div>
       <div id="circle"></div>
       ${voteLine}
+      ${voteHist}
       ${compLine}
       ${sentinelNote}
       ${card}
+      ${deadLine}
       ${bluffLine}
       ${demonLine}
       ${minionLine}
@@ -485,7 +509,7 @@ function renderStoryteller() {
           const usedElsewhere = usedSeat != null && (!selSeat || usedSeat !== selSeat.seat)
           const chip = h(`<button class="chip team-${r.team} ${on ? 'on' : ''} ${usedElsewhere ? 'used' : ''}"
               title="${esc(r.ability)}${usedElsewhere ? `&#10;已发:座位 ${usedSeat}` : ''}">
-              ${(FAKE_ICON[r.id] || '') + esc(r.name)}${usedElsewhere ? `<span class="chip-used">座${usedSeat}</span>` : ''}</button>`)
+              ${(FAKE_ICON[r.id] || '') + esc(r.name)}${usedElsewhere ? `<span class="chip-used">${usedSeat}号</span>` : ''}</button>`)
           chip.onclick = () => {
             if (!selSeat || usedElsewhere) return // 已发到别的座位 → 禁止重复发
             if (draft[selSeat.seat] === r.id) delete draft[selSeat.seat]
@@ -524,7 +548,7 @@ function renderStoryteller() {
         const fakeGroup = h(`<div class="role-group" style="--team: var(--gold); --team-text: var(--on-gold)"><span class="role-group-head">🧠 认知覆盖(说书人选定假身份${fakeOk ? '' : ' · 未选完'})</span></div>`)
         fakeNeeded.forEach(([seat, rid]) => {
           // 假身份做成框点选(再点已选中的框=清除);可与已发角色重复、不计算配板、不标已用
-          const row = h(`<div class="st-fake"><span class="hint">${FAKE_LABEL[rid] || '认知覆盖'} · 座${seat} 看到:</span></div>`)
+          const row = h(`<div class="st-fake"><span class="hint">${FAKE_LABEL[rid] || '认知覆盖'} · ${seat}号 看到:</span></div>`)
           roles.filter((r) => fakePools[rid].includes(r.team)).forEach((r) => {
             const on = draftFakes[seat] === r.id
             const chip = h(`<button class="chip team-${r.team} ${on ? 'on' : ''}" title="${esc(r.ability)}">${esc(r.name)}</button>`)
@@ -537,7 +561,7 @@ function renderStoryteller() {
             for (let s = 1; s <= count; s++) {
               if (s === Number(seat)) continue
               const on = draftLunMinions[seat].includes(s)
-              const chip = h(`<button class="chip ${on ? 'on' : ''}" data-lunmin="${seat}:${s}">座${s}</button>`)
+              const chip = h(`<button class="chip ${on ? 'on' : ''}" data-lunmin="${seat}:${s}">${s}号</button>`)
               chip.onclick = () => {
                 if (on) draftLunMinions[seat] = draftLunMinions[seat].filter((x) => x !== s)
                 else draftLunMinions[seat] = [...draftLunMinions[seat], s]
@@ -689,7 +713,7 @@ function renderStoryteller() {
         else if (cur.key !== 'dusk' && cur.key !== 'dawn') wake = seats.filter((s) => s.player && s.player.role && s.player.role.id === cur.key)
       }
       const wakeTxt = wake.length
-        ? '唤醒:' + wake.map((s) => `座${s.seat} ${esc(s.player.name)}${s.player.alive ? '' : ' ☠'}`).join('、')
+        ? '唤醒:' + wake.map((s) => `${s.seat}号 ${esc(s.player.name)}${s.player.alive ? '' : ' ☠'}`).join('、')
         : (cur && cur.key !== 'dusk' && cur.key !== 'dawn' ? '该角色不在场,此步可跳过' : '')
       // 认知覆盖步骤:按座位真实身份区分 🍺 酒鬼 / 🌙 疯子(图标不再一样)
       const realRoleAt = (seat) => {
@@ -700,9 +724,9 @@ function renderStoryteller() {
       }
       const fakeLabel = (seat) => (realRoleAt(seat) === 'lunatic' ? '🌙 疯子' : '🍺 酒鬼')
       const fakeIcon = (seat) => (realRoleAt(seat) === 'lunatic' ? '🌙' : '🍺')
-      const fakeNote = cur && cur.fake_for != null ? ` · ${fakeLabel(cur.fake_for)}扮演(座${cur.fake_for})` : ''
+      const fakeNote = cur && cur.fake_for != null ? ` · ${fakeLabel(cur.fake_for)}扮演(${cur.fake_for}号)` : ''
       // 会面步:告诉爪牙谁是恶魔、谁是疯子 / 告诉恶魔谁是爪牙、谁是疯子(空座预发也列出)
-      const seatTxt = (list) => list.map((d) => `座${d.seat} ${d.name ? esc(d.name) : '空(预发)'}`).join('、')
+      const seatTxt = (list) => list.map((d) => `${d.seat}号 ${d.name ? esc(d.name) : '空(预发)'}`).join('、')
       const lunRelTxt = (lunaticSeats && lunaticSeats.length)
         ? `<div class="step-seats">🌙 疯子:${seatTxt(lunaticSeats)}(他就是疯子,不是真恶魔)</div>`
         : ''
@@ -717,7 +741,7 @@ function renderStoryteller() {
       const lunOf = (seat) => {
         const mins = (lunaticMinions && lunaticMinions[String(seat)]) || []
         const lbs = (lunaticBluffs && lunaticBluffs[String(seat)]) || []
-        return `🌙 疯子(座${seat}):以为爪牙是 ${mins.length ? mins.map((s) => `座${s}`).join('、') : '未定'} · 给他的伪装 ${lbs.length ? lbs.map((r) => esc(r.name)).join(' · ') : '未定'}`
+        return `🌙 疯子(${seat}号):以为爪牙是 ${mins.length ? mins.map((s) => `${s}号`).join('、') : '未定'} · 给他的伪装 ${lbs.length ? lbs.map((r) => esc(r.name)).join(' · ') : '未定'}`
       }
       const lunStepTxt = (cur && cur.key === 'lunatic' && lunaticSeats && lunaticSeats.length)
         ? lunaticSeats.map((l) => `<div class="step-seats">${lunOf(l.seat)}</div>`).join('')
@@ -730,7 +754,7 @@ function renderStoryteller() {
         : ''
       // 认知覆盖待定:发牌后说书人还没选定假身份的座位,先别让玩家看卡
       const pendingTxt = (fakesPending && fakesPending.length)
-        ? `<div class="step-seats">⚠ 认知覆盖待定:${fakesPending.map((f) => `座${f.seat} ${esc(f.role.name)}`).join(' · ')} — 选定假身份后再让玩家看卡</div>`
+        ? `<div class="step-seats">⚠ 认知覆盖待定:${fakesPending.map((f) => `${f.seat}号 ${esc(f.role.name)}`).join(' · ')} — 选定假身份后再让玩家看卡</div>`
         : ''
       const box = h(`<div class="st-detail">
         ${strip}
@@ -747,7 +771,7 @@ function renderStoryteller() {
           </div>` : '<p class="hint">本夜没有步骤</p>'}
           <div class="step-list">
             ${steps.map((st, i) => `<button class="step-chip ${i < night.idx ? 'done' : ''} ${i === night.idx ? 'cur' : ''}"
-                title="${esc(st.name)}${st.fake_for != null ? ` · ${fakeLabel(st.fake_for)}扮演(座${st.fake_for})` : ''}">${i + 1} ${esc(st.name)}${st.fake_for != null ? ` ${fakeIcon(st.fake_for)}` : ''}</button>`).join('')}
+                title="${esc(st.name)}${st.fake_for != null ? ` · ${fakeLabel(st.fake_for)}扮演(${st.fake_for}号)` : ''}">${i + 1} ${esc(st.name)}${st.fake_for != null ? ` ${fakeIcon(st.fake_for)}` : ''}</button>`).join('')}
           </div>
           <div class="st-detail-actions">
             <button class="btn small ghost" id="night-prev" ${night.idx <= 0 ? 'disabled' : ''}>← 上一步</button>
@@ -774,28 +798,33 @@ function renderStoryteller() {
 
     function renderDayPanel(detail) {
       const strip = selP ? selPDetailHtml(selSeat, selP) : ''
-      const seatOpts = seats.filter((s) => s.player)
-        .map((s) => `<option value="${s.seat}">座${s.seat} · ${esc(s.player.name)}${s.player.alive ? '' : ' ☠'}</option>`).join('')
       const todays = nominations.filter((n) => n.day === dayNo)
+      // 提名资格:每人每天只能发起一次提名(死者不能发起)、只能被提名一次(死者可被提名),可以提名自己
+      const nominatorToday = new Set(todays.map((n) => n.nominator))
+      const nominatedToday = new Set(todays.map((n) => n.nominee))
+      const fromOpts = seats.filter((s) => s.player)
+        .map((s) => `<option value="${s.seat}" ${!s.player.alive || nominatorToday.has(s.seat) ? 'disabled' : ''}>${s.seat}号 · ${esc(s.player.name)}${s.player.alive ? '' : ' ☠'}${nominatorToday.has(s.seat) ? ' · 已提名过' : ''}</option>`).join('')
+      const toOpts = seats.filter((s) => s.player)
+        .map((s) => `<option value="${s.seat}" ${nominatedToday.has(s.seat) ? 'disabled' : ''}>${s.seat}号 · ${esc(s.player.name)}${s.player.alive ? '' : ' ☠'}${nominatedToday.has(s.seat) ? ' · 已被提名' : ''}</option>`).join('')
       const hist = todays.length
         ? `<h4>今日提名</h4>` + todays.map((n) => `<div class="nom-row ${n.executed ? 'exec' : ''}">
-            座${n.nominator} ${esc(seatNames[n.nominator] || '?')} 提名 座${n.nominee} ${esc(seatNames[n.nominee] || '?')}
-            · ${n.votes.length} 票 ${n.executed ? '· ⚔ 处决' : '· 未处决'}</div>`).join('')
+            ${n.nominator}号 ${esc(seatNames[n.nominator] || '?')} 提名 ${n.nominee}号 ${esc(seatNames[n.nominee] || '?')}
+            · 赞成 ${n.votes.length} 票${n.votes.length ? ':' + n.votes.map((v) => `${v}号 ${esc(seatNames[v] || '?')}`).join('、') : ''} ${n.executed ? '· ⚔ 处决' : '· 未处决'}</div>`).join('')
         : '<p class="hint">今天还没有提名</p>'
       const voting = current
         ? `<div class="vote-box">
-            <p class="vote-title">🗳 座${current.nominator} ${esc(seatNames[current.nominator] || '?')} 提名
-              座${current.nominee} ${esc(seatNames[current.nominee] || '?')}</p>
+            <p class="vote-title">🗳 ${current.nominator}号 ${esc(seatNames[current.nominator] || '?')} 提名
+              ${current.nominee}号 ${esc(seatNames[current.nominee] || '?')}</p>
             <p class="vote-line ${current.votes.length >= quorum ? 'ok' : ''}">赞成 ${current.votes.length} 票 · 需 ≥${quorum} 票(存活 ${aliveCount} 人)</p>
-            <p class="hint">点击环形座位记录举手;死者投票由说书人把握</p>
+            <p class="hint">点击环形座位记录举手;死者举手即交出唯一的死票(骷髅旁 🗳 消失),每人整局只有一票</p>
             <div class="st-detail-actions">
               <button class="btn small danger" id="nom-exec">⚔ 处决</button>
               <button class="btn small ghost" id="nom-skip">无效(不足/平票)</button>
             </div>
           </div>`
         : `<div class="vote-box"><div class="nom-start">
-            <select id="nom-from">${seatOpts}</select><span class="hint">提名</span>
-            <select id="nom-to">${seatOpts}</select>
+            <select id="nom-from">${fromOpts}</select><span class="hint">提名</span>
+            <select id="nom-to">${toOpts}</select>
             <button class="btn small primary" id="nom-go">发起提名</button>
           </div></div>`
       const box = h(`<div class="st-detail">
@@ -874,7 +903,7 @@ function renderStoryteller() {
       const lbs = ((lunaticBluffs && lunaticBluffs[seatKey]) || []).map((r) => r.id)
       const minRow = `<div class="st-fake"><span class="hint">以为爪牙是(点选):</span>${Array.from({ length: count }, (_, i) => i + 1)
         .filter((s) => s !== slot.seat)
-        .map((s) => `<button class="chip ${mins.includes(s) ? 'on' : ''}" data-min-chip="${s}">座${s}</button>`).join('')}</div>`
+        .map((s) => `<button class="chip ${mins.includes(s) ? 'on' : ''}" data-min-chip="${s}">${s}号</button>`).join('')}</div>`
       const selOf = (i) => `<select data-lb="${i}"><option value="">-</option>
         ${(lbs[i] && !fakeBluffPool.some((r) => r.id === lbs[i])
           ? [{ id: lbs[i], name: roleById[lbs[i]] ? roleById[lbs[i]].name : lbs[i] }] : [])

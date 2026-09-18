@@ -237,6 +237,29 @@ h3 {
   font-size: 14px;
 }
 
+/* 天亮公布死者:屏幕中心的已死亡名单,按天分组换行(第1天一行、第2天一行) */
+.dead-announce {
+  margin: 14px auto;
+  width: min(420px, 92vw);
+  text-align: center;
+  padding: 12px 14px;
+  border: 1px solid var(--danger);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--danger);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.dead-day {
+  display: block;
+  margin-top: 6px;
+}
+
+.dead-day:first-child {
+  margin-top: 0;
+}
+
 /* 阵营色(游戏语义)。--team-text 是阵营底色上的文字色,浅底用深字、深底用白字。
    注意:不要再给 .team-badge/.chip 声明 --team 默认值,否则同优先级后者胜出会盖掉阵营色 */
 .team-townsfolk {
@@ -449,6 +472,15 @@ h3 {
   position: absolute;
   top: -10px;
   right: -8px;
+  font-size: 14px;
+}
+
+/* 死亡玩家投出死票:🗳 标记在 ☠ 骷髅的左边(只在投票期间显示) */
+.seat-node.dead-vote::before {
+  content: '🗳';
+  position: absolute;
+  top: -10px;
+  right: 12px;
   font-size: 14px;
 }
 
@@ -889,6 +921,44 @@ h3 {
   font-size: 13px;
   color: var(--gold);
   margin: 6px 0;
+  line-height: 1.6;
+}
+
+.vote-title-p {
+  font-weight: 600;
+  margin: 0 0 2px;
+}
+
+.vote-count-p {
+  margin: 0;
+  color: var(--text-bright);
+}
+
+/* 玩家页历史投票:按天分组 */
+.vote-hist {
+  width: min(420px, 92vw);
+  margin: 10px auto 0;
+  text-align: left;
+}
+
+.vote-hist h4 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--gold);
+}
+
+.hist-day {
+  color: var(--accent);
+  font-weight: 600;
+  margin: 8px 0 2px;
+  font-size: 13px;
+}
+
+.hist-line {
+  color: var(--text-bright);
+  margin: 2px 0;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .bluffs,

@@ -22,3 +22,7 @@ desktop.ini
 # 运行期数据
 data/
 *.log
+
+# 服务器日志
+*.log.err
+*.log.out

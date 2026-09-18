@@ -37,6 +37,8 @@ class Player:
     seat: int | None = None
     role_id: str | None = None
     alive: bool = True
+    died_day: int | None = None  # 死亡公开在第几天:夜里死=该夜天亮的 day_no,白天死=当天 day_no;复活/未死=None
+    dead_vote_used: bool = False  # 死票:每个死者整局只有一票,举手交出后置 True(复活重置)
 
     def public(self) -> dict:
         return {"id": self.id, "name": self.name, "seat": self.seat, "alive": self.alive}
@@ -71,6 +73,7 @@ class GameManager:
         self.players: dict[str, Player] = {}
         self.status: str = "lobby"  # lobby | playing
         self.seat_roles: dict[int, str] = {}  # 预发身份:座位号 → 角色 id(未入座也能先发)
+        self.current_dead_votes: set[int] = set()  # 当前提名中交出的死票座位(结算即清空;未结算时取消举手可归还)
         self.seat_fakes: dict[int, str] = {}  # 认知覆盖:座位号 → 玩家看到的假角色 id(酒鬼/疯子)
         self.lunatic_minions: dict[int, list[int]] = {}  # 疯子:座位号 → 疯子以为的爪牙座位(说书人选,不一定是真爪牙)
         self.lunatic_bluffs: dict[int, list[str]] = {}  # 疯子:座位号 → 说书人给疯子的 3 个伪装(不一定是恶魔的真伪装)
@@ -103,7 +106,9 @@ class GameManager:
         """任何状态变更后调用:原子写盘(临时文件 + os.replace)。"""
         payload = {
             "players": {pid: {"id": p.id, "name": p.name, "seat": p.seat,
-                              "role_id": p.role_id, "alive": p.alive}
+                              "role_id": p.role_id, "alive": p.alive,
+                              "died_day": p.died_day,
+                              "dead_vote_used": p.dead_vote_used}
                         for pid, p in self.players.items()},
             "status": self.status, "script_id": self.script_id,
             "player_count": self.player_count,
@@ -114,6 +119,7 @@ class GameManager:
             "phase": self.phase, "night_no": self.night_no, "day_no": self.day_no,
             "night_steps": self.night_steps, "night_idx": self.night_idx,
             "nominations": self.nominations, "current": self.current,
+            "current_dead_votes": sorted(self.current_dead_votes),
             "bluffs": self.bluffs, "sentinel": self.sentinel, "room_code": self.room_code,
         }
         SAVE_PATH.parent.mkdir(exist_ok=True)
@@ -127,6 +133,9 @@ class GameManager:
             return
         try:
             d = json.loads(SAVE_PATH.read_text(encoding="utf-8"))
+            for pd in d["players"].values():  # 兼容:开发期间字段曾叫 died_night,迁移为 died_day
+                if "died_night" in pd:
+                    pd.setdefault("died_day", pd.pop("died_night"))
             self.players = {pid: Player(**p) for pid, p in d["players"].items()}
             for key in ("status", "script_id", "player_count", "seat_roles",
                         "seat_fakes", "seat_markers", "phase", "night_no",
@@ -137,6 +146,7 @@ class GameManager:
             self.room_code = d.get("room_code") or f"{random.randrange(10000):04d}"  # 旧存档没有房间号 → 现生成
             self.lunatic_minions = d.get("lunatic_minions", {})  # 旧存档没有疯子假爪牙/伪装字段 → 空
             self.lunatic_bluffs = d.get("lunatic_bluffs", {})
+            self.current_dead_votes = set(d.get("current_dead_votes", []))  # 旧存档没有死票字段 → 空
             self.seat_role_changes = d.get("seat_role_changes", {})  # 旧存档没有角色转变 → 空
             self.seat_team_changes = d.get("seat_team_changes", {})  # 旧存档没有阵营转变 → 空
             self.saved_at = time.time()
@@ -164,6 +174,7 @@ class GameManager:
             p.seat = None
             p.role_id = None
             p.alive = True
+            p.died_day = None
         self.seat_roles = {}  # 预发身份一并清空
         self.seat_fakes = {}  # 认知覆盖一并清空
         self.lunatic_minions = {}
@@ -512,8 +523,14 @@ class GameManager:
         seat_of = self.seats
         if nominator_seat not in seat_of or nominee_seat not in seat_of:
             raise ValueError("提名者与被提名者都需已入座")
-        if nominator_seat == nominee_seat:
-            raise ValueError("不能提名自己")
+        # 提名规则:每人每天只能发起一次提名、只能被提名一次;死者不能发起但可以被提名;可以提名自己
+        if not seat_of[nominator_seat].alive:
+            raise ValueError("死亡玩家不能发起提名")
+        todays = [n for n in self.nominations if n["day"] == self.day_no]
+        if any(n["nominator"] == nominator_seat for n in todays):
+            raise ValueError("今天已发起过提名,每天只能发起一次")
+        if any(n["nominee"] == nominee_seat for n in todays):
+            raise ValueError("今天已被提名过,每天只能被提名一次")
         self.current = {"nominator": nominator_seat, "nominee": nominee_seat, "votes": []}
         self.save()
 
@@ -522,10 +539,19 @@ class GameManager:
             raise ValueError("没有进行中的提名")
         if not 1 <= seat <= self.player_count or seat not in self.seats:
             raise ValueError(f"座位 {seat} 无玩家")
+        player = self.seats[seat]
         votes = self.current["votes"]
         if seat in votes:
             votes.remove(seat)
+            if seat in self.current_dead_votes:  # 死票是本次提名交出的(尚未结算):取消举手归还死票
+                self.current_dead_votes.discard(seat)
+                player.dead_vote_used = False
         else:
+            if not player.alive:
+                if player.dead_vote_used:
+                    raise ValueError("该玩家已交出过死亡票,每名死者整局只能投一票")
+                player.dead_vote_used = True  # 死者举手即交出唯一的死票
+                self.current_dead_votes.add(seat)
             votes.append(seat)
             votes.sort()
         self.save()
@@ -536,10 +562,12 @@ class GameManager:
             raise ValueError("没有进行中的提名")
         rec = {**self.current, "day": self.day_no, "executed": executed}
         self.nominations.append(rec)
+        self.current_dead_votes.clear()  # 结算后死票不可再收回
         if executed:
             player = self.seats.get(self.current["nominee"])
             if player:
                 player.alive = False
+                player.died_day = self.day_no  # 白天处决:当天当场公开
         self.current = None
         self.save()
 
@@ -547,7 +575,13 @@ class GameManager:
 
     def toggle_alive(self, player_id: str) -> None:
         if player_id in self.players:
-            self.players[player_id].alive = not self.players[player_id].alive
+            p = self.players[player_id]
+            p.alive = not p.alive
+            if p.alive:  # 复活重置死票:再次死亡会获得新的死票
+                p.dead_vote_used = False
+                self.current_dead_votes.discard(p.seat)
+            # 死亡公开的天数:夜里死=天亮那天(night_no),白天死=当天(day_no),复活清空
+            p.died_day = (self.night_no if self.phase == "night" else self.day_no) if not p.alive else None
             self.save()
 
     def set_fake(self, seat: int, role_id: str | None,
@@ -675,6 +709,13 @@ class GameManager:
                 continue
             entry = p.storyteller(self.roles) if st_view else p.public()
             slot = {"seat": i, "player": entry}
+            # 夜里死的人天亮才公开:夜晚阶段对所有玩家(含死者本人)伪装成还活着——
+            # 玩家手机常扣在桌面上,座位骷髅会提前暴露死者;死者夜里由说书人当面告知
+            if (not st_view and self.phase == "night" and not p.alive
+                    and p.died_day == self.night_no):
+                entry["alive"] = True
+            if not p.alive and not p.dead_vote_used:  # 死票还没交出:骷髅旁 🗳 常驻(公开信息)
+                slot["dead_vote_left"] = True
             if st_view and i in self.seat_fakes:  # 认知覆盖标记,说书人可见
                 slot["fake_role"] = self.roles[self.seat_fakes[i]]
             if st_view and i in self.seat_markers:  # 状态标记,仅说书人可见
@@ -723,6 +764,20 @@ class GameManager:
         }
         if not started:
             return view
+        # 夜里死的人天亮才公开:死者本人的卡夜里也先不显示死亡(手机在桌上会被旁人看到骷髅/死亡提示)
+        if (self.phase == "night" and me.seat is not None and not me.alive
+                and me.died_day == self.night_no):
+            view["me"]["alive"] = True
+        # 公开的死亡名单(按天排序):夜里死的人天亮才进名单;前端按天分组换行显示
+        deaths = []
+        for p in self.players.values():
+            if p.seat is None or p.alive or p.died_day is None:
+                continue
+            if self.phase == "night" and p.died_day == self.night_no:
+                continue  # 今夜刚死:天亮才公开
+            deaths.append({"seat": p.seat, "name": p.name, "day": p.died_day})
+        deaths.sort(key=lambda d: (d["day"], d["seat"]))
+        view["deaths"] = deaths
         team = self.roles[me.role_id]["team"] if me.role_id else None
         # 角色转变/阵营转变:必须告诉玩家本人(手机卡显示提醒),其他标记仅说书人可见
         if me.seat is not None:
