@@ -256,8 +256,12 @@ class GameManager:
         by_team = {team: [r for r in SCRIPTS[self.script_id]["roles"] if r["team"] == team]
                    for team in (TOWNSFOLK, OUTSIDER, MINION, DEMON)}
 
-        pool = random.sample(by_team[DEMON], comp[3])
-        pool += random.sample(by_team[MINION], comp[2])
+        demons = random.sample(by_team[DEMON], comp[3])
+        if any(r["id"] == "lil-monsta" for r in demons):
+            # 小怪宝官方开局:移除恶魔角色标记、加入一个爪牙标记(小怪宝不是玩家,由爪牙每晚决定照看者)
+            pool = random.sample(by_team[MINION], comp[2] + 1)
+        else:
+            pool = demons + random.sample(by_team[MINION], comp[2])
         # 第一轮配比:已抽中的恶魔/爪牙触发调整(方古/亡骨魔/男爵/教父)
         comp = list(self.expected_composition([r["id"] for r in pool]))
         pool += random.sample(by_team[OUTSIDER], comp[1])

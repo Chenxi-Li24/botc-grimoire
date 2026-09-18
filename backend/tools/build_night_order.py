@@ -1,8 +1,12 @@
-"""生成 backend/app/night_order.py:四板子夜晚唤醒顺序。
+"""生成 backend/app/night_order.py:五板子夜晚唤醒顺序。
 
 数据源:
 - TB/BMR/SV:官方全局 nightsheet.json(botc-release/resources/data)∩ 本板角色
-- 瓦釜雷鸣:钟楼剧本博物馆 735177364786380809.json 的每角色位置与官方提醒文案
+- 瓦釜雷鸣/满堂红:钟楼剧本博物馆 JSON(本目录 data/museum/)的每角色位置与官方提醒文案
+数据文件:
+- sources/nightsheet.json          官方全局夜晚顺序(从 ThePandemoniumInstitute/botc-release 下载)
+- sources/museum/735177364786380809.json   瓦釜雷鸣
+- sources/museum/892280963319463958.json   满堂红
 运行:python tools/build_night_order.py(输出到 backend/app/night_order.py)
 """
 
@@ -14,8 +18,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.roles import SCRIPTS  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-MUSEUM = Path.home() / "AppData/Local/Temp/vafr.json"
-NIGHTSHEET = Path.home() / "AppData/Local/Temp/nightsheet.json"
+DATA = Path(__file__).resolve().parent / "sources"
+NIGHTSHEET = DATA / "nightsheet.json"
+MUSEUM = {  # 博物馆 JSON 按板子存一份,保证重跑可复现;更新剧本时替换对应文件
+    "wafu-leiming": DATA / "museum" / "735177364786380809.json",
+    "mantanghong": DATA / "museum" / "892280963319463958.json",
+}
 
 # 特殊步骤(非角色),插在首/末
 DUSK = {"key": "dusk", "name": "天黑", "hint": "所有玩家闭眼"}
@@ -90,7 +98,7 @@ SLUG_UNFIX = {"fanggu": "fang-gu"}
 
 
 def official_orders():
-    """官方全局顺序 ∩ 本板角色 → {script: {first: [step], other: [step]}}。"""
+    """官方全局顺序 ∩ 本板角色 → {script: {first: [key], other: [key]}}。"""
     ns = json.loads(NIGHTSHEET.read_text(encoding="utf-8"))
     out = {}
     for sid, s in SCRIPTS.items():
@@ -104,20 +112,20 @@ def official_orders():
     return out
 
 
-def museum_orders():
-    """博物馆 JSON 每角色位置 → 瓦釜雷鸣顺序(不含旅行者)。"""
-    d = json.loads(MUSEUM.read_text(encoding="utf-8"))
-    vafr = SCRIPTS["wafu-leiming"]["roles"]
-    by_name = {r["name"]: r for r in vafr}
+def museum_orders(sid):
+    """博物馆 JSON 每角色位置 → 该板顺序(不含旅行者)。按中文名匹配角色,返回 (id, hint) 列表。"""
+    d = json.loads(MUSEUM[sid].read_text(encoding="utf-8"))
+    roles = SCRIPTS[sid]["roles"]
+    by_name = {r["name"]: r for r in roles}
     out = {"first": [], "other": []}
     for e in d:
         if e["id"] == "_meta":
             continue
         r = by_name.get(e["name"])
-        if r is None:  # 旅行者:学徒/咖啡师/乞丐/集骨者/流莺,刻意不收录
+        if r is None:  # 旅行者(如叫花子/学徒/咖啡师)刻意不收录
             continue
         for kind, field in (("first", "firstNight"), ("other", "otherNight")):
-            if e.get(field):
+            if e.get(field):  # 0 = 该夜不行动
                 out[kind].append((e[field], r["id"],
                                   e.get(f"{kind}NightReminder", "") or r["ability"]))
     for kind in out:
@@ -128,16 +136,17 @@ def museum_orders():
 
 def build():
     orders = official_orders()
-    museum = museum_orders()
-    role_by_id = {r["id"]: r for s in SCRIPTS.values() for r in s["roles"]}
+    wafu = museum_orders("wafu-leiming")
+    mth = museum_orders("mantanghong")
 
     lines = [
-        '"""夜晚唤醒顺序(四板子)。',
+        '"""夜晚唤醒顺序(五板子)。',
         "",
         "数据源:",
         "- 暗流涌动/黯月传奇/教派紫月:官方全局夜晚顺序表(ThePandemoniumInstitute/botc-release",
         "  resources/data/nightsheet.json)与各板角色表求交集,提示文案按官方规则书速写",
         "- 瓦釜雷鸣:钟楼剧本博物馆 735177364786380809.json 的每角色位置与官方提醒文案",
+        "- 满堂红:钟楼剧本博物馆 892280963319463958.json 的每角色位置与官方提醒文案",
         "  每步 key 为角色 id 或特殊步骤 dusk/dawn/minioninfo/demoninfo",
         "生成器:backend/tools/build_night_order.py(改数据后重跑)",
         '"""',
@@ -151,7 +160,7 @@ def build():
         "NIGHT_ORDER = {",
     ]
 
-    def step(key, hint):
+    def step(key, hint, role_by_id):
         if key in ("dusk", "dawn", "minioninfo", "demoninfo"):
             return {"key": key, "name": {"dusk": "天黑", "dawn": "天亮",
                                          "minioninfo": "爪牙会面", "demoninfo": "恶魔会面"}[key],
@@ -160,14 +169,21 @@ def build():
         return {"key": key, "name": r["name"], "hint": hint}
 
     for sid, s in SCRIPTS.items():
+        # 步骤名按本板角色表取(板间同名不同译的角色不会串味)
+        role_by_id = {r["id"]: r for r in s["roles"]}
         lines.append(f'    "{sid}": {{')
         if sid == "wafu-leiming":
-            first = [("dusk", DUSK["hint"])] + museum["first"]
+            first = [("dusk", DUSK["hint"])] + wafu["first"]
             # 爪牙会面插在疯子前、恶魔会面插在疯子后(官方惯例 minioninfo→lunatic→demoninfo)
             li = next(i for i, (k, _) in enumerate(first) if k == "lunatic")
             first.insert(li, ("minioninfo", MINIONINFO["hint"]))
             first.insert(li + 2, ("demoninfo", DEMONINFO["hint"]))
-            other = [("dusk", DUSK["hint"])] + museum["other"]
+            other = [("dusk", DUSK["hint"])] + wafu["other"]
+        elif sid == "mantanghong":
+            # 会面插在首夜开头(小怪宝在场时官方规则跳过,由说书人掌握),天亮收尾
+            first = [("dusk", DUSK["hint"]), ("minioninfo", MINIONINFO["hint"]),
+                     ("demoninfo", DEMONINFO["hint"])] + mth["first"] + [("dawn", DAWN["hint"])]
+            other = [("dusk", DUSK["hint"])] + mth["other"] + [("dawn", DAWN["hint"])]
         else:
             keys = orders[sid]
             special = {"dusk": DUSK["hint"], "dawn": DAWN["hint"],
@@ -180,7 +196,7 @@ def build():
         for kind, steps in (("first", first), ("other", other)):
             lines.append(f'        "{kind}": [')
             for key, hint in steps:
-                d = step(key, hint)
+                d = step(key, hint, role_by_id)
                 lines.append(f"            {d!r},")
             lines.append("        ],")
         lines.append("    },")
