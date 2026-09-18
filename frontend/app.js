@@ -24,6 +24,13 @@ function esc(s) {
   return d.innerHTML
 }
 
+// 投票名单:只显示座位号,等宽 chip 自动换行对齐(不显示玩家名字)
+function voteChips(votes) {
+  return votes && votes.length
+    ? `<span class="vote-chips">${votes.map((v) => `<span class="vote-chip">${v}号</span>`).join('')}</span>`
+    : ''
+}
+
 async function api(path, init) {
   const res = await fetch(path, {
     ...init,
@@ -204,12 +211,12 @@ function renderPlayer(playerId) {
     const phaseTxt = status === 'playing'
       ? (phase === 'night' ? ` · 🌙 第 ${nightNo} 夜` : phase === 'day' ? ` · ☀️ 第 ${dayNo} 天` : '')
       : ''
-    // 计票器:实时票型公开——谁提名谁、谁投了票(死票会在座位骷髅左边显示 🗳 标记)
-    const seatNames = {}
-    seats.forEach((s) => { if (s.player) seatNames[s.seat] = s.player.name })
+    // 计票器:实时票型公开——谁提名谁、谁投了票(死票会在座位骷髅左边显示 🗳 标记;名单只显示座位号)
     const voteLine = current
-      ? `<div class="vote-public"><p class="vote-title-p">🗳 ${current.nominator}号 ${esc(seatNames[current.nominator] || '?')} 提名 ${current.nominee}号 ${esc(seatNames[current.nominee] || '?')}</p>
-          <p class="vote-count-p">赞成(${current.votes.length}票):${current.votes.length ? current.votes.map((v) => `${v}号 ${esc(seatNames[v] || '?')}`).join('、') : '暂无'}</p></div>`
+      ? `<div class="vote-public">
+          <p class="vote-title-p">🗳 ${current.nominator}号 提名 ${current.nominee}号</p>
+          <p class="vote-count-p">赞成 ${current.votes.length} 票 ${voteChips(current.votes)}</p>
+        </div>`
       : ''
     // 历史投票:按天分组,每天谁提名谁、谁投票、是否处决
     const histByDay = {}
@@ -217,7 +224,7 @@ function renderPlayer(playerId) {
     const voteHist = (nominations || []).length
       ? `<div class="vote-hist"><h4>📜 投票记录</h4>${Object.entries(histByDay).map(([day, ns]) =>
           `<p class="hist-day">第${day}天</p>` + ns.map((n) =>
-            `<p class="hist-line">${n.nominator}号 ${esc(seatNames[n.nominator] || '?')} 提名 ${n.nominee}号 ${esc(seatNames[n.nominee] || '?')} · 赞成 ${n.votes.length} 票${n.votes.length ? ':' + n.votes.map((v) => `${v}号 ${esc(seatNames[v] || '?')}`).join('、') : ''}${n.executed ? ' · ⚔ 处决' : ' · 未处决'}</p>`).join('')
+            `<p class="hist-line">${n.nominator}号 提名 ${n.nominee}号 · 赞成 ${n.votes.length} 票 ${voteChips(n.votes)}${n.executed ? ' · ⚔ 处决' : ' · 未处决'}</p>`).join('')
         ).join('')}</div>`
       : ''
     // 伪装:仅恶魔(后端按真实身份判断)能看到三个不在场好角色,恶魔会面推进后才揭晓
@@ -350,8 +357,6 @@ function renderStoryteller() {
     const allSeated = seatedCount === count
     const selSeat = seats.find((s) => s.seat === selected)
     const selP = selSeat && selSeat.player
-    const seatNames = {}
-    seats.forEach((s) => { if (s.player) seatNames[s.seat] = s.player.name })
     const phaseTxt = status === 'playing'
       ? (phase === 'night' ? `🌙 第 ${nightNo} 夜` : phase === 'day' ? `☀️ 第 ${dayNo} 天` : '')
       : ''
@@ -813,14 +818,14 @@ function renderStoryteller() {
         .map((s) => `<option value="${s.seat}" ${nominatedToday.has(s.seat) ? 'disabled' : ''}>${s.seat}号 · ${esc(s.player.name)}${s.player.alive ? '' : ' ☠'}${nominatedToday.has(s.seat) ? ' · 已被提名' : ''}</option>`).join('')
       const hist = todays.length
         ? `<h4>今日提名</h4>` + todays.map((n) => `<div class="nom-row ${n.executed ? 'exec' : ''}">
-            ${n.nominator}号 ${esc(seatNames[n.nominator] || '?')} 提名 ${n.nominee}号 ${esc(seatNames[n.nominee] || '?')}
-            · 赞成 ${n.votes.length} 票${n.votes.length ? ':' + n.votes.map((v) => `${v}号 ${esc(seatNames[v] || '?')}`).join('、') : ''} ${n.executed ? '· ⚔ 处决' : '· 未处决'}</div>`).join('')
+            ${n.nominator}号 提名 ${n.nominee}号
+            · 赞成 ${n.votes.length} 票 ${voteChips(n.votes)} ${n.executed ? '· ⚔ 处决' : '· 未处决'}</div>`).join('')
         : '<p class="hint">今天还没有提名</p>'
       const voting = current
         ? `<div class="vote-box">
-            <p class="vote-title">🗳 ${current.nominator}号 ${esc(seatNames[current.nominator] || '?')} 提名
-              ${current.nominee}号 ${esc(seatNames[current.nominee] || '?')}</p>
+            <p class="vote-title">🗳 ${current.nominator}号 提名 ${current.nominee}号</p>
             <p class="vote-line ${current.votes.length >= quorum ? 'ok' : ''}">赞成 ${current.votes.length} 票 · 需 ≥${quorum} 票(存活 ${aliveCount} 人)</p>
+            ${voteChips(current.votes)}
             <p class="hint">点击环形座位记录举手;死者举手即交出唯一的死票(骷髅旁 🗳 消失),每人整局只有一票</p>
             <div class="st-detail-actions">
               <button class="btn small danger" id="nom-exec">⚔ 处决</button>

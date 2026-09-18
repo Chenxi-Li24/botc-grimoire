@@ -922,6 +922,7 @@ h3 {
   color: var(--gold);
   margin: 6px 0;
   line-height: 1.6;
+  text-align: center; /* 玩家卡内的票型居中展示 */
 }
 
 .vote-title-p {
@@ -932,6 +933,34 @@ h3 {
 .vote-count-p {
   margin: 0;
   color: var(--text-bright);
+}
+
+/* 投票名单:等宽座位号 chip,自动换行对齐(不显示玩家名字) */
+.vote-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0 0;
+}
+
+.vote-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text-bright);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 玩家卡内的票型居中展示 */
+.vote-public .vote-chips {
+  justify-content: center;
 }
 
 /* 玩家页历史投票:按天分组 */
