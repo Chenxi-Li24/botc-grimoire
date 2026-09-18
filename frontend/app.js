@@ -2,6 +2,8 @@
 'use strict'
 
 const ST_PASSWORD_KEY = 'botc_st_password'
+// 角落署名(防剽窃水印):玩家页右下角常驻,pointer-events 不挡任何操作
+const CREDIT = '<span class="credit">botc-grimoire · github.com/Chenxi-Li24/botc-grimoire</span>'
 const PLAYER_ID_KEY = 'botc_player_id'
 const TEAM_LABEL = { townsfolk: '镇民', outsider: '外来者', minion: '爪牙', demon: '恶魔' }
 const TEAM_INDEX = { townsfolk: 0, outsider: 1, minion: 2, demon: 3 } // 配比 [镇,外,爪,恶] 的下标
@@ -100,6 +102,7 @@ function renderJoin() {
     <input class="input" id="room" placeholder="房间号(4位数字)" maxlength="4" inputmode="numeric" value="${esc(hashRoom)}">
     <button class="btn primary" id="join-btn">加入</button>
     <p class="error" id="err" style="display:none"></p>
+    ${CREDIT}
   </div>`))
   const input = document.getElementById('name')
   const roomInput = document.getElementById('room')
@@ -166,6 +169,7 @@ function renderPlayer(playerId) {
           <p class="hint">${seats.length ? `共 ${seats.length} 个座位,点一个空座位入座` : '等待说书人设置本局人数…'}</p>
           <p class="error" id="sit-err" style="display:none"></p>
         </div>
+        ${CREDIT}
       </div>`))
       const err = document.getElementById('sit-err')
       document.getElementById('circle').appendChild(seatCircle(seats, {
@@ -261,6 +265,7 @@ function renderPlayer(playerId) {
       ${lunaticLine}
       ${roleChangeLine}
       ${teamChangeLine}
+      ${CREDIT}
     </div>`))
     document.getElementById('circle').appendChild(seatCircle(seats, {
       voted: (s) => !!current && current.votes.includes(s.seat), // 举手票型公开,玩家也可见

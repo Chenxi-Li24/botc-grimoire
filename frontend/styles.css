@@ -968,3 +968,16 @@ h3 {
   margin-top: 8px;
   line-height: 1.6;
 }
+
+/* 角落署名水印(防剽窃):玩家页右下角常驻,跟随主题换色,不响应点击 */
+.credit {
+  position: fixed;
+  right: 10px;
+  bottom: 6px;
+  font-size: 11px;
+  color: var(--dim);
+  opacity: 0.45;
+  pointer-events: none;
+  user-select: none;
+  z-index: 5;
+}
