@@ -863,20 +863,33 @@ def qr() -> Response:
     return Response(content=buf.getvalue(), media_type="image/png")
 
 
-# ---- 前端静态托管(frontend/ 无构建,直接托管) ----
+# ---- 前端静态托管(Vue 构建产物 + 迁移期旧界面) ----
 
-_FRONTEND = Path(__file__).resolve().parent.parent.parent / "frontend"
+FRONTEND_ROOT = Path(__file__).resolve().parent.parent.parent / "frontend"
+FRONTEND_DIST = FRONTEND_ROOT / "dist"
+FRONTEND_LEGACY = FRONTEND_ROOT / "legacy"
+
+
+def require_frontend_build(directory: Path) -> None:
+    if not (directory / "index.html").is_file():
+        raise RuntimeError(
+            "frontend/dist is missing; run `cd frontend && npm install && npm run build`"
+        )
+
+
+require_frontend_build(FRONTEND_DIST)
 
 
 @app.get("/app.js", include_in_schema=False)
 async def serve_app_js() -> FileResponse:
-    """前端主脚本:显式 no-cache,任何刷新都取最新(避免旧 JS 冻结页面这类缓存问题)。"""
-    return FileResponse(_FRONTEND / "app.js", headers={"Cache-Control": "no-cache"})
+    """迁移期旧前端脚本兼容入口。"""
+    return FileResponse(FRONTEND_LEGACY / "app.js", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/styles.css", include_in_schema=False)
 async def serve_styles() -> FileResponse:
-    return FileResponse(_FRONTEND / "styles.css", headers={"Cache-Control": "no-cache"})
+    return FileResponse(FRONTEND_LEGACY / "styles.css", headers={"Cache-Control": "no-cache"})
 
 
-app.mount("/", StaticFiles(directory=str(_FRONTEND), html=True), name="frontend")
+app.mount("/legacy", StaticFiles(directory=str(FRONTEND_LEGACY), html=True), name="legacy")
+app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
