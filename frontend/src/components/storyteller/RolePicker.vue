@@ -24,6 +24,7 @@ const usedBy = computed(() => Object.fromEntries(
           class="choice-chip role-choice"
           :class="{ active: assignments[String(selectedSeat)] === role.id, used: usedBy[role.id] && usedBy[role.id] !== selectedSeat }"
           type="button"
+          :aria-pressed="assignments[String(selectedSeat)] === role.id"
           :disabled="Boolean(usedBy[role.id] && usedBy[role.id] !== selectedSeat)"
           :title="role.ability"
           @click="emit('toggle-role', role.id)"

@@ -77,8 +77,8 @@ const teamSummary = computed(() => TEAM_ORDER.map(([, label], index) => ({
     <section v-if="hasGodfather" class="manual-subsection">
       <h4>教父外来者调整</h4>
       <div class="segmented-control">
-        <button type="button" :class="{ active: godfatherAdjustment === 1 }" @click="emit('set-godfather', 1)">+1 外来者</button>
-        <button type="button" :class="{ active: godfatherAdjustment === -1 }" @click="emit('set-godfather', -1)">−1 外来者</button>
+        <button type="button" :class="{ active: godfatherAdjustment === 1 }" :aria-pressed="godfatherAdjustment === 1" @click="emit('set-godfather', 1)">+1 外来者</button>
+        <button type="button" :class="{ active: godfatherAdjustment === -1 }" :aria-pressed="godfatherAdjustment === -1" @click="emit('set-godfather', -1)">−1 外来者</button>
       </div>
     </section>
     <BluffPicker :roles="bluffRoles" :selected="bluffs" title="恶魔的三个伪装" @toggle="emit('toggle-bluff', $event)" />

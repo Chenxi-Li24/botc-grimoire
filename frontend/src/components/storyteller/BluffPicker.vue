@@ -20,6 +20,7 @@ defineEmits(['toggle'])
         class="choice-chip"
         :class="[`team-${role.team}`, { active: selected.includes(role.id) }]"
         type="button"
+        :aria-pressed="selected.includes(role.id)"
         :disabled="!selected.includes(role.id) && selected.length >= 3"
         :title="role.ability"
         @click="$emit('toggle', role.id)"

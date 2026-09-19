@@ -1,6 +1,9 @@
 import { nextTick, shallowRef } from 'vue'
 import { expect, it } from 'vitest'
+import { mount } from '@vue/test-utils'
 import { useManualAssignment } from '../src/composables/useManualAssignment.js'
+import BluffPicker from '../src/components/storyteller/BluffPicker.vue'
+import RolePicker from '../src/components/storyteller/RolePicker.vue'
 import {
   eligibleBluffRoles,
   expectedComposition,
@@ -86,4 +89,16 @@ it('reconstructs a draft and invalidates it after configuration changes', async 
   await nextTick()
   expect(manual.active.value).toBe(false)
   expect(manual.assignments.value).toEqual({})
+})
+
+it('announces selected roles and bluffs without relying on color', () => {
+  const rolePicker = mount(RolePicker, {
+    props: { roles: lobbyView.roles, assignments: { 1: 'washerwoman' }, selectedSeat: 1 },
+  })
+  const bluffPicker = mount(BluffPicker, {
+    props: { roles: lobbyView.roles.slice(0, 3), selected: ['washerwoman'], title: '伪装' },
+  })
+
+  expect(rolePicker.get('button').attributes('aria-pressed')).toBe('true')
+  expect(bluffPicker.get('button').attributes('aria-pressed')).toBe('true')
 })

@@ -32,6 +32,7 @@ const lunaticBluffRoles = computed(() => (props.view.roles || []).filter((role) 
         class="choice-chip"
         :class="[`team-${role.team}`, { active: fakeRole === role.id }]"
         type="button"
+        :aria-pressed="fakeRole === role.id"
         :title="role.ability"
         @click="$emit('set-fake', role.id)"
       >{{ role.name }}</button>
@@ -46,6 +47,7 @@ const lunaticBluffRoles = computed(() => (props.view.roles || []).filter((role) 
           class="choice-chip"
           :class="{ active: lunaticMinions.includes(target) }"
           type="button"
+          :aria-pressed="lunaticMinions.includes(target)"
           @click="$emit('toggle-minion', target)"
         >{{ target }}号</button>
       </div>
