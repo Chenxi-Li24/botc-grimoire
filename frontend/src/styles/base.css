@@ -12,6 +12,10 @@ body {
   min-height: 100vh;
 }
 
+h1 {
+  font-size: 26px;
+}
+
 .page {
   min-height: 100vh;
   padding: var(--space-page);
@@ -24,6 +28,17 @@ body {
   justify-content: center;
   gap: 14px;
   text-align: center;
+}
+
+.join-form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.sub {
+  color: var(--dim);
 }
 
 .input {
@@ -71,4 +86,14 @@ body {
 .error {
   color: var(--danger);
   font-size: 14px;
+}
+
+.credit {
+  position: fixed;
+  right: 10px;
+  bottom: 8px;
+  color: var(--dim);
+  font-size: 10px;
+  opacity: 0.6;
+  pointer-events: none;
 }

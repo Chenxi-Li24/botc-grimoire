@@ -1,5 +1,13 @@
+<script setup>
+import JoinPage from './pages/JoinPage.vue'
+
+function onJoined() {
+  window.location.href = '/legacy/'
+}
+</script>
+
 <template>
-  <main data-app-shell class="page center">
-    <p>加载中…</p>
-  </main>
+  <div data-app-shell>
+    <JoinPage @joined="onJoined" />
+  </div>
 </template>
