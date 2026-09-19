@@ -1,6 +1,7 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useStorytellerView } from '../../composables/useStorytellerView.js'
+import ContextPanel from './ContextPanel.vue'
 import GameControlPanel from './GameControlPanel.vue'
 import GrimoireBoard from './GrimoireBoard.vue'
 import StorytellerHeader from './StorytellerHeader.vue'
@@ -20,6 +21,18 @@ function closeDrawers() {
   leftOpen.value = false
   rightOpen.value = false
 }
+
+function selectSeat(seat) {
+  selectedSeat.value = seat
+  rightOpen.value = true
+  leftOpen.value = false
+}
+
+watch(() => view.value?.seats, (nextSeats) => {
+  if (selectedSeat.value === null || !nextSeats) return
+  const selected = nextSeats.find((seat) => seat.seat === selectedSeat.value)
+  if (!selected?.player) selectedSeat.value = null
+})
 </script>
 
 <template>
@@ -43,10 +56,16 @@ function closeDrawers() {
       <GrimoireBoard
         :seats="view.seats"
         :selected-seat="selectedSeat"
-        @select-seat="selectedSeat = $event"
+        @select-seat="selectSeat"
       />
     </template>
-    <template #context><div class="storyteller-empty-context">当前任务</div></template>
+    <template #context>
+      <ContextPanel
+        :view="view"
+        :selected-seat="selectedSeat"
+        @clear-selection="selectedSeat = null"
+      />
+    </template>
   </StorytellerShell>
   <main v-else data-storyteller-live class="page center"><p>连接魔典…</p></main>
 </template>
