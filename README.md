@@ -27,6 +27,32 @@ cd backend
 - **玩家**:手机连同一 WiFi,扫描说书人界面上的二维码加入
 - Windows 首次运行会弹防火墙提示,勾选「专用网络」并**允许**,否则手机连不上
 
+## 前端开发与构建
+
+前端正在渐进迁移到 Vue 3 + Vite。开发服务器会把 `/api`、`/ws` 和迁移期的
+`/legacy` 请求代理到本机 8000 端口的 FastAPI。
+
+```bash
+# 前端开发
+cd frontend
+npm install
+npm run dev
+
+# 生产前端构建
+cd frontend
+npm ci
+npm test
+npm run build
+
+# 生产服务器
+cd backend
+.venv/bin/python run.py
+```
+
+Node.js 只在开发和构建前端时需要。仓库会提交 `frontend/dist/`，因此生产环境
+只需 Python 和已经构建好的静态文件，启动和游戏过程都不需要 Node.js 或互联网。
+尚未迁移的玩家页与说书人页暂时由同源 `/legacy/` 路径提供。
+
 ## v1 已实现
 
 - 四个脚本全收录:暗流涌动 / 黯月传奇 / 教派紫月 / **瓦釜雷鸣**(社区官混缝合板子 Catfishing,7~15 人),说书人可随时切换

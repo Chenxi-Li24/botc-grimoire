@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import JoinPage from './pages/JoinPage.vue'
 import { api } from './services/api.js'
 import { goToLegacy, resolveEntry } from './services/navigation.js'
@@ -11,7 +11,7 @@ function onJoined() {
   goToLegacy('/legacy/')
 }
 
-onMounted(async () => {
+async function routeCurrentEntry() {
   const playerId = getPlayerId()
   const destination = await resolveEntry({
     hash: window.location.hash,
@@ -26,7 +26,18 @@ onMounted(async () => {
 
   if (playerId) clearPlayerId()
   ready.value = true
+}
+
+function onHashChange() {
+  void routeCurrentEntry()
+}
+
+onMounted(() => {
+  window.addEventListener('hashchange', onHashChange)
+  void routeCurrentEntry()
 })
+
+onBeforeUnmount(() => window.removeEventListener('hashchange', onHashChange))
 </script>
 
 <template>
