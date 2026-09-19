@@ -104,19 +104,74 @@ class MarkerBody(BaseModel):
     on: bool
     role: str | None = None  # role-change 时必填:变成的角色 id
     team: str | None = None  # team-change 时必填:新阵营 good/evil
+    about: str | None = None  # mad 时必填:疯狂宣称的善良角色 id
 
 
 class NominationBody(BaseModel):
-    nominator: int
-    nominee: int
+    nominator: int | str  # 座位号或旅行者 id("t1")
+    nominee: int | str
 
 
 class VoteBody(BaseModel):
-    seat: int
+    seat: int | str  # 座位号或旅行者 id("t1")
+
+
+class NomineeBody(BaseModel):
+    nominee: int | str  # 被提名者:座位号或旅行者 id("t1")
+
+
+class DayStageBody(BaseModel):
+    stage: str  # talk 公聊私聊 | nom 提名阶段(说书人控节奏)
+
+
+class KillBody(BaseModel):
+    seat: int  # 刀杀目标座位
+
+
+class NightChoiceBody(BaseModel):
+    targets: list[int]  # 夜晚选择的目标座位(数量按角色配置)
+    char: str | None = None  # 麻脸巫婆:变身后的角色 id(必须不在场)
+
+
+class TransformBody(BaseModel):
+    seat: int  # 麻脸巫婆的座位(说书人确认其变身)
+
+
+class NightReplyBody(BaseModel):
+    seat: int  # 回复给哪个座位
+    text: str  # 回复内容(占卜师:有恶魔/无恶魔 等)
+    role: str | None = None  # 无选择直接发信息时的角色标注(教父首夜信息等)
+
+
+class RedHerringBody(BaseModel):
+    seat: int | None = None  # 宿敌座位;None = 清除
+
+
+class WishBody(BaseModel):
+    wish: str | None = None  # 许愿内容(善良/邪恶或自定义);None/空 = 清除
 
 
 class ResolveBody(BaseModel):
-    executed: bool
+    passed: bool  # 结票:通过 → 待处决(天黑结算最多票者);旅行者通过 → 当场流放
+
+
+class TravelerAddBody(BaseModel):
+    name: str  # 旅行者名字(说书人直接添加,无手机关联)
+
+
+class TravelerAssignBody(BaseModel):
+    id: str  # 旅行者 id(t1..)
+    role: str  # 旅行者角色 id(官方旅行者池)
+    align: str | None = None  # good/evil,缺省保持原值(新增时默认 good)
+
+
+class TravelerExileBody(BaseModel):
+    id: str
+    exiled: bool = True  # False = 撤销流放
+
+
+class TravelerAliveBody(BaseModel):
+    id: str
 
 
 class GotoBody(BaseModel):
@@ -170,6 +225,191 @@ def me(player_id: str) -> dict[str, Any]:
     if player_id not in game.players:
         raise HTTPException(status_code=404, detail="玩家不存在(说书人可能已重置本局)")
     return game.player_view(player_id)
+
+
+@app.post("/api/player/{player_id}/traveler")
+async def join_traveler(player_id: str) -> dict[str, Any]:
+    """玩家以旅行者身份加入(开局后任意时刻,不占座位)。"""
+    try:
+        game.add_traveler(player_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.player_view(player_id)
+
+
+@app.post("/api/player/{player_id}/nominate")
+async def nominate(player_id: str, body: NomineeBody) -> dict[str, Any]:
+    """玩家手机发起提名:提名者必须是本人(存活、今天未提名过、白天、无进行中提名)。"""
+    try:
+        game.player_nominate(player_id, body.nominee)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.player_view(player_id)
+
+
+@app.post("/api/player/{player_id}/vote")
+async def vote(player_id: str) -> dict[str, Any]:
+    """玩家手机举手/放下:只能投自己(死者举手=交出唯一死票,未结算可收回)。"""
+    try:
+        game.player_vote(player_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.player_view(player_id)
+
+
+@app.post("/api/player/{player_id}/wish")
+async def set_wish(player_id: str, body: WishBody) -> dict[str, Any]:
+    """许愿(仅大厅):开局前表达愿望——善良/邪恶或自定义文字;空 = 清除。"""
+    try:
+        game.set_wish(player_id, body.wish)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.player_view(player_id)
+
+
+@app.post("/api/player/{player_id}/kill")
+async def night_kill(player_id: str, body: KillBody) -> dict[str, Any]:
+    """夜晚刀人(仅瓦釜雷鸣):恶魔手机选择目标,天亮自动执行;疯子选择只演戏。"""
+    try:
+        game.submit_night_kill(player_id, body.seat)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.player_view(player_id)
+
+
+@app.post("/api/player/{player_id}/choice")
+async def night_choice(player_id: str, body: NightChoiceBody) -> dict[str, Any]:
+    """夜晚信息交互(仅瓦釜雷鸣):占卜师/筑梦师等手机选人,说书人看到后电子回复。"""
+    try:
+        game.submit_night_choice(player_id, body.targets, body.char)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.player_view(player_id)
+
+
+@app.post("/api/night/transform", dependencies=[Depends(require_storyteller)])
+async def revert_pithag(body: TransformBody) -> dict[str, Any]:
+    """说书人撤销已生效的麻脸巫婆变身(容错):角色恢复、注入步骤移除、「死亡由说书人决定」标记清除。"""
+    try:
+        game.revert_pithag(body.seat)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/night/reply", dependencies=[Depends(require_storyteller)])
+async def reply_night_choice(body: NightReplyBody) -> dict[str, Any]:
+    """说书人电子回复玩家夜里的选择(实时推送到该玩家手机);也可直接发信息(教父首夜等)。"""
+    try:
+        game.reply_night_choice(body.seat, body.text, body.role)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+class SeatKillBody(BaseModel):
+    target: int  # 刀杀目标座位
+
+
+class SeatChoiceBody(BaseModel):
+    targets: list[int]
+    char: str | None = None  # 麻脸巫婆/洗脑师的角色选择
+
+
+@app.post("/api/seat/{seat}/kill", dependencies=[Depends(require_storyteller)])
+async def seat_kill(seat: int, body: SeatKillBody) -> dict[str, Any]:
+    """说书人按座位代操作刀人(空座角色也可,便于测试人未齐开局)。"""
+    try:
+        game.submit_night_kill_seat(seat, body.target)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/seat/{seat}/alive", dependencies=[Depends(require_storyteller)])
+async def seat_alive(seat: int) -> dict[str, Any]:
+    """说书人按座位标记生死(空座同样可以):以说书人标记为准,而不是是否在座。"""
+    try:
+        game.toggle_seat_alive(seat)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/seat/{seat}/choice", dependencies=[Depends(require_storyteller)])
+async def seat_choice(seat: int, body: SeatChoiceBody) -> dict[str, Any]:
+    """说书人按座位代操作夜晚选人(空座角色也可,便于测试人未齐开局)。"""
+    try:
+        game.submit_night_choice_seat(seat, body.targets, body.char)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+# ---- 旅行者接口(说书人) ----
+
+@app.post("/api/traveler/add", dependencies=[Depends(require_storyteller)])
+async def add_traveler(body: TravelerAddBody) -> dict[str, Any]:
+    """说书人直接添加旅行者(无手机关联,说书人代管投票/生死)。"""
+    try:
+        game.add_traveler_st(body.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/traveler/assign", dependencies=[Depends(require_storyteller)])
+async def assign_traveler(body: TravelerAssignBody) -> dict[str, Any]:
+    try:
+        game.assign_traveler(body.id, body.role, body.align)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/traveler/exile", dependencies=[Depends(require_storyteller)])
+async def exile_traveler(body: TravelerExileBody) -> dict[str, Any]:
+    """流放/撤销流放:白天投票流放由 resolve 处理,这里供说书人随时直接流放(早退玩家)。"""
+    try:
+        game.exile_traveler(body.id, body.exiled)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/traveler/alive", dependencies=[Depends(require_storyteller)])
+async def toggle_traveler_alive(body: TravelerAliveBody) -> dict[str, Any]:
+    try:
+        game.toggle_traveler_alive(body.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/fortuneteller/red", dependencies=[Depends(require_storyteller)])
+async def set_fortuneteller_red(body: RedHerringBody) -> dict[str, Any]:
+    """占卜师宿敌(红鲱鱼):说书人私下标记一名善良玩家,只有说书人知道。"""
+    try:
+        game.set_fortuneteller_red(body.seat)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
 
 
 # ---- 说书人接口(需 X-Storyteller-Password 头) ----
@@ -260,9 +500,9 @@ async def set_fake(body: FakeBody) -> dict[str, Any]:
 
 @app.post("/api/marker", dependencies=[Depends(require_storyteller)])
 async def set_marker(body: MarkerBody) -> dict[str, Any]:
-    """状态标记:中毒/醉酒/疯狂/角色转变/阵营转变。角色转变与阵营转变会通知玩家本人。"""
+    """状态标记:中毒/醉酒/疯狂/角色转变/阵营转变。疯狂附内容(善良角色),被疯狂者手机被告知。"""
     try:
-        game.set_marker(body.seat, body.marker, body.on, body.role, body.team)
+        game.set_marker(body.seat, body.marker, body.on, body.role, body.team, body.about)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await hub.push_all()
@@ -294,7 +534,7 @@ async def toggle_vote(body: VoteBody) -> dict[str, Any]:
 @app.post("/api/nomination/resolve", dependencies=[Depends(require_storyteller)])
 async def resolve_nomination(body: ResolveBody) -> dict[str, Any]:
     try:
-        game.resolve_nomination(body.executed)
+        game.resolve_nomination(body.passed)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await hub.push_all()
@@ -337,6 +577,17 @@ async def night_goto(body: GotoBody) -> dict[str, Any]:
 async def end_day() -> dict[str, Any]:
     try:
         game.end_day()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/day/stage", dependencies=[Depends(require_storyteller)])
+async def set_day_stage(body: DayStageBody) -> dict[str, Any]:
+    """说书人切换白天子阶段:talk 公聊私聊 / nom 提名阶段。"""
+    try:
+        game.set_day_stage(body.stage)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await hub.push_all()

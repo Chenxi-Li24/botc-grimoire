@@ -282,6 +282,80 @@ h3 {
   --team-text: #ffffff;
 }
 
+/* 旅行者:官方紫灰色系(角色公开、阵营保密) */
+.team-traveler {
+  --team: #9d7bd8;
+  --team-text: #1d1530;
+}
+
+/* ---- 旅行者横栏(说书人) ---- */
+.traveler-strip {
+  margin: 12px auto 4px;
+  width: min(560px, 94vw);
+  text-align: left;
+}
+
+.t-strip-head {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-bright);
+  margin-bottom: 6px;
+}
+
+.t-strip-head .hint {
+  font-weight: 400;
+  margin-left: 6px;
+}
+
+.t-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  margin-bottom: 6px;
+}
+
+.t-row.dead {
+  opacity: 0.65;
+}
+
+.t-name {
+  font-size: 14px;
+  font-weight: 600;
+  margin-right: 2px;
+}
+
+.t-align {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.t-align.good {
+  background: #55b5ff;
+  color: #101828;
+}
+
+.t-align.evil {
+  background: #e92a2a;
+  color: #fff;
+}
+
+.t-state {
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.t-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+
 .team-badge {
   padding: 3px 10px;
   border-radius: 999px;
@@ -298,6 +372,233 @@ h3 {
 }
 
 .card.dead .role-name {
+  text-decoration: line-through;
+}
+
+/* 🃏 收起身份:封盖刻意不用阵营色(虚线+暗色),旁人连阵营都看不出 */
+.card-cover {
+  border: 2px dashed var(--dim);
+  border-radius: 16px;
+  padding: 22px 18px;
+  width: min(420px, 92vw);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.cover-icon {
+  font-size: 34px;
+}
+
+.cover-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.cover-hint,
+.hide-hint {
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.hide-hint {
+  margin-top: 10px;
+}
+
+/* ---- 玩家手机端操作:发起提名 / 举手投票 ---- */
+.player-actions {
+  margin: 10px auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.t-pick {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  max-width: min(420px, 92vw);
+}
+
+/* 页内确认条:点中提名目标后出现(不弹系统框) */
+.nom-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--gold);
+  border-radius: 12px;
+  background: var(--panel2);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* 提名点选模式:圆盘上被选中的座位 */
+.seat-node.pick {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* 白天子阶段切换(说书人控节奏) */
+.stage-switch {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 10px 0;
+}
+
+.stage-switch .chip {
+  font-size: 14px;
+  padding: 6px 16px;
+}
+
+/* 说书人添加旅行者的内嵌输入框 */
+.t-add-input {
+  width: 8.5em;
+  padding: 3px 8px;
+  margin-left: 4px;
+  font-size: 13px;
+}
+
+/* ---- 🙏 许愿(仅大厅) ---- */
+.wish-box {
+  margin: 12px auto;
+  width: min(420px, 92vw);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+}
+
+.wish-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+}
+
+.wish-row .input {
+  width: min(240px, 60vw);
+}
+
+.wish-list {
+  margin-top: 10px;
+  text-align: left;
+}
+
+.wish-list h4 {
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.wish-line {
+  font-size: 13px;
+  margin: 3px 0;
+}
+
+.wish-tag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+}
+
+.wish-tag.good {
+  background: #55b5ff;
+  color: #101828;
+}
+
+.wish-tag.evil {
+  background: #e92a2a;
+  color: #fff;
+}
+
+/* ---- 😈 夜晚刀人(瓦釜雷鸣手机操作) ---- */
+.kill-box {
+  margin: 12px auto;
+  width: min(420px, 92vw);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--danger);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.kill-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.kill-chip {
+  font-size: 15px;
+  padding: 8px 14px;
+}
+
+/* 恶魔夜间私讯:疯子刀了谁 */
+.lunatic-kill-note {
+  margin: 10px auto;
+  width: min(420px, 92vw);
+  text-align: center;
+  padding: 8px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text-bright);
+  font-size: 14px;
+}
+
+/* 说书人回复输入框(夜晚步骤卡内) */
+.reply-input {
+  width: min(220px, 40vw);
+  padding: 3px 8px;
+  font-size: 13px;
+}
+
+/* ---- 📖 寡妇首夜魔典 ---- */
+.grimoire-box {
+  margin: 12px auto;
+  width: min(420px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--gold);
+  border-radius: 12px;
+  background: var(--panel);
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+.grimoire-row {
+  font-size: 14px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--panel2);
+}
+
+.grimoire-row.dead {
+  opacity: 0.5;
   text-decoration: line-through;
 }
 
