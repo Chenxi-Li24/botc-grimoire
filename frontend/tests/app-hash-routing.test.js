@@ -1,7 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../src/App.vue'
-import { resolveEntry } from '../src/services/navigation.js'
+import { goToLegacy, resolveEntry } from '../src/services/navigation.js'
 
 vi.mock('../src/services/api.js', () => ({ api: vi.fn() }))
 vi.mock('../src/services/navigation.js', () => ({
@@ -32,5 +32,24 @@ describe('App hash routing', () => {
     expect(resolveEntry).toHaveBeenCalledWith(expect.objectContaining({
       hash: '#/storyteller',
     }))
+  })
+
+  it('ignores an older route result that resolves after a hash change', async () => {
+    let resolveFirstRoute
+    resolveEntry
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirstRoute = resolve }))
+      .mockResolvedValueOnce({ legacyUrl: '/legacy/#/storyteller' })
+
+    mount(App)
+    await vi.waitFor(() => expect(resolveEntry).toHaveBeenCalledTimes(1))
+
+    window.location.hash = '#/storyteller'
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+    await vi.waitFor(() => expect(goToLegacy).toHaveBeenCalledWith('/legacy/#/storyteller'))
+
+    resolveFirstRoute({ legacyUrl: '/legacy/' })
+    await flushPromises()
+
+    expect(goToLegacy).toHaveBeenCalledTimes(1)
   })
 })

@@ -6,18 +6,22 @@ import { goToLegacy, resolveEntry } from './services/navigation.js'
 import { clearPlayerId, getPlayerId } from './services/session.js'
 
 const ready = ref(false)
+let routeVersion = 0
 
 function onJoined() {
   goToLegacy('/legacy/')
 }
 
 async function routeCurrentEntry() {
+  const version = ++routeVersion
   const playerId = getPlayerId()
   const destination = await resolveEntry({
     hash: window.location.hash,
     playerId,
     validatePlayer: (id) => api(`/api/me/${encodeURIComponent(id)}`),
   })
+
+  if (version !== routeVersion) return
 
   if (destination !== 'join') {
     goToLegacy(destination.legacyUrl)
@@ -37,7 +41,10 @@ onMounted(() => {
   void routeCurrentEntry()
 })
 
-onBeforeUnmount(() => window.removeEventListener('hashchange', onHashChange))
+onBeforeUnmount(() => {
+  routeVersion += 1
+  window.removeEventListener('hashchange', onHashChange)
+})
 </script>
 
 <template>
