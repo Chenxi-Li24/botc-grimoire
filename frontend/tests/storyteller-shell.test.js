@@ -37,10 +37,12 @@ it('shows global state and preserves the complete console escape hatch', () => {
   expect(wrapper.get('a').attributes('href')).toBe('/legacy/#/storyteller')
 })
 
-it('summarizes lobby setup without exposing inactive mutations', () => {
-  const wrapper = mount(GameControlPanel, { props: { view: lobbyView } })
+it('exposes focused lobby setup controls in the Vue preview', () => {
+  const wrapper = mount(GameControlPanel, {
+    props: { view: lobbyView, connected: true, pending: [] },
+  })
+  expect(wrapper.text()).toContain('开局设置')
   expect(wrapper.text()).toContain('暗流涌动')
-  expect(wrapper.text()).toContain('6 人')
-  expect(wrapper.text()).toContain('已入座 2/6')
-  expect(wrapper.text()).toContain('完整控制台')
+  expect(wrapper.text()).toContain('手动发身份')
+  expect(wrapper.text()).toContain('随机分配角色')
 })
