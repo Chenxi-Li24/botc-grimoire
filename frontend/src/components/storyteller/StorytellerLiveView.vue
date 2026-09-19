@@ -1,21 +1,44 @@
 <script setup>
+import { ref } from 'vue'
 import { useStorytellerView } from '../../composables/useStorytellerView.js'
+import GameControlPanel from './GameControlPanel.vue'
+import StorytellerHeader from './StorytellerHeader.vue'
+import StorytellerShell from './StorytellerShell.vue'
+import '../../styles/storyteller.css'
 
 const props = defineProps({ password: { type: String, required: true } })
 const emit = defineEmits(['auth-failure'])
 const { view, connectionStatus } = useStorytellerView(props.password, {
   onAuthFailure: () => emit('auth-failure'),
 })
+const leftOpen = ref(false)
+const rightOpen = ref(false)
+
+function closeDrawers() {
+  leftOpen.value = false
+  rightOpen.value = false
+}
 </script>
 
 <template>
-  <main data-storyteller-live class="page center">
-    <template v-if="view">
-      <h1>说书人桌面版预览</h1>
-      <p>房间 {{ view.room_code }}</p>
-      <p>{{ connectionStatus }}</p>
-      <a class="btn" href="/legacy/#/storyteller">打开完整控制台</a>
+  <StorytellerShell
+    v-if="view"
+    data-storyteller-live
+    :left-open="leftOpen"
+    :right-open="rightOpen"
+    @close-drawer="closeDrawers"
+  >
+    <template #header>
+      <StorytellerHeader
+        :view="view"
+        :connection-status="connectionStatus"
+        @open-left="leftOpen = true; rightOpen = false"
+        @open-right="rightOpen = true; leftOpen = false"
+      />
     </template>
-    <p v-else>连接魔典…</p>
-  </main>
+    <template #controls><GameControlPanel :view="view" /></template>
+    <template #board><div class="storyteller-empty-board">环形魔典</div></template>
+    <template #context><div class="storyteller-empty-context">当前任务</div></template>
+  </StorytellerShell>
+  <main v-else data-storyteller-live class="page center"><p>连接魔典…</p></main>
 </template>
