@@ -6,7 +6,7 @@ import LobbySetupPanel from './LobbySetupPanel.vue'
 const props = defineProps({
   view: { type: Object, required: true },
   connected: { type: Boolean, default: false },
-  pending: { type: String, default: null },
+  pending: { type: Array, default: () => [] },
   error: { type: Object, default: null },
   manualActive: { type: Boolean, default: false },
 })

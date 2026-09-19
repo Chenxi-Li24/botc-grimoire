@@ -9,7 +9,7 @@ const props = defineProps({
   selectedSeat: { type: Number, default: null },
   manual: { type: Object, default: null },
   connected: { type: Boolean, default: false },
-  pending: { type: String, default: null },
+  pending: { type: Array, default: () => [] },
   error: { type: Object, default: null },
 })
 defineEmits([

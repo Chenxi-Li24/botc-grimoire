@@ -7,7 +7,7 @@ import StartControl from './StartControl.vue'
 defineProps({
   view: { type: Object, required: true },
   connected: { type: Boolean, required: true },
-  pending: { type: String, default: null },
+  pending: { type: Array, default: () => [] },
   error: { type: Object, default: null },
   manualActive: { type: Boolean, default: false },
 })

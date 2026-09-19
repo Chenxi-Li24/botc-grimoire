@@ -16,7 +16,7 @@ const props = defineProps({
   godfatherAdjustment: { type: Number, required: true },
   summary: { type: Object, required: true },
   connected: { type: Boolean, required: true },
-  pending: { type: String, default: null },
+  pending: { type: Array, default: () => [] },
   error: { type: Object, default: null },
 })
 const emit = defineEmits([
@@ -85,8 +85,8 @@ const teamSummary = computed(() => TEAM_ORDER.map(([, label], index) => ({
     <p v-if="error?.key === 'assign-manual'" class="inline-error" role="alert">{{ error.message }}</p>
     <div class="manual-actions">
       <button class="btn" type="button" @click="emit('cancel')">放弃草稿</button>
-      <button class="btn primary" type="button" :disabled="!connected || Boolean(pending) || !summary.valid" @click="emit('confirm')">
-        {{ pending === 'assign-manual' ? '正在提交…' : '确认发身份' }}
+      <button class="btn primary" type="button" :disabled="!connected || pending.includes('assign-manual') || !summary.valid" @click="emit('confirm')">
+        {{ pending.includes('assign-manual') ? '正在提交…' : '确认发身份' }}
       </button>
     </div>
   </div>

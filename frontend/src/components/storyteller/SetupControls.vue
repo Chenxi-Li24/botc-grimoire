@@ -5,7 +5,7 @@ import ConfirmAction from './ConfirmAction.vue'
 const props = defineProps({
   view: { type: Object, required: true },
   connected: { type: Boolean, required: true },
-  pending: { type: String, default: null },
+  pending: { type: Array, default: () => [] },
   error: { type: Object, default: null },
 })
 const emit = defineEmits(['configure'])
@@ -51,7 +51,7 @@ watch(() => [props.view.script, props.view.player_count], ([nextScript, nextCoun
     </div>
     <label class="field-row">
       <span>剧本</span>
-      <select v-model="script" :disabled="!connected || Boolean(pending)" @change="updateScript">
+      <select v-model="script" :disabled="!connected || pending.includes('configure')" @change="updateScript">
         <option v-for="item in view.scripts" :key="item.id" :value="item.id">
           {{ item.name }} · {{ item.en }}
         </option>
@@ -60,9 +60,9 @@ watch(() => [props.view.script, props.view.player_count], ([nextScript, nextCoun
     <div class="field-row">
       <span>玩家人数</span>
       <div class="stepper">
-        <button type="button" :disabled="!connected || Boolean(pending) || playerCount <= minPlayers" @click="changeCount(-1)">−</button>
+        <button type="button" :disabled="!connected || pending.includes('configure') || playerCount <= minPlayers" @click="changeCount(-1)">−</button>
         <strong>{{ playerCount }}</strong>
-        <button type="button" :disabled="!connected || Boolean(pending) || playerCount >= 15" @click="changeCount(1)">＋</button>
+        <button type="button" :disabled="!connected || pending.includes('configure') || playerCount >= 15" @click="changeCount(1)">＋</button>
       </div>
     </div>
     <ConfirmAction
@@ -70,7 +70,7 @@ watch(() => [props.view.script, props.view.player_count], ([nextScript, nextCoun
       label="应用新配置"
       confirm-label="再次确认并清空座位"
       :summary="summary"
-      :disabled="!connected || Boolean(pending)"
+      :disabled="!connected || pending.includes('configure')"
       danger
       @confirm="emit('configure', { script, playerCount })"
     />

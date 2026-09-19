@@ -2,7 +2,7 @@
 const props = defineProps({
   view: { type: Object, required: true },
   connected: { type: Boolean, required: true },
-  pending: { type: String, default: null },
+  pending: { type: Array, default: () => [] },
   error: { type: Object, default: null },
 })
 const emit = defineEmits(['set-sentinel', 'toggle-fabled'])
@@ -32,7 +32,7 @@ function hasFabled(id) {
             type="button"
             :aria-pressed="view.sentinel === choice.value"
             :class="{ active: view.sentinel === choice.value }"
-            :disabled="!connected || Boolean(pending)"
+            :disabled="!connected || pending.includes('sentinel')"
             @click="emit('set-sentinel', choice.value)"
           >{{ choice.label }}</button>
         </div>
@@ -48,7 +48,7 @@ function hasFabled(id) {
             type="button"
             :aria-pressed="hasFabled(role.id)"
             :title="role.ability"
-            :disabled="!connected || Boolean(pending)"
+            :disabled="!connected || pending.includes(`fabled:${role.id}`)"
             @click="emit('toggle-fabled', { id: role.id, on: !hasFabled(role.id) })"
           >{{ role.name }}</button>
         </div>

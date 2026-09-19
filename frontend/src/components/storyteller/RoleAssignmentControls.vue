@@ -6,7 +6,7 @@ import ConfirmAction from './ConfirmAction.vue'
 const props = defineProps({
   view: { type: Object, required: true },
   connected: { type: Boolean, required: true },
-  pending: { type: String, default: null },
+  pending: { type: Array, default: () => [] },
   error: { type: Object, default: null },
   manualActive: { type: Boolean, default: false },
 })
@@ -27,14 +27,14 @@ const summary = computed(() => (
       class="btn"
       :class="{ primary: manualActive }"
       type="button"
-      :disabled="!connected || Boolean(pending) || manualActive"
+      :disabled="!connected || manualActive"
       @click="emit('begin-manual')"
     >{{ manualActive ? '正在手动发身份' : '手动发身份' }}</button>
     <ConfirmAction
       label="随机分配角色"
       confirm-label="确认发牌并进入第一夜"
       :summary="summary"
-      :disabled="!connected || Boolean(pending) || manualActive"
+      :disabled="!connected || pending.includes('assign-random') || manualActive"
       @confirm="emit('assign-random')"
     />
     <p v-if="error?.key === 'assign-random'" class="inline-error" role="alert">{{ error.message }}</p>
