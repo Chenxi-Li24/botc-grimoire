@@ -11,6 +11,9 @@ vi.mock('../src/services/navigation.js', () => ({
 vi.mock('../src/services/session.js', () => ({
   clearPlayerId: vi.fn(),
   getPlayerId: vi.fn().mockReturnValue(null),
+  getStorytellerPassword: vi.fn().mockReturnValue(null),
+  setStorytellerPassword: vi.fn(),
+  clearStorytellerPassword: vi.fn(),
 }))
 
 beforeEach(() => {

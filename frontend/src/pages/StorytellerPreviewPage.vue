@@ -1,6 +1,20 @@
+<script setup>
+import { ref } from 'vue'
+import StorytellerLiveView from '../components/storyteller/StorytellerLiveView.vue'
+import StorytellerLogin from '../components/storyteller/StorytellerLogin.vue'
+import { getStorytellerPassword } from '../services/session.js'
+
+const password = ref(getStorytellerPassword())
+</script>
+
 <template>
-  <main data-storyteller-preview class="page center">
-    <h1>说书人桌面版预览</h1>
-    <a class="btn" href="/legacy/#/storyteller">打开完整控制台</a>
-  </main>
+  <div data-storyteller-preview>
+    <StorytellerLiveView
+      v-if="password"
+      :key="password"
+      :password="password"
+      @auth-failure="password = null"
+    />
+    <StorytellerLogin v-else @authenticated="password = $event" />
+  </div>
 </template>
