@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import qrcode
+from fastapi.responses import FileResponse
 from fastapi import Depends, FastAPI, Header, HTTPException, Response, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -315,6 +316,38 @@ async def reply_night_choice(body: NightReplyBody) -> dict[str, Any]:
     return game.storyteller_view()
 
 
+class EndBody(BaseModel):
+    winner: str | None = None  # good/evil;None = 撤销结算
+
+
+class ReviewMarkBody(BaseModel):
+    seat: int  # 回复接收者座位
+    night: int  # 第几夜
+    wrong: bool = True  # True 标注错误 / False 撤销标注
+
+
+class FabledBody(BaseModel):
+    id: str  # 传奇角色 id
+    on: bool = True  # True 勾选在场 / False 移除
+
+
+class ChatCreateBody(BaseModel):
+    invitees: list  # 被邀请者:座位号(int)/旅行者 id(str)/说书人 "st"
+
+
+class ChatInviteBody(BaseModel):
+    accept: bool  # 接受邀请
+
+
+class ChatApproveBody(BaseModel):
+    who: int | str  # 申请者
+    approve: bool  # 同意
+
+
+class ChatSendBody(BaseModel):
+    text: str
+
+
 class SeatKillBody(BaseModel):
     target: int  # 刀杀目标座位
 
@@ -594,6 +627,182 @@ async def set_day_stage(body: DayStageBody) -> dict[str, Any]:
     return game.storyteller_view()
 
 
+@app.post("/api/end", dependencies=[Depends(require_storyteller)])
+async def end_game(body: EndBody) -> dict[str, Any]:
+    """说书人宣布游戏结束并判定获胜方(good/evil);winner=None 撤销结算。"""
+    try:
+        game.end_game(body.winner)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/review/mark", dependencies=[Depends(require_storyteller)])
+async def mark_reply(body: ReviewMarkBody) -> dict[str, Any]:
+    """说书人复盘标注:该夜该座位的回复信息是错的(实时同步到玩家复盘页)。"""
+    try:
+        game.mark_reply_wrong(body.seat, body.night, body.wrong)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/fabled", dependencies=[Depends(require_storyteller)])
+async def toggle_fabled(body: FabledBody) -> dict[str, Any]:
+    """传奇角色(Fabled,公开信息):说书人勾选在场,玩家手机可见列表。"""
+    try:
+        game.toggle_fabled(body.id, body.on)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+# ---- 白天私聊(内存态;说书人作为特殊玩家 "st") ----
+
+def _player_who(player_id: str) -> int | str:
+    """玩家的私聊身份:座位号或旅行者 id。"""
+    t = game.traveler_of(player_id)
+    if t is not None:
+        return t["id"]
+    me = game.players[player_id]
+    if me.seat is None:
+        raise HTTPException(status_code=400, detail="你还没有入座")
+    return me.seat
+
+
+@app.post("/api/chat/create")
+async def chat_create(player_id: str, body: ChatCreateBody) -> dict[str, Any]:
+    try:
+        game.create_chat(_player_who(player_id), body.invitees)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.player_view(player_id)
+
+
+@app.post("/api/chat/{cid}/invite")
+async def chat_invite(player_id: str, cid: int, body: ChatInviteBody) -> dict[str, Any]:
+    try:
+        game.respond_invite(_player_who(player_id), cid, body.accept)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.player_view(player_id)
+
+
+@app.post("/api/chat/{cid}/request")
+async def chat_request(player_id: str, cid: int) -> dict[str, Any]:
+    try:
+        game.request_join(_player_who(player_id), cid)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.player_view(player_id)
+
+
+@app.post("/api/chat/{cid}/invite-more")
+async def chat_invite_more(player_id: str, cid: int, body: ChatCreateBody) -> dict[str, Any]:
+    """私聊进行中,发起者邀请更多玩家加入。"""
+    try:
+        game.invite_to_chat(_player_who(player_id), cid, body.invitees)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.player_view(player_id)
+
+
+@app.post("/api/chat/{cid}/approve")
+async def chat_approve(player_id: str, cid: int, body: ChatApproveBody) -> dict[str, Any]:
+    try:
+        game.approve_request(_player_who(player_id), cid, body.who, body.approve)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.player_view(player_id)
+
+
+@app.post("/api/chat/{cid}/send")
+async def chat_send(player_id: str, cid: int, body: ChatSendBody) -> dict[str, Any]:
+    try:
+        game.send_message(_player_who(player_id), cid, body.text)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.player_view(player_id)
+
+
+@app.post("/api/chat/{cid}/leave")
+async def chat_leave(player_id: str, cid: int) -> dict[str, Any]:
+    try:
+        game.leave_chat(_player_who(player_id), cid)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.player_view(player_id)
+
+
+@app.post("/api/chat/{cid}/close")
+async def chat_close(player_id: str, cid: int) -> dict[str, Any]:
+    try:
+        game.close_chat(_player_who(player_id), cid)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.player_view(player_id)
+
+
+# 说书人作为特殊玩家:接受邀请/发消息/退出/关闭/召回
+@app.post("/api/chat-st/{cid}/invite", dependencies=[Depends(require_storyteller)])
+async def st_chat_invite(cid: int, body: ChatInviteBody) -> dict[str, Any]:
+    try:
+        game.respond_invite("st", cid, body.accept)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/chat-st/{cid}/send", dependencies=[Depends(require_storyteller)])
+async def st_chat_send(cid: int, body: ChatSendBody) -> dict[str, Any]:
+    try:
+        game.send_message("st", cid, body.text)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/chat-st/{cid}/leave", dependencies=[Depends(require_storyteller)])
+async def st_chat_leave(cid: int) -> dict[str, Any]:
+    try:
+        game.leave_chat("st", cid)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/chat-st/{cid}/close", dependencies=[Depends(require_storyteller)])
+async def st_chat_close(cid: int) -> dict[str, Any]:
+    try:
+        game.close_chat("st", cid)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.storyteller_view()
+
+
+@app.post("/api/chat-st/recall", dependencies=[Depends(require_storyteller)])
+async def st_chat_recall() -> dict[str, Any]:
+    """说书人召回:关闭全部私聊。"""
+    game.recall_chats()
+    await hub.push_all()
+    return game.storyteller_view()
+
+
 @app.post("/api/load", dependencies=[Depends(require_storyteller)])
 async def load() -> dict[str, Any]:
     """放弃当前内存状态,从磁盘恢复上次自动存档。"""
@@ -657,4 +866,17 @@ def qr() -> Response:
 # ---- 前端静态托管(frontend/ 无构建,直接托管) ----
 
 _FRONTEND = Path(__file__).resolve().parent.parent.parent / "frontend"
+
+
+@app.get("/app.js", include_in_schema=False)
+async def serve_app_js() -> FileResponse:
+    """前端主脚本:显式 no-cache,任何刷新都取最新(避免旧 JS 冻结页面这类缓存问题)。"""
+    return FileResponse(_FRONTEND / "app.js", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/styles.css", include_in_schema=False)
+async def serve_styles() -> FileResponse:
+    return FileResponse(_FRONTEND / "styles.css", headers={"Cache-Control": "no-cache"})
+
+
 app.mount("/", StaticFiles(directory=str(_FRONTEND), html=True), name="frontend")

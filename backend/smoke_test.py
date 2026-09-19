@@ -1072,6 +1072,176 @@ async def main() -> None:
         assert e.code == 400
     print("NINFO 夜晚信息交互:占卜师选两人→说书人回复→不泄露→无行动/其他板子拒绝 OK")
 
+    # ---- 结算:说书人宣布游戏结束+判定获胜方,全场揭晓,封冻操作,可撤销 ----
+    req("/api/reset", "POST", headers=ST)
+    req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 6}, ST)
+    g_ids = [req("/api/join", "POST", {"name": f"结{i}", "room_code": room()})["player_id"] for i in range(1, 7)]
+    for seat, pid in enumerate(g_ids, 1):
+        req(f"/api/player/{pid}/sit", "POST", {"seat": seat})
+    req("/api/assign", "POST", headers=ST)
+    st = req("/api/end", "POST", {"winner": "good"}, ST)
+    assert st["winner"] == "good", "说书人应能宣布善良获胜"
+    pview = req(f"/api/me/{g_ids[0]}")
+    r = pview["result"]
+    assert r["winner"] == "good" and len(r["seats"]) == 6, "结算页应含全部座位"
+    assert any(g["role"]["team"] == "demon" for g in r["seats"]), "结算页应揭晓恶魔真实身份"
+    try:  # 结束后封冻夜晚推进
+        req("/api/night/next", "POST", headers=ST)
+        raise AssertionError("结束后夜晚推进未被拒绝")
+    except urllib.error.HTTPError as e:
+        assert e.code == 400
+    try:  # 非法获胜方
+        req("/api/end", "POST", {"winner": "平局"}, ST)
+        raise AssertionError("非法获胜方未被拒绝")
+    except urllib.error.HTTPError as e:
+        assert e.code == 400
+    st = req("/api/end", "POST", {"winner": None}, ST)  # 撤销结算
+    assert st["winner"] is None
+    pview = req(f"/api/me/{g_ids[0]}")
+    assert "result" not in pview, "撤销后结算页消失"
+    req("/api/night/next", "POST", headers=ST)  # 恢复可推进
+    print("END   结算:宣布获胜方/全场揭晓/封冻/撤销恢复 OK")
+
+    # ---- 复盘:事件时间线/错误信息自动判定(酒鬼/中毒)/传刀识别/说书人标错 ----
+    req("/api/reset", "POST", headers=ST)
+    req("/api/config", "POST", {"script": "wafu-leiming", "player_count": 7}, ST)
+    pre8 = [{"seat": 1, "role": "imp"}, {"seat": 2, "role": "godfather"},
+            {"seat": 3, "role": "drunk"}, {"seat": 4, "role": "dreamer"},
+            {"seat": 5, "role": "gambler"}, {"seat": 6, "role": "savant"},
+            {"seat": 7, "role": "chef"}]
+    req("/api/assign/manual", "POST", {"assignments": pre8,
+        "fakes": [{"seat": 3, "role": "fortuneteller"}]}, ST)
+    r_ids = [req("/api/join", "POST", {"name": f"复{i}", "room_code": room()})["player_id"] for i in range(1, 8)]
+    for seat, pid in enumerate(r_ids, 1):
+        req(f"/api/player/{pid}/sit", "POST", {"seat": seat})
+    steps = req("/api/state", "GET", headers=ST)["night"]["steps"]
+    ft_idx = next(i for i, s in enumerate(steps) if s["key"] == "fortuneteller")
+    req("/api/night/goto", "POST", {"idx": ft_idx}, ST)
+    req(f"/api/player/{r_ids[2]}/choice", "POST", {"targets": [1, 2]})  # 酒鬼(假占卜师)选人
+    req("/api/night/reply", "POST", {"seat": 3, "text": "有恶魔"}, ST)
+    dr_idx = next(i for i, s in enumerate(steps) if s["key"] == "dreamer")
+    req("/api/night/goto", "POST", {"idx": dr_idx}, ST)
+    req("/api/marker", "POST", {"seat": 4, "marker": "poisoned", "on": True}, ST)  # 筑梦师中毒
+    req(f"/api/player/{r_ids[3]}/choice", "POST", {"targets": [1]})
+    req("/api/night/reply", "POST", {"seat": 4, "text": "1号是恶魔"}, ST)
+    req("/api/marker", "POST", {"seat": 2, "marker": "role-change", "on": True, "role": "imp"}, ST)  # 传刀
+    req("/api/end", "POST", {"winner": "evil"}, ST)
+    pview = req(f"/api/me/{r_ids[0]}")
+    review = pview["review"]
+    assert review["has_data"], "应有复盘数据"
+    texts = [(it.get("text", ""), it.get("wrong"), it.get("why", ""))
+             for g in review["groups"] for it in g["items"]]
+    drunk_line = next((w, why) for it, w, why in texts if "回复:" in it and "(3号" in it)
+    assert drunk_line[0] and "酒鬼" in drunk_line[1], "酒鬼回复应自动标注错误"
+    po_line = next((w, why) for it, w, why in texts if "回复:" in it and "(4号" in it)
+    assert po_line[0] and "中毒" in po_line[1], "中毒回复应自动标注错误"
+    assert any("🩸 传刀" in it for it, _, _ in texts), "爪牙变恶魔应识别为传刀"
+    assert any("🧪 恶魔伪装" in it for it, _, _ in texts), "复盘应含恶魔伪装"
+    # 说书人标错 → why 含「说书人标注」;撤销后消失
+    req("/api/review/mark", "POST", {"seat": 4, "night": 1, "wrong": True}, ST)
+    pview = req(f"/api/me/{r_ids[0]}")
+    texts2 = [(it.get("text", ""), it.get("wrong"), it.get("why", ""))
+              for g in pview["review"]["groups"] for it in g["items"]]
+    po2 = next((w, why) for it, w, why in texts2 if "回复:" in it and "(4号" in it)
+    assert "说书人标注" in po2[1], "说书人标错应出现在 why"
+    req("/api/review/mark", "POST", {"seat": 4, "night": 1, "wrong": False}, ST)
+    pview = req(f"/api/me/{r_ids[0]}")
+    texts3 = [(it.get("text", ""), it.get("wrong"), it.get("why", ""))
+              for g in pview["review"]["groups"] for it in g["items"]]
+    po3 = next((w, why) for it, w, why in texts3 if "回复:" in it and "(4号" in it)
+    assert "说书人标注" not in po3[1], "撤销标错后标注应消失"
+    print("REVIEW 复盘:酒鬼/中毒自动标注,传刀识别,说书人标错/撤销 OK")
+
+    # ---- 传奇角色:说书人勾选,玩家公开可见,取消/换板子保留 ----
+    req("/api/reset", "POST", headers=ST)
+    req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 6}, ST)
+    st = req("/api/fabled", "POST", {"id": "angel", "on": True}, ST)
+    assert any(f["id"] == "angel" for f in st["fabled"]), "说书人应能勾选传奇角色"
+    st = req("/api/fabled", "POST", {"id": "buddhist", "on": True}, ST)
+    assert len(st["fabled"]) == 2
+    f_ids = [req("/api/join", "POST", {"name": f"传{i}", "room_code": room()})["player_id"] for i in range(1, 7)]
+    pview = req(f"/api/me/{f_ids[0]}")
+    assert [f["id"] for f in pview["fabled"]] == ["angel", "buddhist"], "传奇角色应公开给玩家"
+    try:  # 未知传奇角色
+        req("/api/fabled", "POST", {"id": "nope", "on": True}, ST)
+        raise AssertionError("未知传奇角色未被拒绝")
+    except urllib.error.HTTPError as e:
+        assert e.code == 400
+    req("/api/fabled", "POST", {"id": "angel", "on": False}, ST)
+    st = req("/api/state", "GET", headers=ST)
+    assert [f["id"] for f in st["fabled"]] == ["buddhist"], "取消勾选应移除"
+    req("/api/config", "POST", {"script": "wafu-leiming", "player_count": 7}, ST)
+    st = req("/api/state", "GET", headers=ST)
+    assert [f["id"] for f in st["fabled"]] == ["buddhist"], "换板子应保留传奇角色"
+    print("FABLED 传奇角色:勾选/公开/取消/换板子保留 OK")
+
+    # ---- 白天私聊:邀请/接受拒绝/申请审批/历史隔离/说书人全知+发言/召回/天黑即焚 ----
+    req("/api/reset", "POST", headers=ST)
+    req("/api/config", "POST", {"script": "trouble-brewing", "player_count": 6}, ST)
+    ch_ids = [req("/api/join", "POST", {"name": f"聊{i}", "room_code": room()})["player_id"] for i in range(1, 7)]
+    for seat, pid in enumerate(ch_ids, 1):
+        req(f"/api/player/{pid}/sit", "POST", {"seat": seat})
+    req("/api/assign", "POST", headers=ST)
+    try:  # 夜晚不能私聊
+        req(f"/api/chat/create?player_id={ch_ids[0]}", "POST", {"invitees": [2]})
+        raise AssertionError("夜晚私聊未被拒绝")
+    except urllib.error.HTTPError as e:
+        assert e.code == 400
+    for _ in range(len(req("/api/state", "GET", headers=ST)["night"]["steps"])):
+        req("/api/night/next", "POST", headers=ST)
+    req(f"/api/chat/create?player_id={ch_ids[0]}", "POST", {"invitees": [2, 3, "st"]})
+    v2 = req(f"/api/me/{ch_ids[1]}")
+    assert len(v2["chat"]["invites"]) == 1, "被邀请者应看到邀请"
+    req(f"/api/chat/1/invite?player_id={ch_ids[1]}", "POST", {"accept": True})
+    req(f"/api/chat/1/invite?player_id={ch_ids[2]}", "POST", {"accept": False})
+    req("/api/chat-st/1/invite", "POST", {"accept": True}, ST)
+    req(f"/api/chat/1/send?player_id={ch_ids[0]}", "POST", {"text": "秘密消息"})
+    v4 = req(f"/api/me/{ch_ids[3]}")
+    assert any(c["id"] == 1 for c in v4["chat"]["chats_public"]), "公开列表应显示私聊"
+    req(f"/api/chat/1/request?player_id={ch_ids[3]}", "POST")
+    v1 = req(f"/api/me/{ch_ids[0]}")
+    assert v1["chat"]["my_chat"]["requests"], "发起者应看到申请"
+    req(f"/api/chat/1/approve?player_id={ch_ids[0]}", "POST", {"who": 4, "approve": True})
+    v4 = req(f"/api/me/{ch_ids[3]}")
+    assert v4["chat"]["my_chat"]["messages"] == [], "后加入者不应看到历史消息"
+    req(f"/api/chat/1/send?player_id={ch_ids[0]}", "POST", {"text": "新消息"})
+    v4 = req(f"/api/me/{ch_ids[3]}")
+    assert len(v4["chat"]["my_chat"]["messages"]) == 1, "后加入者应看到加入后的消息"
+    st = req("/api/state", "GET", headers=ST)
+    chat1 = next(c for c in st["chats"] if c["id"] == 1)
+    assert any("秘密消息" in m["text"] for m in chat1["messages"]), "说书人应能查看所有私聊内容"
+    req("/api/chat-st/1/send", "POST", {"text": "说书人插话"}, ST)
+    v2 = req(f"/api/me/{ch_ids[1]}")
+    assert any("说书人插话" in m["text"] for m in v2["chat"]["my_chat"]["messages"]), "成员应看到说书人发言"
+    # 私聊进行中:发起者邀请更多玩家(新成员看不到历史)
+    req(f"/api/chat/1/invite-more?player_id={ch_ids[0]}", "POST", {"invitees": [5]})
+    v5 = req(f"/api/me/{ch_ids[4]}")
+    assert len(v5["chat"]["invites"]) == 1, "中途被邀请者应看到邀请"
+    req(f"/api/chat/1/invite?player_id={ch_ids[4]}", "POST", {"accept": True})
+    req(f"/api/chat/1/send?player_id={ch_ids[0]}", "POST", {"text": "给新成员的话"})
+    v5 = req(f"/api/me/{ch_ids[4]}")
+    assert [m["text"] for m in v5["chat"]["my_chat"]["messages"]] == ["给新成员的话"], \
+        "中途加入者只应看到加入后的消息"
+    try:  # 非发起者不能邀请
+        req(f"/api/chat/1/invite-more?player_id={ch_ids[1]}", "POST", {"invitees": [6]})
+        raise AssertionError("非发起者邀请未被拒绝")
+    except urllib.error.HTTPError as e:
+        assert e.code == 400
+    req("/api/chat-st/recall", "POST", headers=ST)
+    v1 = req(f"/api/me/{ch_ids[0]}")
+    assert v1["chat"]["my_chat"] is None, "召回后私聊应关闭"
+    st = req("/api/state", "GET", headers=ST)
+    chat1 = next(c for c in st["chats"] if c["id"] == 1)
+    assert chat1["closed"] and any("秘密消息" in m["text"] for m in chat1["messages"]), \
+        "说书人应保留已关闭私聊的留档"
+    req(f"/api/chat/create?player_id={ch_ids[0]}", "POST", {"invitees": [2]})
+    req("/api/day/end", "POST", headers=ST)
+    v1 = req(f"/api/me/{ch_ids[0]}")
+    assert "chat" not in v1, "天黑后玩家不应再有私聊数据"
+    st = req("/api/state", "GET", headers=ST)
+    assert any(c["id"] == 2 and c["closed"] for c in st["chats"]), "说书人档案应保留天黑关闭的群"
+    print("CHAT  私聊:邀请/接受拒绝/申请审批/历史隔离/说书人全知+发言/召回留档/天黑玩家销毁 OK")
+
     req("/api/reset", "POST", headers=ST)
     print("ALL PASS")
 

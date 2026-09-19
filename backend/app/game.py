@@ -24,6 +24,7 @@ from .scripts.travelers import (DUSK_ORDER as TRAVELER_DUSK,
                                 ROLE_BY_ID as TRAVELER_BY_ID,
                                 ROLES as TRAVELERS)
 from .scripts.wafu_leiming import NIGHT_ACTIONS
+from .scripts.fabled import ROLES as FABLED, ROLE_BY_ID as FABLED_BY_ID
 
 SAVE_PATH = Path(__file__).resolve().parent.parent / "data" / "game.json"
 
@@ -106,6 +107,12 @@ class GameManager:
         self.bluffs: list[str] = []  # 恶魔的三个伪装:不在场的好角色 id(开局时抽取)
         self.sentinel: int = 0  # 哨兵(神职角色):0=关 / +1 / -1 / 2=在场但不调整
         self.room_code: str = f"{random.randrange(10000):04d}"  # 房间号:4 位数字,说书人可改,玩家凭名字+房号加入
+        self.winner: str | None = None  # 结算:good/evil 获胜(说书人宣布游戏结束),None = 未结束
+        self.fabled: list[str] = []  # 传奇角色(公开):在场的 Fabled id 列表,说书人勾选
+        self.chats: list[dict] = []  # 白天私聊(说书人留档存档;玩家端天黑即焚;重置清空)
+        self.chat_seq: int = 0  # 消息自增序号(后加入者按 joined_seq 过滤历史)
+        self.events: list[dict] = []  # 复盘事件日志:[{seq, phase, n, seat, type, data}] 追加式,只对新打的局有效
+        self.event_seq: int = 0
         self.saved_at: float | None = None
 
     @property
@@ -115,6 +122,20 @@ class GameManager:
     @property
     def seats(self) -> dict[int, Player]:
         return {p.seat: p for p in self.players.values() if p.seat is not None}
+
+    # ---- 复盘事件日志 ----
+
+    def _log(self, seat: int | None, etype: str, data: dict | None = None) -> None:
+        """追加复盘事件(终局后供结算复盘页按时间线展示)。"""
+        self.event_seq += 1
+        self.events.append({
+            "seq": self.event_seq,
+            "phase": self.phase,
+            "n": self.day_no if self.phase == "day" else self.night_no,
+            "seat": seat,
+            "type": etype,
+            "data": data or {},
+        })
 
     # ---- 存档 ----
 
@@ -146,6 +167,9 @@ class GameManager:
             "fortuneteller_red": self.fortuneteller_red,
             "travelers": self.travelers,
             "bluffs": self.bluffs, "sentinel": self.sentinel, "room_code": self.room_code,
+            "winner": self.winner, "fabled": self.fabled,
+            "chats": self.chats, "chat_seq": self.chat_seq,
+            "events": self.events, "event_seq": self.event_seq,
         }
         SAVE_PATH.parent.mkdir(exist_ok=True)
         tmp = SAVE_PATH.with_suffix(".tmp")
@@ -169,6 +193,21 @@ class GameManager:
                 setattr(self, key, d[key])
             self.day_stage = d.get("day_stage", "talk")  # 旧存档没有白天子阶段 → 默认公聊
             self.sentinel = d.get("sentinel", 0)  # 旧存档没有哨兵字段 → 默认关
+            self.winner = d.get("winner")  # 旧存档没有结算 → None
+            self.fabled = d.get("fabled", [])  # 旧存档没有传奇角色 → 空
+            self.events = d.get("events", [])  # 旧存档没有复盘日志 → 空
+            self.event_seq = d.get("event_seq", 0)
+            self.chat_seq = d.get("chat_seq", 0)
+            def _norm(w):
+                return int(w) if isinstance(w, str) and w.isdigit() else w
+            self.chats = []
+            for c in d.get("chats", []):  # JSON 把 int 键转成了 str,这里还原
+                c["members"] = {_norm(k): v for k, v in c.get("members", {}).items()}
+                c["invites"] = {_norm(k): v for k, v in c.get("invites", {}).items()}
+                c["join_requests"] = {_norm(k): v for k, v in c.get("join_requests", {}).items()}
+                for m in c.get("messages", []):
+                    m["from"] = _norm(m["from"])
+                self.chats.append(c)
             self.room_code = d.get("room_code") or f"{random.randrange(10000):04d}"  # 旧存档没有房间号 → 现生成
             self.lunatic_minions = d.get("lunatic_minions", {})  # 旧存档没有疯子假爪牙/伪装字段 → 空
             self.lunatic_bluffs = d.get("lunatic_bluffs", {})
@@ -233,6 +272,11 @@ class GameManager:
         self.travelers = []  # 旅行者只存在于进行中的局,改配置即清空
         self.bluffs = []
         self.sentinel = 0  # 哨兵选择跟板子走:换板子/人数即重置
+        self.winner = None  # 结算状态随配置清空
+        self.events = []  # 复盘日志随配置清空(换板子=新局)
+        self.event_seq = 0
+        self.chats = []  # 私聊清空(换板子=新局)
+        self.chat_seq = 0
         self.status = "lobby"
         self.save()
 
@@ -340,6 +384,7 @@ class GameManager:
             "dead_vote_used": False,  # 死票:死亡旅行者同样获得一枚(流放表决不消耗)
         }
         self.travelers.append(t)
+        self._log(None, "traveler_join", {"name": t["name"]})
         self.save()
         return t
 
@@ -379,6 +424,7 @@ class GameManager:
         t["role_id"] = role_id
         if align:
             t["align"] = align
+        self._log(None, "traveler_assign", {"name": t["name"], "role": role_id, "align": t["align"]})
         self.save()
 
     def exile_traveler(self, traveler_id: str, exiled: bool) -> None:
@@ -387,6 +433,8 @@ class GameManager:
         t["exiled"] = exiled
         t["alive"] = not exiled
         t["died_day"] = (self.day_no if self.phase == "day" else self.night_no) if exiled else None
+        if exiled:
+            self._log(None, "traveler_exile", {"name": t["name"]})
         self.save()
 
     def toggle_traveler_alive(self, traveler_id: str) -> None:
@@ -673,6 +721,8 @@ class GameManager:
         self.save()
 
     def night_next(self) -> None:
+        if self.winner:
+            raise ValueError("本局已结束,先撤销结算")
         if self.phase != "night":
             raise ValueError("现在是白天,不能推进夜晚")
         if self.night_idx + 1 < len(self.night_steps):
@@ -691,9 +741,12 @@ class GameManager:
         self.save()
 
     def end_day(self) -> None:
+        if self.winner:
+            raise ValueError("本局已结束,先撤销结算")
         if self.phase != "day":
             raise ValueError("现在是夜晚,不能结束白天")
         self._end_day_execution()  # 白天结束:结算处决(最多票者死,平票无人死)
+        self.recall_chats()  # 天黑:私聊即焚,全部关闭
         self.night_no += 1
         self._begin_night()
         self.save()
@@ -710,7 +763,9 @@ class GameManager:
         self.submit_night_kill_seat(me.seat, seat)
 
     def submit_night_kill_seat(self, seat: int, target: int) -> None:
-        """说书人按座位代操作刀人(空座角色也可,便于测试人未齐开局)。"""
+        """说书人按座位代操作刀人(空座角色也可,便于测试人未齐开局;本局结束后封冻)。"""
+        if self.winner:
+            raise ValueError("本局已结束,先撤销结算")
         if self.script_id != "wafu-leiming":
             raise ValueError("该板子暂未开放手机刀人")
         if self.phase != "night":
@@ -734,6 +789,7 @@ class GameManager:
             entry["seat"] = target
             entry["by"] = seat
             entry["role"] = rid
+        self._log(seat, "lunatic_kill" if rid == "lunatic" else "kill", {"target": target, "role": rid})
         self.save()
 
     def _apply_night_kills(self) -> None:
@@ -768,7 +824,9 @@ class GameManager:
         self.submit_night_choice_seat(me.seat, targets, char)
 
     def submit_night_choice_seat(self, seat: int, targets: list[int], char: str | None = None) -> None:
-        """说书人按座位代操作夜晚选人(空座角色也可,便于测试人未齐开局)。"""
+        """说书人按座位代操作夜晚选人(空座角色也可,便于测试人未齐开局;本局结束后封冻)。"""
+        if self.winner:
+            raise ValueError("本局已结束,先撤销结算")
         if self.script_id != "wafu-leiming":
             raise ValueError("该板子暂未开放夜晚信息交互")
         if self.phase != "night":
@@ -807,6 +865,8 @@ class GameManager:
                 self._apply_pithag(seat)  # 自动转变(提交即生效);角色在场 → 静默无效
             elif eff == "cerenovus":
                 self._apply_cerenovus(seat)  # 疯狂自动生效:被疯狂者手机被告知
+        self._log(seat, "choice", {"role": eff, "targets": sorted(targets),
+                                   "char": entry.get("char")})
         self.save()
 
     def _apply_pithag(self, seat: int) -> None:
@@ -821,6 +881,7 @@ class GameManager:
                    | set(self.seat_roles.values()))
         if char in in_play:
             entry["invalid"] = True  # 已在场:静默不生效(说书人可见,麻脸巫婆不知情)
+            self._log(seat, "transform_invalid", {"target": target, "char": char})
             return
         if target not in self.seat_roles:
             entry["invalid"] = True
@@ -833,6 +894,7 @@ class GameManager:
         if p is not None:
             self.seat_role_changes[target] = char  # 玩家手机收到角色转变提示
         entry["applied"] = True
+        self._log(seat, "transform", {"target": target, "char": char, "from": entry["from"]})
         if self.roles[char]["team"] == DEMON:
             # 创造恶魔:当晚死亡由说书人决定,天亮跳过自动刀人
             self.night_kills.setdefault(str(self.night_no), {})["arbitrary"] = True
@@ -869,6 +931,7 @@ class GameManager:
         self.mad_about[target] = char
         entry["applied"] = True
         entry.pop("invalid", None)
+        self._log(seat, "mad", {"target": target, "char": char})
 
     def revert_pithag(self, seat: int) -> None:
         """说书人撤销已生效的麻脸巫婆变身(容错):恢复角色、移除注入步骤与「死亡由说书人决定」标记。"""
@@ -902,6 +965,7 @@ class GameManager:
             entry = {"role": role or "info", "targets": [], "reply": None}
             self.night_choices[str(self.night_no)][str(seat)] = entry
         entry["reply"] = (text or "").strip()[:100]
+        self._log(seat, "reply", {"text": entry["reply"]})
         self.save()
 
     # ---- 占卜师宿敌(红鲱鱼) ----
@@ -940,9 +1004,357 @@ class GameManager:
         self.day_stage = stage
         self.save()
 
+    # ---- 结算 ----
+
+    # ---- 复盘 ----
+
+    def mark_reply_wrong(self, seat: int, night: int, wrong: bool) -> None:
+        """说书人复盘标注:该夜该座位的回复信息是错的(中毒/醉酒/酒鬼之外的主动标注)。"""
+        entry = self.night_choices.get(str(night), {}).get(str(seat))
+        if entry is None or not entry.get("reply"):
+            raise ValueError("该夜该座位没有回复")
+        entry["wrong"] = bool(wrong)
+        self.save()
+
+    def build_review(self) -> dict:
+        """复盘时间线:按夜/天分组的事件条目;错误信息自动判定(当时中毒/醉酒、本人是酒鬼)+ 说书人标注。"""
+        def name_of(s):
+            p = self.seats.get(s)
+            if p is not None:
+                return p.name
+            rid = self.seat_roles.get(s)
+            return self.roles[rid]["name"] if rid else "空座"
+
+        def role_of(rid):
+            return self.roles[rid]["name"] if rid in self.roles else rid
+
+        order: list[tuple[str, int]] = []
+        for e in self.events:
+            key = (e["phase"], e["n"])
+            if e["phase"] and key not in order:
+                order.append(key)
+        buckets: dict[tuple, list[dict]] = {k: [] for k in order}
+        pending_choice: dict[tuple, dict] = {}  # (key, seat) → 该夜的选人条目(等回复合并)
+        active_marker: dict[int, dict[str, bool]] = {}  # seat → {poisoned: bool, drunk: bool}
+        for e in self.events:
+            key = (e["phase"], e["n"])
+            d = e["data"]
+            s = e["seat"]
+            item = None
+            if e["type"] == "kill":
+                item = {"text": f"😈 恶魔「{role_of(d['role'])}」({s}号 {name_of(s)})选择刀杀 {d['target']}号 {name_of(d['target'])}"}
+            elif e["type"] == "lunatic_kill":
+                item = {"text": f"🩻 疯子({s}号 {name_of(s)})选择刀杀 {d['target']}号(演戏,不执行)"}
+            elif e["type"] == "death":
+                item = {"text": f"☠ 说书人标记 {s}号 {name_of(s)} 死亡"}
+            elif e["type"] == "choice":
+                t = "、".join(f"{x}号" for x in d.get("targets", []))
+                item = {"text": f"🔮 {role_of(d['role'])}({s}号 {name_of(s)})选择 {t}"
+                                + (f" → 变身「{role_of(d['char'])}」" if d.get("char") else "")}
+                pending_choice[(key, s)] = item
+            elif e["type"] == "reply":
+                item = {"text": f"📩 说书人回复 {s}号 {name_of(s)}:「{d['text']}」",
+                        "mark": {"seat": s, "night": e["n"]}}
+                # 与同夜同座的选人条目合并
+                prev = pending_choice.pop((key, s), None)
+                if prev is not None:
+                    prev["text"] += f" · 回复:「{d['text']}」"
+                    prev["mark"] = item["mark"]
+                    item = prev
+                wrong_why = []
+                if self._seat_real_role(s) == "drunk":
+                    wrong_why.append("此人是酒鬼,信息必假")
+                if active_marker.get(s, {}).get("poisoned"):
+                    wrong_why.append("当时中毒")
+                if active_marker.get(s, {}).get("drunk"):
+                    wrong_why.append("当时醉酒")
+                if wrong_why:
+                    item["wrong"] = True
+                    item["why"] = "、".join(wrong_why)
+                entry = self.night_choices.get(str(e["n"]), {}).get(str(s))
+                if entry and entry.get("wrong"):
+                    item["wrong"] = True
+                    item["why"] = (item.get("why") + "、" if item.get("why") else "") + "说书人标注"
+            elif e["type"] == "transform":
+                extra = " · 创造恶魔:本夜死亡由说书人决定" if self.roles[d["char"]]["team"] == DEMON else ""
+                item = {"text": f"🎭 麻脸巫婆把 {d['target']}号 {name_of(d['target'])} 变成「{role_of(d['char'])}」(原「{role_of(d.get('from', ''))}」){extra}"}
+            elif e["type"] == "transform_invalid":
+                item = {"text": f"❌ 麻脸巫婆想把 {d['target']}号 变成「{role_of(d['char'])}」:角色在场,未生效(麻脸巫婆不知情)"}
+            elif e["type"] == "mad":
+                item = {"text": f"🎭 洗脑师让 {d['target']}号 {name_of(d['target'])} 疯狂宣称自己是「{role_of(d['char'])}」"}
+            elif e["type"] == "role_change":
+                tag = "🩸 传刀:" if d.get("pass_demon") else "🔄 角色转变:"
+                item = {"text": f"{tag}{s}号 {name_of(s)}「{role_of(d.get('from', ''))}」→「{role_of(d['to'])}」"}
+            elif e["type"] == "team_change":
+                item = {"text": f"⚖ 阵营转变:{s}号 {name_of(s)} → {'邪恶' if d['team'] == 'evil' else '善良'}"}
+            elif e["type"] == "execution":
+                item = {"text": f"⚔ 处决:{s}号 {name_of(s)}({d.get('votes', 0)} 票)"}
+            elif e["type"] == "marker":
+                if d.get("on"):
+                    active_marker.setdefault(s, {})[d["marker"]] = True
+                else:
+                    active_marker.setdefault(s, {})[d["marker"]] = False
+                item = {"text": f"🧪 说书人标记 {s}号 {name_of(s)} {'中毒' if d['marker'] == 'poisoned' else '醉酒'}{'' if d.get('on') else '(解除)'}"}
+            elif e["type"] == "traveler_join":
+                item = {"text": f"🎒 旅行者「{d['name']}」加入"}
+            elif e["type"] == "traveler_assign":
+                item = {"text": f"🎒 旅行者「{d['name']}」指派为「{role_of(d['role'])}」({d['align'] == 'evil' and '邪恶' or '善良'})"}
+            elif e["type"] == "traveler_exile":
+                item = {"text": f"🏴 旅行者「{d['name']}」被流放"}
+            elif e["type"] == "end":
+                item = {"text": f"🏁 游戏结束:{'善良' if d['winner'] == 'good' else '邪恶'}阵营获胜"}
+            if item is not None:
+                item["type"] = e["type"]
+                buckets[key].append(item)
+        # 恶魔伪装(开局定好,不在场好角色)与疯子伪装:补进第 1 夜组开头
+        if self.bluffs:
+            if ("night", 1) not in buckets:
+                order.insert(0, ("night", 1))
+                buckets[("night", 1)] = []
+            buckets[("night", 1)].insert(0, {
+                "type": "bluffs",
+                "text": f"🧪 恶魔伪装(不在场好角色):{'、'.join(role_of(r) for r in self.bluffs)}"})
+        for seat, bl in self.lunatic_bluffs.items():
+            if not bl:
+                continue
+            if ("night", 1) not in buckets:
+                order.insert(0, ("night", 1))
+                buckets[("night", 1)] = []
+            buckets[("night", 1)].insert(0, {
+                "type": "bluffs",
+                "text": f"🩻 给疯子({seat}号)的伪装:{'、'.join(role_of(r) for r in bl)}"})
+        groups = [{"label": f"第{pn}夜" if ph == "night" else f"第{pn}天",
+                   "phase": ph, "items": buckets[(ph, pn)]}
+                  for (ph, pn) in order]
+        return {"groups": groups, "has_data": bool(self.events)}
+
+    def end_game(self, winner: str | None) -> None:
+        """说书人宣布游戏结束并判定获胜方(good/evil);None 撤销结算。"""
+        if winner is not None and winner not in ("good", "evil"):
+            raise ValueError("获胜方只能是 good/evil")
+        if winner is not None and self.status != "playing":
+            raise ValueError("本局还没开始")
+        self.winner = winner
+        if winner:
+            self._log(None, "end", {"winner": winner})
+        self.save()
+
+    def toggle_fabled(self, fid: str, on: bool) -> None:
+        """传奇角色(Fabled,公开信息):说书人勾选在场。换板子不丢,重置才清。"""
+        if fid not in FABLED_BY_ID:
+            raise ValueError("未知传奇角色")
+        if on and fid not in self.fabled:
+            self.fabled.append(fid)
+        elif not on and fid in self.fabled:
+            self.fabled.remove(fid)
+        self.save()
+
+    # ---- 白天私聊(内存态;说书人作为特殊玩家 "st" 可被邀请/查看全部) ----
+
+    CHAT_COLORS = ["#e74c3c", "#e67e22", "#f1c40f", "#2ecc71", "#1abc9c", "#3498db",
+                   "#9b59b6", "#e91e63", "#00bcd4", "#8bc34a"]
+
+    def _chat_who_name(self, who) -> str:
+        if who == "st":
+            return "说书人"
+        if isinstance(who, str):
+            t = next((x for x in self.travelers if x["id"] == who), None)
+            return t["name"] if t else who
+        p = self.seats.get(who)
+        return p.name if p else f"{who}号"
+
+    def _chat_who_ok(self, who) -> bool:
+        """who 可以是座位(已入座)、旅行者 id 或说书人 "st"。"""
+        if who == "st":
+            return True
+        if isinstance(who, str):
+            return any(t["id"] == who and not t["exiled"] for t in self.travelers)
+        return isinstance(who, int) and who in self.seats
+
+    def _active_chat(self, cid: int) -> dict:
+        c = next((x for x in self.chats if x["id"] == cid and not x["closed"]), None)
+        if c is None:
+            raise ValueError("私聊不存在或已关闭")
+        return c
+
+    def _chat_of(self, who) -> dict | None:
+        return next((c for c in self.chats if not c["closed"] and who in c["members"]), None)
+
+    def _chat_guard(self) -> None:
+        if self.phase != "day":
+            raise ValueError("白天才能私聊")
+        if self.winner:
+            raise ValueError("本局已结束")
+
+    def create_chat(self, owner, invitees: list) -> dict:
+        self._chat_guard()
+        if not self._chat_who_ok(owner):
+            raise ValueError("发起者需已入座、是旅行者或说书人")
+        if self._chat_of(owner):
+            raise ValueError("你已在私聊中,先退出再发起")
+        if not isinstance(invitees, list) or not invitees:
+            raise ValueError("需邀请至少一名玩家")
+        inv: dict = {}
+        for w in invitees:
+            if not self._chat_who_ok(w):
+                raise ValueError("邀请对象无效")
+            if w == owner:
+                raise ValueError("不能邀请自己")
+            if self._chat_of(w):
+                raise ValueError(f"{self._chat_who_name(w)} 已在别的私聊中")
+            inv[w] = None
+        used = {c["color"] for c in self.chats if not c["closed"]}
+        color = next((c for c in self.CHAT_COLORS if c not in used), self.CHAT_COLORS[len(self.chats) % len(self.CHAT_COLORS)])
+        chat = {"id": len(self.chats) + 1, "owner": owner, "color": color,
+                "members": {owner: 0}, "invites": inv, "join_requests": {},
+                "messages": [], "closed": False}
+        self.chats.append(chat)
+        self.save()
+        return chat
+
+    def respond_invite(self, who, cid: int, accept: bool) -> None:
+        self._chat_guard()
+        chat = self._active_chat(cid)
+        if who not in chat["invites"]:
+            raise ValueError("你没有该私聊的邀请")
+        chat["invites"].pop(who)
+        if accept:
+            if self._chat_of(who):
+                raise ValueError("你已在别的私聊中")
+            chat["members"][who] = self._next_chat_seq(chat)  # 后加入者看不到之前的历史
+        self.save()
+
+    def request_join(self, who, cid: int) -> None:
+        self._chat_guard()
+        chat = self._active_chat(cid)
+        if not self._chat_who_ok(who):
+            raise ValueError("需已入座或为旅行者/说书人")
+        if who in chat["members"] or who in chat["invites"]:
+            raise ValueError("你已是成员或已有邀请")
+        if self._chat_of(who):
+            raise ValueError("你已在别的私聊中")
+        chat["join_requests"][who] = None
+        self.save()
+
+    def invite_to_chat(self, owner, cid: int, invitees: list) -> None:
+        """私聊进行中,发起者邀请更多玩家加入(新成员同样看不到历史)。"""
+        self._chat_guard()
+        chat = self._active_chat(cid)
+        if chat["owner"] != owner:
+            raise ValueError("只有发起者能邀请新成员")
+        if not isinstance(invitees, list) or not invitees:
+            raise ValueError("需邀请至少一名玩家")
+        for w in invitees:
+            if not self._chat_who_ok(w):
+                raise ValueError("邀请对象无效")
+            if w in chat["members"] or w in chat["invites"]:
+                continue  # 已在群里或已有邀请,跳过
+            if self._chat_of(w):
+                raise ValueError(f"{self._chat_who_name(w)} 已在别的私聊中")
+            chat["invites"][w] = None
+        self.save()
+
+    def approve_request(self, owner, cid: int, who, approve: bool) -> None:
+        self._chat_guard()
+        chat = self._active_chat(cid)
+        if chat["owner"] != owner:
+            raise ValueError("只有发起者能审批加入申请")
+        if who not in chat["join_requests"]:
+            raise ValueError("没有该玩家的申请")
+        chat["join_requests"].pop(who)
+        if approve:
+            if self._chat_of(who):
+                raise ValueError(f"{self._chat_who_name(who)} 已在别的私聊中")
+            chat["members"][who] = self._next_chat_seq(chat)
+        self.save()
+
+    def _next_chat_seq(self, chat: dict) -> int:
+        return chat["messages"][-1]["seq"] + 1 if chat["messages"] else 1
+
+    def send_message(self, who, cid: int, text: str) -> None:
+        self._chat_guard()
+        chat = self._active_chat(cid)
+        if who not in chat["members"]:
+            raise ValueError("你不是该私聊的成员")
+        text = (text or "").strip()
+        if not text:
+            raise ValueError("消息不能为空")
+        if len(text) > 500:
+            raise ValueError("消息过长(500 字内)")
+        self.chat_seq += 1
+        chat["messages"].append({"seq": self.chat_seq, "from": who,
+                                 "name": self._chat_who_name(who), "text": text[:500]})
+        self.save()
+
+    def leave_chat(self, who, cid: int) -> None:
+        chat = self._active_chat(cid)
+        if who not in chat["members"]:
+            raise ValueError("你不是该私聊的成员")
+        chat["members"].pop(who)
+        if chat["owner"] == who:  # 发起者退出 → 群解散
+            chat["closed"] = True
+        self.save()
+
+    def close_chat(self, who, cid: int) -> None:
+        chat = self._active_chat(cid)
+        if chat["owner"] != who and who != "st":
+            raise ValueError("只有发起者或说书人能关闭")
+        chat["closed"] = True
+        self.save()
+
+    def recall_chats(self) -> None:
+        """说书人召回:关闭全部私聊(天黑自动执行)。"""
+        for c in self.chats:
+            c["closed"] = True
+        self.save()
+
+    def _chat_st_view(self, c: dict) -> dict:
+        """说书人侧的私聊视图:members/invites/join_requests 转数组并带名字(前端按数组渲染)。"""
+        return {
+            "id": c["id"], "owner": c["owner"], "color": c["color"], "closed": c["closed"],
+            "members": [{"who": str(w), "name": self._chat_who_name(w)} for w in c["members"]],
+            "invites": [{"who": str(w), "name": self._chat_who_name(w)} for w in c["invites"]],
+            "join_requests": [{"who": str(w), "name": self._chat_who_name(w)}
+                              for w in c["join_requests"]],
+            "messages": c["messages"],
+        }
+
+    def chat_view_for(self, who) -> dict | None:
+        """该玩家(或说书人)的私聊视图:自己的群(过滤历史)、邀请、公开列表(气泡)。"""
+        if self.phase != "day" or self.winner:
+            return None
+        my = self._chat_of(who)
+        view = {"who": str(who), "my_chat": None, "invites": [], "chats_public": []}
+        if my is not None:
+            joined = my["members"][who]
+            view["my_chat"] = {
+                "id": my["id"], "color": my["color"], "owner": my["owner"],
+                "is_owner": my["owner"] == who,
+                "members": [{"who": str(w), "name": self._chat_who_name(w)}
+                            for w in my["members"]],
+                "requests": [{"who": str(w), "name": self._chat_who_name(w)}
+                             for w in my["join_requests"]] if my["owner"] == who else [],
+                "messages": [m for m in my["messages"] if m["seq"] >= joined],
+            }
+        for c in self.chats:
+            if c["closed"]:
+                continue
+            if who in c["invites"]:
+                view["invites"].append({"id": c["id"], "color": c["color"],
+                                        "owner_name": self._chat_who_name(c["owner"])})
+            view["chats_public"].append({
+                "id": c["id"], "color": c["color"], "owner": str(c["owner"]),
+                "members": [{"who": str(w), "name": self._chat_who_name(w)}
+                            for w in c["members"]],
+                "requested": who in c["join_requests"],
+            })
+        return view
+
     # ---- 提名 / 投票 / 处决 ----
 
     def start_nomination(self, nominator: int | str, nominee: int | str) -> None:
+        if self.winner:
+            raise ValueError("本局已结束,先撤销结算")
         if self.phase != "day":
             raise ValueError("白天才能发起提名")
         if self.day_stage != "nom":
@@ -976,6 +1388,8 @@ class GameManager:
         self.save()
 
     def toggle_vote(self, target: int | str) -> None:
+        if self.winner:
+            raise ValueError("本局已结束,先撤销结算")
         if not self.current:
             raise ValueError("没有进行中的提名")
         player, traveler = self._target(target)
@@ -1054,6 +1468,7 @@ class GameManager:
                 traveler["exiled"] = True  # 旅行者被投票通过 = 流放,当场生效
                 traveler["died_day"] = self.day_no
                 rec["executed"] = True
+                self._log(None, "traveler_exile", {"name": traveler["name"]})
         self.current = None
         self.save()
 
@@ -1076,6 +1491,7 @@ class GameManager:
             self.seat_alive[nominee] = False  # 空座同样可被处决
             self.seat_dead_day[nominee] = self.day_no
         winners[0]["executed"] = True
+        self._log(nominee, "execution", {"votes": max_votes})
 
     # ---- 状态操作 ----
 
@@ -1102,6 +1518,7 @@ class GameManager:
         if cur:  # 标记死亡
             self.seat_alive[seat] = False
             self.seat_dead_day[seat] = self.day_no if self.phase == "day" else self.night_no
+            self._log(seat, "death", {"by": "st"})
         else:  # 复活
             self.seat_alive.pop(seat, None)
             self.seat_dead_day.pop(seat, None)
@@ -1159,6 +1576,12 @@ class GameManager:
                 if role is None or role not in self.roles:
                     raise ValueError("角色转变需选择要变成的角色")
                 self.seat_role_changes[seat] = role
+                prev = self._seat_real_role(seat)
+                # 传刀识别:爪牙 → 恶魔
+                pass_demon = bool(prev and self.roles[prev]["team"] == MINION
+                                  and self.roles[role]["team"] == DEMON)
+                self._log(seat, "role_change", {"to": role, "from": prev,
+                                                "pass_demon": pass_demon})
             else:
                 self.seat_role_changes.pop(seat, None)
             self.save()
@@ -1168,6 +1591,7 @@ class GameManager:
                 if team not in ("good", "evil"):
                     raise ValueError("阵营转变需选择新阵营(善良/邪恶)")
                 self.seat_team_changes[seat] = team
+                self._log(seat, "team_change", {"team": team})
             else:
                 self.seat_team_changes.pop(seat, None)
             self.save()
@@ -1186,6 +1610,8 @@ class GameManager:
             cur.add(marker)
         else:
             cur.discard(marker)
+        if marker in ("poisoned", "drunk"):  # 错误信息判定依赖中毒/醉酒的时间线
+            self._log(seat, "marker", {"marker": marker, "on": on})
         if cur:
             self.seat_markers[seat] = sorted(cur)
         else:
@@ -1304,6 +1730,7 @@ class GameManager:
             "composition": list(COMPOSITION[self.player_count]),
             # 哨兵在场(公开,方向保密):玩家只知外来者可能 +1 或 −1
             "sentinel": self.sentinel != 0,
+            "fabled": [FABLED_BY_ID[f] for f in self.fabled],  # 传奇角色公开:所有玩家可见
             **self._public_progress(),
             # 提名/投票是公开信息,实时推给玩家(举手、票型、处决)
             "nominations": self.nominations,
@@ -1327,6 +1754,20 @@ class GameManager:
                 view["me"]["role"] = TRAVELER_BY_ID[me_traveler["role_id"]]
         elif started:
             view["me"] = me.private(self.roles, fake_id)
+        # 结算:说书人宣布游戏结束 → 全场揭晓真实角色与获胜方
+        if self.winner is not None:
+            view["result"] = {
+                "winner": self.winner,
+                "seats": [{"seat": s, "name": self.seats[s].name if s in self.seats else None,
+                           "alive": self._seat_alive(s),
+                           "role": self.roles[rid] if (rid := self._seat_real_role(s)) else None}
+                          for s in range(1, self.player_count + 1)],
+                "travelers": [{"id": t["id"], "name": t["name"], "alive": t["alive"],
+                               "align": t["align"],
+                               "role": TRAVELER_BY_ID[t["role_id"]] if t["role_id"] else None}
+                              for t in self.travelers],
+            }
+            view["review"] = self.build_review()  # 复盘时间线(结算页可切到独立复盘页)
         if not started:
             return view
         # 夜里死的人天亮才公开:死者本人的卡夜里也先不显示死亡(手机在桌上会被旁人看到骷髅/死亡提示)
@@ -1366,6 +1807,11 @@ class GameManager:
         if me_traveler is not None and me_traveler["align"] == "evil":
             view["demon_seats"] = [{"seat": d["seat"], "name": d["name"]}
                                    for d in self._team_seats(DEMON)]
+        # 白天私聊:本人的群/邀请/公开列表(气泡);说书人作为特殊玩家同样参与
+        who = me_traveler["id"] if me_traveler is not None else me.seat
+        chat_view = self.chat_view_for(who) if who is not None else None
+        if chat_view is not None:
+            view["chat"] = chat_view
         if me_traveler is not None:
             return view  # 旅行者没有座位,后面全是座位玩家的会面/转变逻辑
         # 夜晚唤醒(瓦釜雷鸣手机交互,先只开放这一板):ST 走到对应步骤时,该玩家手机点亮
@@ -1521,6 +1967,11 @@ class GameManager:
                               if (rr := self._seat_real_role(i)) in FAKE_POOLS and i not in self.seat_fakes],
             "saved_at": self.saved_at,
             "room_code": self.room_code,  # 房间号:说书人可改,玩家加入须匹配
+            "winner": self.winner,
+            "fabled": [FABLED_BY_ID[f] for f in self.fabled],  # 在场的传奇角色(公开)
+            "chats": [self._chat_st_view(c) for c in self.chats],  # 私聊全量(数组格式,说书人查看所有内容并留档)
+            "fabled_pool": FABLED,  # 全部传奇角色(魔典勾选用)
+            "review": self.build_review() if self.winner else None,  # 复盘时间线(魔典复盘视图用)
             "night_kills": self.night_kills,  # 夜晚刀人:恶魔/疯子的手机选择(说书人可见)
             "night_choices": self.night_choices,  # 夜晚信息交互:各座位选择与说书人回复
             "night_actions": NIGHT_ACTIONS,  # 夜晚行动配置(前端代操作面板用)

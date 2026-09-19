@@ -111,17 +111,56 @@ function seatCircle(seats, opts = {}) {
     const voted = opts.voted ? opts.voted(s) : false // 投票中该座举手
     const deadVote = p && !p.alive && s.dead_vote_left // 死者死票未交出:骷髅左边常驻 🗳,举手交出死票后消失
     const markers = opts.markers ? opts.markers(s) : [] // 状态标记(仅说书人)
+    const bubble = opts.bubble ? opts.bubble(s) : null // 💬 私聊气泡:同群同色,所有人可见
     const node = h(`<div class="seat-node ${p ? 'occ' : 'free'} ${p && !p.alive ? 'dead' : ''} ${s.is_me ? 'mine' : ''} ${voted ? 'voted' : ''} ${deadVote ? 'dead-vote' : ''} ${teamCls} ${opts.pickSeat === s.seat ? 'pick' : ''}"
         data-seat="${s.seat}" style="left:${(50 + 38 * Math.cos(a)).toFixed(2)}%;top:${(50 + 38 * Math.sin(a)).toFixed(2)}%">
       <span class="seat-num">${s.seat}</span>
       <span class="seat-name">${p ? esc(p.name) : (opts.freeLabel || '入座')}</span>
       ${badge ? `<span class="draft-badge team-${badge.team}">${esc(badge.name)}</span>` : ''}
+      ${bubble ? `<span class="seat-bubble" style="background:${bubble}"></span>` : ''}
       ${markers.length || s.role_change || s.team_change ? `<span class="marker-badges">${markers.map((m) => `<span class="marker-badge m-${m}">${MARKER_CHAR[m] || '?'}</span>`).join('')}${s.role_change ? `<span class="marker-badge plain">🔄${esc(s.role_change.name)}</span>` : ''}${s.team_change ? `<span class="marker-badge plain">⚖${s.team_change === 'good' ? '善良' : '邪恶'}</span>` : ''}</span>` : ''}
     </div>`)
     if (opts.clickSeat) node.addEventListener('click', () => opts.clickSeat(s))
     wrap.appendChild(node)
   })
+  // 圆盘中央:🕯 说书人(两端都显示;入群时带同色气泡;第一夜吊着摆动)
+  const centerBubble = opts.centerBubble ? opts.centerBubble() : null
+  wrap.appendChild(h(`<div class="seat-center ${opts.centerHanged ? 'hanged' : ''}">
+    ${opts.centerHanged ? '<span class="seat-center-rope">🪢</span>' : ''}
+    ${centerBubble ? `<span class="seat-bubble" style="background:${centerBubble}"></span>` : ''}
+    <span class="seat-center-icon">🕯</span>
+    <span class="seat-center-name">说书人</span>
+  </div>`))
   return wrap
+}
+
+// 🕯 血染钟楼背景戏剧:第一夜说书人被吊死在钟楼之上(每局每个设备播一次,点击或 5 秒后消失)
+function dramaOverlay(roomCode, phase, nightNo, status) {
+  if (status !== 'playing' || phase !== 'night' || nightNo !== 1) return
+  const key = `botc_drama_${roomCode}`
+  if (localStorage.getItem(key)) return
+  localStorage.setItem(key, '1')
+  const node = h(`<div class="drama">
+    <div class="drama-scene">
+      <div class="drama-tower">
+        <div class="tower-roof"></div>
+        <div class="tower-body">
+          <div class="tower-clock"><span class="clock-h"></span><span class="clock-m"></span></div>
+        </div>
+      </div>
+      <div class="drama-hang"><span class="drama-rope">🪢</span><span class="drama-body">🕯</span></div>
+      <p class="drama-text">第一夜,说书人被吊死在钟楼之上…</p>
+      <p class="drama-sub">—— 血染钟楼 · 点击继续 ——</p>
+    </div>
+  </div>`)
+  app.appendChild(node)
+  const close = () => {
+    if (!node.parentNode) return
+    node.classList.add('fadeout')
+    setTimeout(() => node.remove(), 600)
+  }
+  node.onclick = close
+  setTimeout(close, 5000)
 }
 
 // ================= 加入页 =================
@@ -182,6 +221,10 @@ function renderPlayer(playerId) {
   let nomTarget = null // 提名点选中已选的目标 {label, value}(页内确认条,不弹系统框)
   let pickSeats = [] // 夜晚选人(占卜师等):已点选的座位,满配置数量后提交
   let pickChar = null // 麻脸巫婆:变身后选中的角色 id
+  let settleMode = 'settle' // 终局后:settle 结算页 | review 复盘页(分开展示)
+  let chatPick = false // 私聊:发起邀请的点选模式
+  let chatInvitees = [] // 私聊:已点选的被邀请者(座位/旅行者/说书人)
+  let chatDraft = '' // 私聊输入草稿(ws 推送整页重绘时保留)
   function paint(view) {
     lastView = view
     document.body.dataset.phase = view.phase || '' // 黑夜/白天自动切换配色(body[data-phase] 变量覆盖)
@@ -191,9 +234,47 @@ function renderPlayer(playerId) {
       room_code: roomCode, team_changed: teamChanged, role_changed: roleChanged,
       deaths, traveler: meTraveler, travelers_public: travelersPub, day_stage: dayStage,
       me_wish: meWish, night_wake: nightWake, my_kill: myKill, lunatic_kill: lunaticKill,
-      night_choice: nightChoice, grimoire: grimoireData, my_mad: myMad } = view
+      night_choice: nightChoice, grimoire: grimoireData, my_mad: myMad, fabled: fabledList,
+      chat: chatData } = view
     if (phase !== 'day' || current) { nomPick = false; nomTarget = null } // 提名点选模式:天黑/结票后自动退出
     if (!(nightWake && nightWake.action === 'pick')) { pickSeats = []; pickChar = null } // 选人界面消失 → 清掉未提交的选择
+    if (phase !== 'day') { chatPick = false; chatInvitees = [] } // 天黑私聊点选自动退出
+
+    // ---- 🏁 结算页 + 📜 复盘页(分开展示,标签切换):说书人宣布游戏结束后生效 ----
+    if (view.result) {
+      const r = view.result
+      const hasTeam = !!meTraveler || !!me.role
+      const myTeam = meTraveler ? (meTraveler.align || 'good') : (teamChanged || (me.role && me.role.team))
+      const good = ['good', 'townsfolk', 'outsider'].includes(myTeam)
+      const evil = ['evil', 'minion', 'demon'].includes(myTeam)
+      const iWon = (r.winner === 'good' && good) || (r.winner === 'evil' && evil)
+      const settleBody = `<div class="settle-banner ${hasTeam ? (iWon ? 'win' : 'lose') : ''}">
+          <p class="settle-title">${!hasTeam ? '🏁 本局结束' : (iWon ? '🎉 你赢了!' : '💀 你输了')}</p>
+          <p class="settle-sub">${r.winner === 'good' ? '善良阵营获胜' : '邪恶阵营获胜'} · 第 ${dayNo} 天 · ${esc(scriptName)}</p>
+        </div>
+        <div class="settle-list">
+          <h4>🃏 全场角色揭晓</h4>
+          ${r.seats.map((g) => `<p class="settle-row ${g.alive === false ? 'dead' : ''}">${g.role ? `<span class="team-badge team-${g.role.team}">${TEAM_LABEL[g.role.team]}</span>` : ''} ${g.seat}号 ${esc(g.name || '空座')}:${g.role ? esc(g.role.name) : '—'}${g.seat === me.seat ? '(你)' : ''}</p>`).join('')}
+          ${r.travelers.map((t) => `<p class="settle-row ${t.alive ? '' : 'dead'}">🎒 ${esc(t.name)}:${t.role ? esc(t.role.name) : '—'}(${t.align === 'evil' ? '邪恶' : '善良'})</p>`).join('')}
+        </div>
+        <p class="hint">结果由说书人宣布,如有异议请找说书人</p>`
+      const review = view.review || { groups: [], has_data: false }
+      const reviewBody = review.has_data
+        ? review.groups.map((g) => `<h4 class="review-day">${esc(g.label)}</h4>`
+            + g.items.map((it) => `<p class="settle-row review-row ${it.wrong ? 'wrong' : ''}">${it.wrong ? '⚠ ' : ''}${it.text}${it.why ? ` <span class="review-why">(${esc(it.why)})</span>` : ''}</p>`).join('')).join('')
+        : '<p class="hint">本局没有复盘数据(老存档或未记录事件)</p>'
+      app.replaceChildren(h(`<div class="page rolecard">
+        <div class="topbar"><span>🏁 游戏结束 · ${esc(me.name)} · 🚪 ${esc(roomCode)}</span><span class="dot ok" title="已连接"></span></div>
+        <div class="settle-tabs">
+          <button class="chip ${settleMode === 'settle' ? 'on' : ''}" id="tab-settle">🏁 结算</button>
+          <button class="chip ${settleMode === 'review' ? 'on' : ''}" id="tab-review">📜 复盘</button>
+        </div>
+        <div class="center grow">${settleMode === 'settle' ? settleBody : reviewBody}${CREDIT}</div>
+      </div>`))
+      document.getElementById('tab-settle').onclick = () => { settleMode = 'settle'; paint(lastView) }
+      document.getElementById('tab-review').onclick = () => { settleMode = 'review'; paint(lastView) }
+      return
+    }
     // 官方配比(公开信息):只展示基础配比,实际调整(男爵/教父等)不给玩家
     const compLine = composition && composition.length === 4
       ? `<p class="hint">📋 ${esc(scriptName)} · ${count} 人 · 官方配比:${['townsfolk', 'outsider', 'minion', 'demon']
@@ -203,6 +284,12 @@ function renderPlayer(playerId) {
     const sentinelNote = sentinelOn
       ? '<p class="hint">🧙 哨兵在场:外来者数量可能比官方配比 +1 或 −1,也可能不变</p>'
       : ''
+    // 传奇角色公开:所有玩家可见在场列表
+    const fabledLine = fabledList && fabledList.length
+      ? `<p class="hint">🧙 传奇角色:${fabledList.map((f) => esc(f.name)).join(' · ')}</p>`
+      : ''
+
+    const pubLines = sentinelNote + fabledLine
 
     // ---- 公开信息块(座位玩家与旅行者共用) ----
     // 旅行者公开名单:名字与角色公开(官方宣告),阵营保密 → 投票/提名名单显示用
@@ -373,6 +460,141 @@ function renderPlayer(playerId) {
     const madBox = myMad
       ? `<div class="lunatic-kill-note">🎭 你疯狂了:你必须声称自己是「${esc(myMad.role.name)}」,直到说书人解除,否则可能被处决</div>`
       : ''
+
+    // ---- 💬 白天私聊(说书人可作为特殊玩家被邀请;后加入者看不到历史) ----
+    const chatNameOf = (who) => {
+      if (who === 'st' || String(who) === 'st') return '🕯 说书人'
+      const n = Number(who)
+      if (!Number.isNaN(n)) {
+        const p = (seats.find((x) => x.seat === n) || {}).player
+        return p ? p.name : `${n}号`
+      }
+      const t = (travelersPub || []).find((x) => x.id === who)
+      return t ? t.name : who
+    }
+    const chatColorOf = (seat) => {
+      if (!chatData || !chatData.chats_public) return null
+      const c = chatData.chats_public.find((x) => x.members.some((m) => String(m.who) === String(seat)))
+      return c ? c.color : null
+    }
+    const chatBox = status === 'playing' && phase === 'day' && chatData
+      ? (chatData.my_chat
+        ? `<div class="chat-box">
+            <div class="chat-head"><span class="chat-dot" style="background:${chatData.my_chat.color}"></span>💬 私聊
+              ${chatData.my_chat.members.map((m) => String(m.who) === 'st'
+                ? '<span class="chip small st-in-chat">🕯 说书人</span>' : `<span>${esc(m.name)}</span>`).join('、')}
+              ${chatData.my_chat.is_owner ? '<button class="chip small primary" id="chat-invite-more">➕ 邀请</button>' : ''}
+              ${chatData.my_chat.is_owner ? '<button class="chip small ghost" id="chat-close">关闭</button>' : ''}
+              <button class="chip small ghost" id="chat-leave">退出</button></div>
+            <div class="chat-msgs" id="chat-msgs">${chatData.my_chat.messages.length
+              ? chatData.my_chat.messages.map((m) => `<p class="chat-msg ${String(m.from) === String(chatData.who) ? 'mine' : ''}"><b>${esc(m.name)}</b>:${esc(m.text)}</p>`).join('')
+              : '<p class="hint">暂无消息</p>'}</div>
+            ${chatData.my_chat.requests.length
+              ? chatData.my_chat.requests.map((r) => `<p class="chat-request">🙋 ${esc(r.name)}申请加入
+                  <button class="chip small" data-apr="${r.who}" data-apr-y="1">同意</button>
+                  <button class="chip small ghost" data-apr="${r.who}" data-apr-y="0">拒绝</button></p>`).join('')
+              : ''}
+            ${chatPick
+              ? `<p class="sub">👇 点选要邀请的玩家:</p>
+                 <div class="chat-pick">
+                   ${seats.filter((x) => x.player && x.is_me !== true && !chatData.my_chat.members.some((m) => String(m.who) === String(x.seat)))
+                     .map((x) => `<button class="chip small ${chatInvitees.includes(String(x.seat)) ? 'on' : ''}" data-chatpick="${x.seat}">${x.seat}号 ${esc(x.player.name)}</button>`).join('')}
+                   ${(travelersPub || []).filter((t) => !t.exiled && !chatData.my_chat.members.some((m) => String(m.who) === t.id))
+                     .map((t) => `<button class="chip small ${chatInvitees.includes(t.id) ? 'on' : ''}" data-chatpick="${t.id}">🎒 ${esc(t.name)}</button>`).join('')}
+                   ${!chatData.my_chat.members.some((m) => String(m.who) === 'st')
+                     ? `<button class="chip small ${chatInvitees.includes('st') ? 'on' : ''}" data-chatpick="st">🕯 说书人</button>` : ''}
+                 </div>
+                 <div class="chat-pick-actions">
+                   ${chatInvitees.length ? '<button class="btn small primary" id="chat-invite-go">发送邀请</button>' : ''}
+                   <button class="chip small ghost" id="chat-pick-cancel">取消</button>
+                 </div>`
+              : ''}
+            <div class="chat-input">
+              <input class="input" id="chat-text" maxlength="500" placeholder="输入消息(仅本群可见)" value="${esc(chatDraft)}">
+              <button class="btn small primary" id="chat-send">发送</button>
+            </div>
+          </div>`
+        : `<div class="chat-box">
+            <div class="chat-head">💬 私聊大厅
+              ${chatData.invites.length ? `<span class="hint">有 ${chatData.invites.length} 个邀请</span>` : ''}
+              <button class="chip small primary" id="chat-new">🙋 发起私聊</button></div>
+            ${chatData.invites.map((iv) => `<p class="chat-invite"><span class="chat-dot" style="background:${iv.color}"></span>${esc(iv.owner_name)} 邀请你私聊
+              <button class="chip small primary" data-inv="${iv.id}" data-inv-y="1">✅ 接受</button>
+              <button class="chip small ghost" data-inv="${iv.id}" data-inv-y="0">❌ 拒绝</button></p>`).join('')}
+            ${chatPick
+              ? `<p class="sub">👇 点选要邀请的玩家(可多选,再点取消):</p>
+                 <div class="chat-pick">
+                   ${seats.filter((s) => s.player && s.is_me !== true).map((s) => `<button class="chip small ${chatInvitees.includes(s.seat) ? 'on' : ''}" data-chatpick="${s.seat}">${s.seat}号 ${esc(s.player.name)}</button>`).join('')}
+                   ${(travelersPub || []).filter((t) => !t.exiled).map((t) => `<button class="chip small ${chatInvitees.includes(t.id) ? 'on' : ''}" data-chatpick="${t.id}">🎒 ${esc(t.name)}</button>`).join('')}
+                   <button class="chip small ${chatInvitees.includes('st') ? 'on' : ''}" data-chatpick="st">🕯 说书人</button>
+                 </div>
+                 <div class="chat-pick-actions">
+                   ${chatInvitees.length ? '<button class="btn small primary" id="chat-create-go">发送邀请</button>' : ''}
+                   <button class="chip small ghost" id="chat-pick-cancel">取消</button>
+                 </div>`
+              : ''}
+            ${chatData.chats_public.length
+              ? '<p class="hint">进行中的私聊(点申请加入):</p>' + chatData.chats_public.map((c) =>
+                  `<p class="chat-pub"><span class="chat-dot" style="background:${c.color}"></span>${c.members.map((m) => esc(m.name)).join('、')}
+                    ${c.requested ? '<span class="hint">已申请,等发起者同意</span>'
+                      : `<button class="chip small" data-join="${c.id}">申请加入</button>`}</p>`).join('')
+              : '<p class="hint">还没有进行中的私聊</p>'}
+          </div>`)
+      : ''
+    // 私聊操作绑定(座位页与旅行者页共用)
+    const wireChat = () => {
+      const chatErr = (e) => { const el = document.getElementById('chat-err'); if (el) { el.textContent = e.message; el.style.display = '' } }
+      const post = (path, body) => api(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined }).catch(chatErr)
+      const msgs = document.getElementById('chat-msgs')
+      if (msgs) msgs.scrollTop = 999999 // 新消息滚到底
+      const sendBtn = document.getElementById('chat-send')
+      if (sendBtn) sendBtn.onclick = () => {
+        const v = (document.getElementById('chat-text').value || '').trim()
+        if (!v) return
+        post(`/api/chat/${chatData.my_chat.id}/send?player_id=${playerId}`, { text: v }).then(() => { chatDraft = '' })
+      }
+      const textInput = document.getElementById('chat-text')
+      if (textInput) {
+        textInput.oninput = () => { chatDraft = textInput.value }
+        textInput.onkeydown = (e) => { if (e.key === 'Enter') sendBtn && sendBtn.click() }
+      }
+      const leave = document.getElementById('chat-leave')
+      if (leave) leave.onclick = () => post(`/api/chat/${chatData.my_chat.id}/leave?player_id=${playerId}`)
+      const close = document.getElementById('chat-close')
+      if (close) close.onclick = () => post(`/api/chat/${chatData.my_chat.id}/close?player_id=${playerId}`)
+      const inviteMore = document.getElementById('chat-invite-more')
+      if (inviteMore) inviteMore.onclick = () => { chatInvitees = []; chatPick = true; paint(lastView) }
+      const inviteGo = document.getElementById('chat-invite-go')
+      if (inviteGo) inviteGo.onclick = () => {
+        post(`/api/chat/${chatData.my_chat.id}/invite-more?player_id=${playerId}`, { invitees: chatInvitees.map((x) => (/^\d+$/.test(x) ? Number(x) : x)) })
+          .then(() => { chatPick = false; chatInvitees = [] })
+      }
+      document.querySelectorAll('[data-apr]').forEach((b) => {
+        b.onclick = () => post(`/api/chat/${chatData.my_chat.id}/approve?player_id=${playerId}`, { who: Number(b.dataset.apr) || b.dataset.apr, approve: b.dataset.aprY === '1' })
+      })
+      document.querySelectorAll('[data-inv]').forEach((b) => {
+        b.onclick = () => post(`/api/chat/${b.dataset.inv}/invite?player_id=${playerId}`, { accept: b.dataset.invY === '1' })
+      })
+      document.querySelectorAll('[data-join]').forEach((b) => {
+        b.onclick = () => post(`/api/chat/${b.dataset.join}/request?player_id=${playerId}`)
+      })
+      const newBtn = document.getElementById('chat-new')
+      if (newBtn) newBtn.onclick = () => { chatInvitees = []; chatPick = true; paint(lastView) }
+      const cancelBtn = document.getElementById('chat-pick-cancel')
+      if (cancelBtn) cancelBtn.onclick = () => { chatPick = false; chatInvitees = []; paint(lastView) }
+      document.querySelectorAll('[data-chatpick]').forEach((b) => {
+        b.onclick = () => {
+          const w = b.dataset.chatpick
+          chatInvitees = chatInvitees.includes(w) ? chatInvitees.filter((x) => x !== w) : [...chatInvitees, w]
+          paint(lastView)
+        }
+      })
+      const go = document.getElementById('chat-create-go')
+      if (go) go.onclick = () => {
+        post(`/api/chat/create?player_id=${playerId}`, { invitees: chatInvitees.map((x) => (/^\d+$/.test(x) ? Number(x) : x)) })
+          .then(() => { chatPick = false; chatInvitees = [] })
+      }
+    }
     const wirePick = () => {
       const perr = document.getElementById('pick-err')
       document.querySelectorAll('[data-pick]').forEach((b) => {
@@ -440,7 +662,7 @@ function renderPlayer(playerId) {
         <div class="center grow">
           <p class="sub">${status === 'playing' ? '游戏已开始(迟到):点空座入座,继承该座预发身份' : '选择你的座位入座'}</p>
           ${compLine}
-          ${sentinelNote}
+          ${pubLines}
           <div id="circle"></div>
           <p class="hint">${seats.length ? `共 ${seats.length} 个座位,点一个空座位入座` : '等待说书人设置本局人数…'}</p>
           ${status === 'playing'
@@ -454,6 +676,7 @@ function renderPlayer(playerId) {
       </div>`))
       const err = document.getElementById('sit-err')
       document.getElementById('circle').appendChild(seatCircle(seats, {
+        centerHanged: status === 'playing' && phase === 'night' && nightNo === 1,
         clickSeat: (s) => {
           if (s.player) return
           api(`/api/player/${playerId}/sit`, { method: 'POST', body: JSON.stringify({ seat: s.seat }) })
@@ -461,6 +684,7 @@ function renderPlayer(playerId) {
         },
       }))
       wireWish()
+      dramaOverlay(roomCode, phase, nightNo, status)
       const tbtn = document.getElementById('traveler-btn')
       if (tbtn) tbtn.onclick = () => api(`/api/player/${playerId}/traveler`, { method: 'POST' })
         .catch((e) => { err.textContent = e.message; err.style.display = '' })
@@ -499,11 +723,12 @@ function renderPlayer(playerId) {
         <div class="center grow">
           <p class="sub">${joinTxt} · 阵营只有你和说书人知道</p>
           ${card}
+          ${chatBox}
           ${voteLine}
           ${playerActions}
           ${voteHist}
           ${compLine}
-          ${sentinelNote}
+          ${pubLines}
           ${deadLine}
           ${cardHidden ? '' : demonLine}
           ${CREDIT}
@@ -512,10 +737,23 @@ function renderPlayer(playerId) {
       // 圆盘:平时纯查看(旅行者不占座位);提名点选模式下点击=选被提名者
       document.getElementById('circle').appendChild(seatCircle(seats, {
         voted: (s) => !!current && current.votes.includes(s.seat),
-        clickSeat: (s) => { if (nomPick) nominateSeat(s) },
+        bubble: (s) => chatColorOf(s.seat),
+        centerBubble: () => chatColorOf('st'),
+        centerHanged: phase === 'night' && nightNo === 1,
+        clickSeat: (s) => {
+          if (chatPick && s.player) { // 私聊邀请点选
+            const w = String(s.seat)
+            chatInvitees = chatInvitees.includes(w) ? chatInvitees.filter((x) => x !== w) : [...chatInvitees, w]
+            paint(lastView)
+            return
+          }
+          if (nomPick) nominateSeat(s)
+        },
         pickSeat: nomPick && nomTarget && typeof nomTarget.value === 'number' ? nomTarget.value : null,
       }))
       wirePlayerActions()
+      wireChat()
+      dramaOverlay(roomCode, phase, nightNo, status)
       const cover = document.getElementById('card-cover')
       if (cover) cover.addEventListener('click', () => { cardHidden = false; paint(lastView) })
       const roleCard = document.getElementById('role-card')
@@ -582,12 +820,13 @@ function renderPlayer(playerId) {
       ${pickBox}
       ${replyBox}
       ${madBox}
+      ${chatBox}
       ${voteLine}
       ${playerActions}
       ${wishBlock}
       ${voteHist}
       ${compLine}
-      ${sentinelNote}
+      ${pubLines}
       ${card}
       ${deadLine}
       ${privateLines}
@@ -595,19 +834,30 @@ function renderPlayer(playerId) {
     </div>`))
     document.getElementById('circle').appendChild(seatCircle(seats, {
       voted: (s) => !!current && current.votes.includes(s.seat), // 举手票型公开,玩家也可见
+      centerBubble: () => chatColorOf('st'),
+      centerHanged: phase === 'night' && nightNo === 1,
       clickSeat: (s) => {
+        if (chatPick && s.player) { // 私聊邀请点选(多选)
+          const w = String(s.seat)
+          chatInvitees = chatInvitees.includes(w) ? chatInvitees.filter((x) => x !== w) : [...chatInvitees, w]
+          paint(lastView)
+          return
+        }
         if (nomPick) { nominateSeat(s); return } // 提名点选模式:点人=提名
         // 开局前可换座:点空座位移动过去
         if (!s.player && status === 'lobby') {
           api(`/api/player/${playerId}/sit`, { method: 'POST', body: JSON.stringify({ seat: s.seat }) }).catch(() => {})
         }
       },
+      bubble: (s) => chatColorOf(s.seat),
       pickSeat: nomPick && nomTarget && typeof nomTarget.value === 'number' ? nomTarget.value : null,
     }))
     wirePlayerActions()
     wireWish()
     wireKill()
     wirePick()
+    wireChat()
+    dramaOverlay(roomCode, phase, nightNo, status)
     // 🃏 收起身份:点卡片收起、点封盖恢复(H 键切换在 renderPlayer 里注册)
     const cover = document.getElementById('card-cover')
     if (cover) cover.addEventListener('click', () => { cardHidden = false; paint(lastView) })
@@ -684,6 +934,10 @@ function renderStoryteller() {
   let teamPickSeat = null // 阵营转变:正在为该座位选择新阵营(善良/邪恶)
   let madPickSeat = null // 疯狂:正在为该座位选择「疯狂宣称哪个善良角色」
   let opState = { key: null, pick: [], char: null } // 夜晚代操作(空座测试):当前步骤的选人/角色状态
+  let endPick = false // 结算:点「🏁 结算」后显示获胜方选择
+  let reviewMode = false // 终局后:魔典切换为独立复盘视图(标错/讲解用)
+  let stChatOpen = null // 私聊总览:展开查看哪个群的消息流
+  let stArchiveOpen = null // 私聊档案:展开查看哪个已关闭群的留档
   let travelerPick = null // 旅行者:正在为这个旅行者指派角色(t1..)/选阵营
   let travelerAlign = 'good' // 旅行者指派时的阵营选择(官方:绝大多数情况给善良)
   let configArm = false // 配置两步确认:第一次点提示,3 秒内再点才执行(不弹系统框)
@@ -698,12 +952,54 @@ function renderStoryteller() {
       lunatic_bluffs: lunaticBluffs, fakes_pending: fakesPending, room_code: roomCode,
       travelers, traveler_roles, traveler_recommended: travelerRec, total_players: totalPlayers,
       exile_quorum: exileQuorum, day_stage: dayStage, players, night_kills: nightKills,
-      fortuneteller_red: fortunetellerRed, night_choices: nightChoices, night_actions: nightActions } = view
+      fortuneteller_red: fortunetellerRed, night_choices: nightChoices, night_actions: nightActions,
+      winner, fabled, fabled_pool: fabledPool, chats: stChats } = view
     // 旅行者:补上角色对象便于展示;阵营说书人可见(玩家只知道自己的)
     const tById = Object.fromEntries((traveler_roles || []).map((r) => [r.id, r]))
     const tList = (travelers || []).map((t) => ({ ...t, role: t.role_id ? tById[t.role_id] : null }))
     const tNames = Object.fromEntries(tList.map((t) => [t.id, t.name]))
     const nomIsTraveler = current && typeof current.nominee === 'string'
+
+    // 💬 说书人私聊徽章(模板要用,必须先算):有邀请或已在群里时顶栏显眼提示
+    const stChatBadge = (stChats || []).some((c) => !c.closed && (c.invites || []).some((i) => i.who === 'st'))
+      ? '有私聊邀请!'
+      : (stChats || []).some((c) => !c.closed && (c.members || []).some((m) => m.who === 'st'))
+        ? '你在私聊中' : ''
+    const stChatName = (w) => (String(w) === 'st' ? '🕯 说书人'
+      : (/^\d+$/.test(String(w)) ? (((seats.find((x) => x.seat === Number(w)) || {}).player || {}).name || `${w}号`)
+        : (((tList || []).find((t) => t.id === w) || {}).name || w)))
+
+    // ---- 📜 独立复盘视图(终局后魔典切换):时间线 + 标错/撤销标注 ----
+    if (winner && reviewMode) {
+      const review = view.review || { groups: [], has_data: false }
+      app.replaceChildren(h(`<div class="page st">
+        <div class="st-head"><h1>📜 复盘</h1><span class="sub">血染钟楼 · 终局复盘(说书人讲解用)</span>
+          <div class="st-actions"><button class="btn" id="review-back">↩ 返回魔典</button></div></div>
+        <div class="review-page">
+          ${review.has_data
+            ? review.groups.map((g) => `<div class="review-group"><h4>${esc(g.label)}</h4>`
+                + g.items.map((it) => `<div class="review-line ${it.wrong ? 'wrong' : ''}">
+                    <span>${it.wrong ? '⚠ ' : ''}${it.text}${it.why ? ` <span class="review-why">(${esc(it.why)})</span>` : ''}</span>
+                    ${it.mark ? `<button class="chip small ${it.wrong ? '' : 'danger'}" data-mark-seat="${it.mark.seat}"
+                      data-mark-night="${it.mark.night}" data-mark-wrong="${it.wrong ? 0 : 1}">${it.wrong ? '↩ 撤销标错' : '❌ 标错'}</button>` : ''}
+                  </div>`).join('') + '</div>').join('')
+            : '<p class="hint">本局没有复盘数据(旧存档或未记录事件)</p>'}
+        </div>
+      </div>`))
+      document.getElementById('review-back').onclick = () => { reviewMode = false; paint(view) }
+      document.querySelectorAll('[data-mark-seat]').forEach((b) => {
+        b.onclick = async () => {
+          try {
+            await stApi('/api/review/mark', { method: 'POST', body: JSON.stringify({
+              seat: Number(b.dataset.markSeat), night: Number(b.dataset.markNight),
+              wrong: b.dataset.markWrong === '1' }) })
+          } catch (e) {
+            // 推送会重绘,此处只需吞掉错误(标错目标不存在等)
+          }
+        }
+      })
+      return
+    }
     const minP = scripts.find((s) => s.id === script)?.min || 5 // 该板子的人数下限(瓦釜雷鸣 7 人起)
     const seatedCount = seats.filter((s) => s.player).length
     if (status === 'playing') { manual = false; draft = {}; draftFakes = {}; draftLunMinions = {}; draftLunBluffs = {} } // 发牌完成后退出草稿
@@ -730,8 +1026,24 @@ function renderStoryteller() {
             : ''}
           <button class="btn small ghost" id="load-btn" title="从磁盘恢复上次自动存档">💾 读档</button>
           <button class="btn danger" id="reset-btn">重置本局</button>
+          ${status === 'playing' && !winner ? '<button class="btn primary" id="end-btn">🏁 结算</button>' : ''}
+          ${status === 'playing' && phase === 'day' && !winner && stChatBadge
+            ? `<button class="btn small primary" id="st-chat-badge">💬 ${stChatBadge}</button>`
+            : ''}
         </div>
       </div>
+      ${winner
+        ? `<div class="end-banner">🏆 本局结束:${winner === 'good' ? '善良' : '邪恶'}阵营获胜
+            <button class="chip small primary" id="end-review">📜 复盘</button>
+            <button class="chip small ghost" id="end-undo">↩ 撤销结算</button></div>`
+        : ''}
+      ${endPick
+        ? `<div class="end-pick">🏁 判定获胜方:
+            <button class="chip tc-good" data-end="good">善良阵营获胜</button>
+            <button class="chip tc-evil" data-end="evil">邪恶阵营获胜</button>
+            <button class="chip ghost" id="end-cancel">取消</button>
+          </div>`
+        : ''}
       <p class="error" id="err" style="display:none"></p>
       <div class="st-body">
         <div class="st-left">
@@ -752,6 +1064,9 @@ function renderStoryteller() {
               <button class="btn small" id="room-random" title="随机换一个房间号">🎲</button>
             </label>
             <span class="hint">修改板子/人数会清空座位,玩家需重新入座</span>
+            <span class="hint">🧙 传奇角色(公开,说书人勾选):
+              ${(fabledPool || []).map((f) => `<button class="chip small fabled-chip ${(fabled || []).some((x) => x.id === f.id) ? 'on' : ''}" data-fabled="${f.id}" title="${esc(f.ability)}">${esc(f.name)}</button>`).join('')}
+            </span>
             <span class="hint">🧙 哨兵(神职角色,外来者数调整):
               ${[0, -1, 2, 1].map((v) => {
                 // 关 / −1 / 不变 / +1;「不变」= 哨兵在场但不调整,方向保密玩家只知在场。
@@ -801,6 +1116,16 @@ function renderStoryteller() {
           <h3>玩家加入</h3>
           <img src="/api/qr?t=${encodeURIComponent(roomCode)}" alt="加入二维码" class="qr">
           <p class="hint">房间号 <b>${esc(roomCode)}</b> · 扫码自动预填,改号后请告知玩家新码</p>
+          ${(stChats || []).filter((c) => c.closed).length
+            ? `<div class="wish-list"><h4>📦 私聊档案(说书人留档,玩家端已销毁)</h4>
+                ${stChats.filter((c) => c.closed).map((c) => `<p class="wish-line">
+                  <button class="chip small" data-st-archive="${c.id}">${stArchiveOpen === c.id ? '收起' : '查看'}</button>
+                  <span class="chat-dot" style="background:${c.color}"></span>${(c.members || []).map((m) => esc(m.name)).join('、')}</p>
+                  ${stArchiveOpen === c.id ? `<div class="st-chat-msgs">${c.messages.length
+                    ? c.messages.map((m) => `<p class="chat-msg"><b>${esc(m.name)}</b>:${esc(m.text)}</p>`).join('')
+                    : '<p class="hint">无消息</p>'}</div>` : ''}`).join('')}
+              </div>`
+            : ''}
           ${(players || []).filter((p) => p.wish).length
             ? `<div class="wish-list"><h4>🙏 许愿(配板参考)</h4>
                 ${players.filter((p) => p.wish).map((p) => `<p class="wish-line">${esc(p.name)}${p.seat ? `(${p.seat}号)` : '(未入座)'} → <span class="wish-tag ${p.wish === '善良' ? 'good' : p.wish === '邪恶' ? 'evil' : ''}">${esc(p.wish)}</span></p>`).join('')}
@@ -810,6 +1135,7 @@ function renderStoryteller() {
       </div>
     </div>`))
 
+    dramaOverlay(roomCode, phase, nightNo, status) // 🕯 第一夜戏剧(说书人端同步播放)
     const err = document.getElementById('err')
     async function act(fn) {
       try {
@@ -1454,12 +1780,34 @@ function renderStoryteller() {
       const talkBody = dayStage === 'talk'
         ? '<p class="hint">玩家正在公聊/私聊:准备好后切换「🗳 提名阶段」开放提名与投票</p>'
         : ''
+      // 💬 私聊总览:说书人查看所有内容、可被邀请进群、可关闭/召回
+      const stInvites = (stChats || []).filter((c) => !c.closed && (c.invites || []).some((i) => i.who === 'st'))
+      const stChatsBox = (stChats || []).some((c) => !c.closed)
+        ? `<div class="st-chats">
+            <h4>💬 私聊 <button class="chip small ghost" id="chat-recall">🔔 召回全部</button></h4>
+            ${stInvites.map((c) => `<p class="chat-invite">🙋 邀请说书人进群(${esc(stChatName(c.owner))}发起)
+              <button class="chip small primary" data-st-inv="${c.id}" data-st-inv-y="1">✅ 接受</button>
+              <button class="chip small ghost" data-st-inv="${c.id}" data-st-inv-y="0">❌ 拒绝</button></p>`).join('')}
+            ${(stChats || []).filter((c) => !c.closed).map((c) => `<div class="st-chat-row ${(c.members || []).some((m) => m.who === 'st') ? 'mine' : ''}">
+              <span class="chat-dot" style="background:${c.color}"></span>
+              ${(c.members || []).map((m) => esc(m.name)).join('、')}${(c.members || []).some((m) => m.who === 'st') ? '<span class="hint">(你在群里)</span>' : ''}
+              <button class="chip small" data-st-view="${c.id}">${stChatOpen === c.id ? '收起' : '查看'}</button>
+              <button class="chip small ghost" data-st-close="${c.id}">关闭</button>
+            </div>
+            ${stChatOpen === c.id ? `<div class="st-chat-msgs">
+              ${c.messages.length ? c.messages.map((m) => `<p class="chat-msg"><b>${esc(m.name)}</b>:${esc(m.text)}</p>`).join('') : '<p class="hint">暂无消息</p>'}
+              ${(c.members || []).some((m) => m.who === 'st') ? `<div class="chat-input"><input class="input" id="st-chat-text" maxlength="500" placeholder="以说书人身份发言">
+                <button class="btn small primary" id="st-chat-send">发送</button></div>` : '<p class="hint">(未入群,仅查看)</p>'}
+            </div>` : ''}`).join('')}
+          </div>`
+        : ''
       const box = h(`<div class="st-detail">
         ${strip}
         <div class="day-panel">
           <h3>☀️ 第 ${dayNo} 天 · 存活 ${aliveCount} 人 · ${dayStage === 'nom' ? '🗳 提名阶段' : '💬 公聊私聊'}</h3>
           ${stageBox}
           ${talkBody}
+          ${stChatsBox}
           ${voting}
           ${hist}
           <div class="st-detail-actions"><button class="btn small primary" id="day-end">🌙 天黑 → 第 ${nightNo + 1} 夜</button></div>
@@ -1470,6 +1818,27 @@ function renderStoryteller() {
       box.querySelectorAll('[data-stage]').forEach((b) => {
         b.onclick = () => act(() => stApi('/api/day/stage', { method: 'POST', body: JSON.stringify({ stage: b.dataset.stage }) }))
       })
+      // 私聊总览操作
+      const recallBtn = box.querySelector('#chat-recall')
+      if (recallBtn) recallBtn.onclick = () => act(() => stApi('/api/chat-st/recall', { method: 'POST' }))
+      box.querySelectorAll('[data-st-inv]').forEach((b) => {
+        b.onclick = () => {
+          if (b.dataset.stInvY === '1') stChatOpen = Number(b.dataset.stInv) // 接受后直接展开消息流
+          act(() => stApi(`/api/chat-st/${b.dataset.stInv}/invite`, { method: 'POST', body: JSON.stringify({ accept: b.dataset.stInvY === '1' }) }))
+        }
+      })
+      box.querySelectorAll('[data-st-view]').forEach((b) => {
+        b.onclick = () => { stChatOpen = stChatOpen === Number(b.dataset.stView) ? null : Number(b.dataset.stView); paint(view) }
+      })
+      box.querySelectorAll('[data-st-close]').forEach((b) => {
+        b.onclick = () => act(() => stApi(`/api/chat-st/${b.dataset.stClose}/close`, { method: 'POST' }))
+      })
+      const stSend = box.querySelector('#st-chat-send')
+      if (stSend) stSend.onclick = () => {
+        const v = (box.querySelector('#st-chat-text').value || '').trim()
+        if (!v) return
+        act(() => stApi(`/api/chat-st/${stChatOpen}/send`, { method: 'POST', body: JSON.stringify({ text: v }) }))
+      }
       const go = document.getElementById('nom-go')
       if (go) go.onclick = () => {
         const parseTarget = (v) => (/^t\d+$/.test(v) ? v : Number(v)) // 旅行者 id 保持字符串
@@ -1502,6 +1871,15 @@ function renderStoryteller() {
         return null
       },
       voted: (s) => status === 'playing' && phase === 'day' && current && s.player && current.votes.includes(s.seat),
+      bubble: (s) => {
+        const c = (stChats || []).find((x) => !x.closed && (x.members || []).some((m) => String(m.who) === String(s.seat)))
+        return c ? c.color : null
+      },
+      centerBubble: () => {
+        const c = (stChats || []).find((x) => !x.closed && (x.members || []).some((m) => String(m.who) === 'st'))
+        return c ? c.color : null
+      },
+      centerHanged: phase === 'night' && nightNo === 1,
       markers: (s) => [...(s.markers || []), ...(fortunetellerRed === s.seat ? ['redherring'] : [])], // 🐟 占卜师宿敌(仅说书人可见)
       clickSeat: (s) => {
         // 投票进行中:点座位 = 记录举手/放下(空座有预发角色同样可投,按座位级生死)
@@ -1732,6 +2110,9 @@ function renderStoryteller() {
     document.querySelectorAll('.sentinel-chip').forEach((b) => {
       b.onclick = () => act(() => stApi('/api/sentinel', { method: 'POST', body: JSON.stringify({ value: Number(b.dataset.sentinel) }) }))
     })
+    document.querySelectorAll('.fabled-chip').forEach((b) => {
+      b.onclick = () => act(() => stApi('/api/fabled', { method: 'POST', body: JSON.stringify({ id: b.dataset.fabled, on: !(fabled || []).some((x) => x.id === b.dataset.fabled) }) }))
+    })
     const roomInput = document.getElementById('room-code')
     const applyRoom = () => {
       const v = roomInput.value.trim()
@@ -1757,6 +2138,31 @@ function renderStoryteller() {
     armClick(document.getElementById('reset-btn'), '⚠ 确认重置本局?', () => act(() => stApi('/api/reset', { method: 'POST' })))
     document.getElementById('load-btn').onclick = null
     armClick(document.getElementById('load-btn'), '⚠ 确认读档?', () => act(() => stApi('/api/load', { method: 'POST' })))
+    document.querySelectorAll('[data-st-archive]').forEach((b) => {
+      b.onclick = () => { stArchiveOpen = stArchiveOpen === Number(b.dataset.stArchive) ? null : Number(b.dataset.stArchive); paint(view) }
+    })
+    // 💬 说书人私聊徽章:点击直达对应群
+    const stChatBadgeBtn = document.getElementById('st-chat-badge')
+    if (stChatBadgeBtn) stChatBadgeBtn.onclick = () => {
+      const target = (stChats || []).find((c) => !c.closed && (c.invites || []).some((i) => i.who === 'st'))
+        || (stChats || []).find((c) => !c.closed && (c.members || []).some((m) => m.who === 'st'))
+      stChatOpen = target ? target.id : null
+      selected = null
+      paint(view)
+    }
+
+    // ---- 结算:宣布游戏结束 + 判定获胜方(可撤销),终局后进入独立复盘视图 ----
+    const endBtn = document.getElementById('end-btn')
+    if (endBtn) endBtn.onclick = () => { endPick = true; paint(view) }
+    const endCancel = document.getElementById('end-cancel')
+    if (endCancel) endCancel.onclick = () => { endPick = false; paint(view) }
+    document.querySelectorAll('[data-end]').forEach((b) => {
+      b.onclick = () => { endPick = false; act(() => stApi('/api/end', { method: 'POST', body: JSON.stringify({ winner: b.dataset.end }) })) }
+    })
+    const endUndo = document.getElementById('end-undo')
+    if (endUndo) endUndo.onclick = () => act(() => stApi('/api/end', { method: 'POST', body: JSON.stringify({ winner: null }) }))
+    const endReview = document.getElementById('end-review')
+    if (endReview) endReview.onclick = () => { reviewMode = true; paint(view) }
   }
 
   const pw = encodeURIComponent(localStorage.getItem(ST_PASSWORD_KEY) || '')
