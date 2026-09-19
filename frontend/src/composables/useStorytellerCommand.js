@@ -1,0 +1,31 @@
+import { ref, unref } from 'vue'
+
+export function useStorytellerCommand({ connected }) {
+  const pending = ref(null)
+  const error = ref(null)
+
+  function clearError(key = null) {
+    if (!key || error.value?.key === key) error.value = null
+  }
+
+  async function run(key, operation) {
+    clearError()
+    if (!unref(connected)) {
+      error.value = { key, message: '连接中，暂时不能操作' }
+      return null
+    }
+    if (pending.value) return null
+
+    pending.value = key
+    try {
+      return await operation()
+    } catch (cause) {
+      error.value = { key, message: cause?.message || '操作失败，请稍后重试' }
+      return null
+    } finally {
+      pending.value = null
+    }
+  }
+
+  return { pending, error, run, clearError }
+}
