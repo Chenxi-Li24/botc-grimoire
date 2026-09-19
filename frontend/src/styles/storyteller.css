@@ -103,6 +103,10 @@
 .segmented-control button, .choice-chip { padding: 6px 8px; font-size: 11px; }
 .segmented-control button.active, .choice-chip.active { border-color: #d6ad55; background: #57442a; color: #ffe3a3; }
 button:disabled, select:disabled { opacity: .48; cursor: not-allowed; }
+.assignment-controls { border-top: 1px solid var(--line); padding-top: 14px; }
+.assignment-controls h3 { margin-top: 4px; font-size: 16px; }
+.start-control { display: grid; gap: 10px; padding: 12px; border: 1px solid #6d592e; border-radius: 12px; background: rgb(87 68 42 / 22%); }
+.start-control .btn { width: 100%; }
 .storyteller-empty-board,
 .storyteller-empty-context { height: 100%; display: grid; place-items: center; color: var(--dim); }
 .storyteller-backdrop { display: none; }

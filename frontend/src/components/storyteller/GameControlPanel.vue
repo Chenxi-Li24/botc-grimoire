@@ -8,8 +8,9 @@ const props = defineProps({
   connected: { type: Boolean, default: false },
   pending: { type: String, default: null },
   error: { type: Object, default: null },
+  manualActive: { type: Boolean, default: false },
 })
-defineEmits(['configure', 'set-sentinel', 'toggle-fabled'])
+defineEmits(['configure', 'set-sentinel', 'toggle-fabled', 'begin-manual', 'assign-random', 'start'])
 const scriptName = computed(() => getScriptName(props.view))
 const seatedCount = computed(() => props.view.seats?.filter((seat) => seat.player).length || 0)
 </script>
@@ -21,9 +22,13 @@ const seatedCount = computed(() => props.view.seats?.filter((seat) => seat.playe
     :connected="connected"
     :pending="pending"
     :error="error"
+    :manual-active="manualActive"
     @configure="$emit('configure', $event)"
     @set-sentinel="$emit('set-sentinel', $event)"
     @toggle-fabled="$emit('toggle-fabled', $event)"
+    @begin-manual="$emit('begin-manual')"
+    @assign-random="$emit('assign-random')"
+    @start="$emit('start')"
   />
   <div v-else class="panel-content">
     <div>
