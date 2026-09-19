@@ -154,11 +154,13 @@ body:has(.storyteller-shell) { overflow: hidden; }
 .grimoire-seat.is-dead { filter: grayscale(.75); opacity: .62; }
 .grimoire-seat.is-selected { outline: 3px solid #f0c66b; outline-offset: 3px; }
 .grimoire-seat.is-contextual { box-shadow: 0 0 0 4px rgb(192 57 43 / 35%); }
-.seat-number, .seat-role, .seat-life, .seat-marker { font-size: 10px; }
+.grimoire-seat.is-draft { background: color-mix(in srgb, #57442a 32%, var(--panel)); }
+.seat-number, .seat-role, .seat-life, .seat-marker, .seat-draft { font-size: 10px; }
 .seat-number, .seat-role { color: var(--dim); }
 .seat-player { max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .seat-life { color: var(--danger); }
 .seat-marker { padding: 1px 5px; border-radius: 999px; background: #57442a; color: #ffe3a3; }
+.seat-draft { color: #ffd479; }
 .grimoire-center {
   position: absolute;
   left: 50%;
@@ -200,6 +202,25 @@ body:has(.storyteller-shell) { overflow: hidden; }
 .detail-markers { display: flex; flex-wrap: wrap; gap: 6px; }
 .detail-markers span { padding: 4px 8px; border-radius: 999px; background: #57442a; color: #ffe3a3; font-size: 12px; }
 .player-context .btn { text-align: center; text-decoration: none; }
+.manual-assignment-panel { gap: 14px; }
+.manual-summary { display: grid; gap: 7px; padding: 10px; border: 1px solid var(--line); border-radius: 11px; }
+.composition-row { display: flex; flex-wrap: wrap; gap: 5px; }
+.composition-row span { padding: 3px 6px; border-radius: 999px; background: rgb(255 255 255 / 5%); color: var(--dim); font-size: 11px; }
+.composition-row span.mismatch { color: #ffd479; background: rgb(125 93 43 / 22%); }
+.role-picker { display: grid; gap: 12px; }
+.role-picker-group { display: grid; gap: 7px; }
+.role-picker-group h4, .manual-subsection h4 { font-size: 12px; color: var(--dim); }
+.role-choice { display: inline-flex; align-items: center; gap: 4px; }
+.role-choice small { color: var(--dim); }
+.role-choice.used { opacity: .45; }
+.choice-chip.team-townsfolk { border-color: #407ba1; }
+.choice-chip.team-outsider { border-color: #405f9b; }
+.choice-chip.team-minion { border-color: #8d4449; }
+.choice-chip.team-demon { border-color: #9e3232; }
+.manual-subsection { display: grid; gap: 9px; padding-top: 12px; border-top: 1px solid var(--line); }
+.manual-subheading { display: flex; justify-content: space-between; gap: 10px; }
+.manual-empty { min-height: 90px; display: grid; place-items: center; color: var(--dim); text-align: center; }
+.manual-actions { position: sticky; bottom: -18px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px 0 18px; background: linear-gradient(transparent, var(--panel) 18%); }
 
 @media (max-width: 1179px) {
   .storyteller-grid { grid-template-columns: minmax(0, 1fr); }
