@@ -67,6 +67,67 @@
 .storyteller-backdrop { display: none; }
 body:has(.storyteller-shell) { overflow: hidden; }
 
+.grimoire-stage {
+  height: 100%;
+  padding: 12px;
+  display: grid;
+  place-items: center;
+}
+
+.grimoire-board {
+  position: relative;
+  width: min(100%, 650px);
+  max-height: calc(100dvh - 128px);
+  aspect-ratio: 1;
+}
+
+.grimoire-seat {
+  --team-color: var(--line);
+  position: absolute;
+  left: var(--seat-x);
+  top: var(--seat-y);
+  width: 82px;
+  min-height: 70px;
+  padding: 7px 6px;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  border: 2px solid var(--team-color);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 88%, black);
+  color: var(--text);
+  cursor: pointer;
+}
+.grimoire-seat.team-townsfolk { --team-color: #57a8d9; }
+.grimoire-seat.team-outsider { --team-color: #4f78c8; }
+.grimoire-seat.team-minion { --team-color: #c45a62; }
+.grimoire-seat.team-demon { --team-color: #e23d3d; }
+.grimoire-seat.team-traveler { --team-color: #d6ad55; }
+.grimoire-seat.is-empty { opacity: .42; border-style: dashed; }
+.grimoire-seat.is-dead { filter: grayscale(.75); opacity: .62; }
+.grimoire-seat.is-selected { outline: 3px solid #f0c66b; outline-offset: 3px; }
+.grimoire-seat.is-contextual { box-shadow: 0 0 0 4px rgb(192 57 43 / 35%); }
+.seat-number, .seat-role, .seat-life, .seat-marker { font-size: 10px; }
+.seat-number, .seat-role { color: var(--dim); }
+.seat-player { max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.seat-life { color: var(--danger); }
+.seat-marker { padding: 1px 5px; border-radius: 999px; background: #57442a; color: #ffe3a3; }
+.grimoire-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--dim);
+}
+.grimoire-center span { font-size: 36px; }
+.grimoire-center strong { font-size: 13px; }
+
 @media (max-width: 1179px) {
   .storyteller-grid { grid-template-columns: minmax(0, 1fr); }
   .storyteller-controls,
