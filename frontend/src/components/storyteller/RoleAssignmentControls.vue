@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import { expectedComposition } from '../../presentation/manualAssignment.js'
 import { getScriptName } from '../../presentation/storyteller.js'
 import ConfirmAction from './ConfirmAction.vue'
 
@@ -12,8 +13,9 @@ const props = defineProps({
 })
 const emit = defineEmits(['begin-manual', 'assign-random'])
 const teamLabels = ['镇民', '外来者', '爪牙', '恶魔']
+const composition = computed(() => expectedComposition(props.view, {}))
 const summary = computed(() => (
-  `${getScriptName(props.view)} · ${props.view.player_count} 人 · ${teamLabels.map((label, index) => `${label}${props.view.composition?.[index] || 0}`).join(' / ')}。确认后会立即发牌并进入第一夜。`
+  `${getScriptName(props.view)} · ${props.view.player_count} 人 · ${teamLabels.map((label, index) => `${label}${composition.value[index] || 0}`).join(' / ')}。确认后会立即发牌并进入第一夜。`
 ))
 </script>
 

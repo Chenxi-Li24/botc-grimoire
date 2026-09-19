@@ -43,6 +43,14 @@ it('requires confirmation before random assignment starts the first night', asyn
   expect(wrapper.emitted('assign-random')).toEqual([[]])
 })
 
+it('shows the Sentinel-adjusted composition before random assignment', async () => {
+  const wrapper = mount(RoleAssignmentControls, {
+    props: { view: { ...lobbyView, sentinel: 1 }, connected: true, pending: [], manualActive: false },
+  })
+  await buttonWithText(wrapper, '随机分配角色').trigger('click')
+  expect(wrapper.text()).toContain('镇民2 / 外来者2 / 爪牙1 / 恶魔1')
+})
+
 it('emits Sentinel and fabled changes independently', async () => {
   const wrapper = mount(AdvancedSettings, {
     props: { view: lobbyView, connected: true, pending: [] },
