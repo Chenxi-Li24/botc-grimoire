@@ -1,4 +1,8 @@
 export async function resolveEntry({ hash, playerId, validatePlayer }) {
+  if (hash.startsWith('#/storyteller-preview')) {
+    return { vuePage: 'storyteller-preview' }
+  }
+
   if (hash.startsWith('#/storyteller')) {
     return { legacyUrl: `/legacy/${hash}` }
   }
