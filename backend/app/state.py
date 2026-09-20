@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .night.models import EffectRecord, EventRecord
+
 
 @dataclass
 class SeatState:
@@ -38,6 +40,8 @@ class GameState:
     player_count: int
     players: dict[str, PlayerAccount] = field(default_factory=dict)
     seats: dict[int, SeatState] = field(default_factory=dict)
+    event_records: list[EventRecord] = field(default_factory=list)
+    effect_records: dict[str, EffectRecord] = field(default_factory=dict)
 
     @classmethod
     def empty(cls, player_count: int) -> "GameState":
@@ -47,6 +51,29 @@ class GameState:
         )
 
     def seat(self, seat: int) -> SeatState:
+        seat = int(seat)
+        if not 1 <= seat <= self.player_count:
+            raise KeyError(seat)
         if seat not in self.seats:
             self.seats[seat] = SeatState(seat=seat)
         return self.seats[seat]
+
+    def replace_from(self, source: "GameState") -> None:
+        """Atomically adopt a validated clone while preserving shared containers."""
+        self.player_count = source.player_count
+        self.players.clear()
+        self.players.update(source.players)
+        for seat in list(self.seats):
+            if seat not in source.seats:
+                del self.seats[seat]
+        for seat, incoming in source.seats.items():
+            current = self.seats.get(seat)
+            if current is None:
+                self.seats[seat] = incoming
+                continue
+            for field_name, value in vars(incoming).items():
+                setattr(current, field_name, value)
+        self.event_records.clear()
+        self.event_records.extend(source.event_records)
+        self.effect_records.clear()
+        self.effect_records.update(source.effect_records)

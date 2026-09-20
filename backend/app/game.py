@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .night_order import NIGHT_ORDER
+from .night.effects import EffectLedger
+from .night.journal import EventJournal
 from .roles import (COMPOSITION, DEMON, MINION, OUTSIDER, SCRIPTS,
                     SCRIPT_ADJUST_ROLES, SCRIPT_PACKS, ROLE_ADJUSTMENTS, TOWNSFOLK)
 from .scripts.travelers import (DUSK_ORDER as TRAVELER_DUSK,
@@ -194,8 +196,11 @@ class GameManager:
         self.chat_seq: int = 0  # 消息自增序号(后加入者按 joined_seq 过滤历史)
         self.events: list[dict] = []  # 复盘事件日志:[{seq, phase, n, seat, type, data}] 追加式,只对新打的局有效
         self.event_seq: int = 0
+        self.journal_events = []  # 新夜晚引擎:可撤销、带依赖的不可变事件
+        self.effect_records = {}  # 新夜晚引擎:含来源、生命周期与完整历史的状态效果
         self.saved_at: float | None = None
         self._legacy_save_backup_pending: bool = False
+        self._bind_night_ledgers()
 
     @property
     def roles(self) -> dict:
@@ -316,7 +321,35 @@ class GameManager:
                 id=player.id, name=player.name, seat=player.seat, wish=player.wish,
             ) for player_id, player in self.players.items()},
             seats=self.seat_states,
+            event_records=self.journal_events,
+            effect_records=self.effect_records,
         )
+
+    def _bind_night_ledgers(self) -> None:
+        core = self._canonical_state()
+        self.journal = EventJournal(core)
+        self.effects = EffectLedger(core)
+
+    def _migrate_legacy_effects(self) -> None:
+        """Expose pre-ledger markers as sourced manual effects without losing history."""
+        for state in self.seat_states.values():
+            for marker in state.legacy_markers:
+                exists = any(
+                    effect.target_seat == state.seat
+                    and effect.type == marker
+                    and effect.payload.get("legacy_marker")
+                    for effect in self.effect_records.values()
+                )
+                if exists:
+                    continue
+                self.effects.apply(
+                    marker,
+                    state.seat,
+                    source_event="migration:legacy_marker",
+                    payload={"legacy_marker": True, "migrated": True,
+                             "about": state.mad_about if marker == "mad" else None},
+                    lifetime_policy={"kind": "manual"},
+                )
 
     def _bind_players_to_seats(self) -> None:
         for state in self.seat_states.values():
@@ -394,10 +427,14 @@ class GameManager:
             self.script_id = script_id
             self.player_count = core.player_count
             self.seat_states = core.seats
+            self.journal_events = core.event_records
+            self.effect_records = core.effect_records
             self.players = {pid: Player(id=account.id, name=account.name,
                                         seat=account.seat, wish=account.wish)
                             for pid, account in core.players.items()}
             self._bind_players_to_seats()
+            self._bind_night_ledgers()
+            self._migrate_legacy_effects()
             for key in ("status", "phase", "night_no",
                         "day_no", "night_steps", "night_idx", "nominations",
                         "current", "bluffs"):
@@ -457,6 +494,9 @@ class GameManager:
         self.seat_states = {
             seat: SeatState(seat=seat) for seat in range(1, player_count + 1)
         }
+        self.journal_events = []
+        self.effect_records = {}
+        self._bind_night_ledgers()
         self.lunatic_minions = {}
         self.lunatic_bluffs = {}
         self.seat_markers = {}  # 状态标记一并清空
@@ -1812,6 +1852,54 @@ class GameManager:
                 self.mad_about[seat] = about
             else:
                 self.mad_about.pop(seat, None)
+        if marker in ("poisoned", "drunk", "mad"):
+            replacement_dependencies: list[str] = []
+            current_effects = [
+                effect for effect in self.effects.current_for_seat(seat)
+                if effect.type == marker and effect.payload.get("legacy_marker")
+            ]
+            if (on and marker == "mad" and current_effects
+                    and any(effect.payload.get("about") != about
+                            for effect in current_effects)):
+                for effect in current_effects:
+                    replacement_event = self.journal.append(
+                        "legacy_effect_replaced",
+                        {"seat": seat, "effect_id": effect.id, "effect_type": marker},
+                        {"op": "restore_effect", "effect": effect.to_dict()},
+                        depends_on=([effect.source_event]
+                                    if any(item.id == effect.source_event
+                                           for item in self.journal.records) else []),
+                    )
+                    replacement_dependencies.append(replacement_event.id)
+                    self.effects.transition(effect.id, "ended", "choice_replaced")
+                current_effects = []
+            if on and not current_effects:
+                effect_id = secrets.token_hex(16)
+                event = self.journal.append(
+                    "legacy_effect_applied",
+                    {"seat": seat, "effect_type": marker, "about": about},
+                    {"op": "end_effect", "effect_id": effect_id},
+                    depends_on=replacement_dependencies,
+                )
+                self.effects.apply(
+                    marker,
+                    seat,
+                    source_event=event.id,
+                    payload={"legacy_marker": True, "about": about},
+                    lifetime_policy={"kind": "manual"},
+                    effect_id=effect_id,
+                )
+            elif not on:
+                for effect in current_effects:
+                    self.journal.append(
+                        "legacy_effect_ended",
+                        {"seat": seat, "effect_id": effect.id, "effect_type": marker},
+                        {"op": "restore_effect", "effect": effect.to_dict()},
+                        depends_on=([effect.source_event]
+                                    if any(item.id == effect.source_event
+                                           for item in self.journal.records) else []),
+                    )
+                    self.effects.transition(effect.id, "ended", "storyteller_removed")
         cur = set(self.seat_markers.get(seat, ()))
         if on:
             cur.add(marker)
@@ -1877,6 +1965,10 @@ class GameManager:
                     slot["role_change"] = self.roles[self.seat_role_changes[i]]
                 if st_view and i in self.seat_team_changes:  # 空座也能标记阵营转变
                     slot["team_change"] = self.seat_team_changes[i]
+                if st_view:
+                    effect_view = self.effects.projection(i)
+                    slot["effects"] = effect_view["badges"]
+                    slot["effect_history"] = effect_view["history"]
                 slots.append(slot)
                 continue
             entry = p.storyteller(self.roles) if st_view else p.public()
@@ -1898,6 +1990,10 @@ class GameManager:
                 slot["role_change"] = self.roles[self.seat_role_changes[i]]
             if st_view and i in self.seat_team_changes:  # 阵营转变:新阵营,说书人可见
                 slot["team_change"] = self.seat_team_changes[i]
+            if st_view:
+                effect_view = self.effects.projection(i)
+                slot["effects"] = effect_view["badges"]
+                slot["effect_history"] = effect_view["history"]
             if my_id is not None:  # is_me 属于座位槽位层,不属于 player
                 slot["is_me"] = p.id == my_id
             slots.append(slot)
