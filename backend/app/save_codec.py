@@ -67,6 +67,7 @@ def decode_save(payload: dict, pack: ScriptPack) -> GameState:
             for delivery_id, item in payload.get("information_deliveries", {}).items()
         }
         state.information_notices = list(payload.get("information_notices", ()))
+        state.pending_transformations = dict(payload.get("pending_transformations", {}))
         return state
 
     state = GameState.empty(player_count)
@@ -143,6 +144,7 @@ def encode_save(state: GameState) -> dict:
         "information_deliveries": {delivery_id: delivery.to_dict()
                                    for delivery_id, delivery in state.information_deliveries.items()},
         "information_notices": list(state.information_notices),
+        "pending_transformations": dict(state.pending_transformations),
     }
     # Validate that round-tripping the canonical section is structurally safe before disk replace.
     if len(payload["seats"]) != state.player_count:

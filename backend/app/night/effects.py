@@ -97,6 +97,7 @@ class EffectLedger:
         return effect
 
     def advance(self, trigger: str, *, source_seat: int | None = None,
+                source_character: str | None = None,
                 source_active: bool | None = None, permanent: bool = False,
                 reason: str | None = None) -> list[EffectRecord]:
         changed: list[EffectRecord] = []
@@ -104,6 +105,9 @@ class EffectLedger:
             if effect.state == "ended":
                 continue
             if source_seat is not None and effect.source_seat != source_seat:
+                continue
+            if (source_character is not None
+                    and effect.source_character != source_character):
                 continue
             policy = effect.lifetime_policy
             kind = policy.get("kind")

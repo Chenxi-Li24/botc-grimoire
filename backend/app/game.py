@@ -205,6 +205,7 @@ class GameManager:
         self.information_drafts = {}
         self.information_deliveries = {}
         self.information_notices = []
+        self.pending_transformations = {}
         self.saved_at: float | None = None
         self._legacy_save_backup_pending: bool = False
         self._bind_night_ledgers()
@@ -335,6 +336,7 @@ class GameManager:
             information_drafts=self.information_drafts,
             information_deliveries=self.information_deliveries,
             information_notices=self.information_notices,
+            pending_transformations=self.pending_transformations,
         )
 
     def _bind_night_ledgers(self) -> None:
@@ -486,6 +488,7 @@ class GameManager:
             self.information_drafts = core.information_drafts
             self.information_deliveries = core.information_deliveries
             self.information_notices = core.information_notices
+            self.pending_transformations = core.pending_transformations
             self.players = {pid: Player(id=account.id, name=account.name,
                                         seat=account.seat, wish=account.wish)
                             for pid, account in core.players.items()}
@@ -563,6 +566,7 @@ class GameManager:
         self.information_drafts = {}
         self.information_deliveries = {}
         self.information_notices = []
+        self.pending_transformations = {}
         self._bind_night_ledgers()
         self.lunatic_minions = {}
         self.lunatic_bluffs = {}

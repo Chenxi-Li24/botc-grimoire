@@ -10,6 +10,7 @@ from ..catalog import ScriptPack
 from ..state import GameState
 from .ability_state import AbilityStateStore
 from .effects import EffectLedger
+from .handlers import PitHagHandler, PitHagPreview, StatusRoleHandlers
 from .information import InformationDelivery, InformationDraft, InformationEngine
 from .journal import EventJournal
 from .models import PendingOutcome
@@ -62,6 +63,8 @@ class NightService:
         self.information = InformationEngine(
             state, pack, journal, effects, self.abilities,
         )
+        self.pit_hag = PitHagHandler(self)
+        self.status_roles = StatusRoleHandlers(self)
 
     def record_fields(self, step_id: str, values: dict[str, Any]) -> NightStep:
         step = next((item for item in self.queue.steps if item.id == step_id), None)
@@ -177,6 +180,8 @@ class NightService:
         )
         character = self.pack.character_by_id.get(step.character_id)
         is_demon_attack = bool(character and character.team == "demon")
+        arbitrary_source = self._arbitrary_death_source()
+        arbitrary = arbitrary_source is not None
         return self.outcomes.create(
             source_event=selection.id,
             source_seat=step.actor_seat,
@@ -186,8 +191,55 @@ class NightService:
                 "step_id": step.id,
                 "night_no": self.queue.night_no,
                 "ability": step.perceived_as or step.character_id,
-                "is_demon_attack": is_demon_attack,
+                "is_demon_attack": is_demon_attack and not arbitrary,
                 "lunatic_choice": step.character_id == "lunatic",
+                "arbitrary": arbitrary,
+                **({
+                    "death_source_seat": arbitrary_source["seat"],
+                    "death_source_character": arbitrary_source["character"],
+                    "death_source_event": arbitrary_source["event_id"],
+                } if arbitrary_source else {}),
+            },
+        )
+
+    def _arbitrary_death_source(self) -> dict[str, Any] | None:
+        for seat in self.state.seats.values():
+            pit_hag = seat.ability_state.get("pithag", {})
+            if self.queue.night_no in pit_hag.get("arbitrary_death_nights", ()):
+                source = pit_hag.get("arbitrary_death_source")
+                if source:
+                    return source
+        return None
+
+    def create_arbitrary_death(self, selected_seats: list[int]) -> PendingOutcome:
+        source = self._arbitrary_death_source()
+        if source is None:
+            raise NavigationConflict(
+                "arbitrary_death_unavailable",
+                "本夜没有麻脸巫婆创造恶魔所产生的任意死亡",
+            )
+        event = self.journal.append(
+            "pit_hag_arbitrary_death_selection",
+            {"source_seat": source["seat"],
+             "source_character": source["character"],
+             "selected_seats": list(selected_seats),
+             "night_no": self.queue.night_no},
+            {"op": "noop"},
+            depends_on=[source["event_id"]],
+        )
+        return self.outcomes.create(
+            source_event=event.id,
+            source_seat=source["seat"],
+            source_character=source["character"],
+            selected_seats=selected_seats,
+            metadata={
+                "night_no": self.queue.night_no,
+                "ability": "pithag_created_demon",
+                "is_demon_attack": False,
+                "arbitrary": True,
+                "death_source_seat": source["seat"],
+                "death_source_character": source["character"],
+                "death_source_event": source["event_id"],
             },
         )
 
@@ -234,6 +286,33 @@ class NightService:
     def correct_information(self, delivery_id: str, claims: list[dict], reason: str) -> dict:
         return self.information.correct(delivery_id, claims, reason)
 
+    def preview_pit_hag(self, actor: int, target: int,
+                        character: str) -> PitHagPreview:
+        return self.pit_hag.preview(actor, target, character)
+
+    def confirm_pit_hag_preview(self, preview_id: str):
+        return self.pit_hag.confirm(preview_id)
+
+    def confirm_pit_hag(self, actor: int, target: int, character: str):
+        preview = self.preview_pit_hag(actor, target, character)
+        return self.confirm_pit_hag_preview(preview.id)
+
+    def apply_poisoner(self, source: int, target: int):
+        return self.status_roles.apply_poisoner(source, target)
+
+    def apply_widow(self, source: int, target: int):
+        return self.status_roles.apply_widow(source, target)
+
+    def apply_cerenovus(self, source: int, target: int,
+                        claimed_character: str):
+        return self.status_roles.apply_cerenovus(source, target, claimed_character)
+
+    def set_source_ability(self, source: int, *, active: bool,
+                           permanent: bool = False):
+        return self.status_roles.set_source_ability(
+            source, active=active, permanent=permanent,
+        )
+
     def deliver_test_information(self, actor: int,
                                  depends_on: list[str] | None = None) -> InformationDelivery:
         prepared = self.prepare_information(
@@ -247,8 +326,7 @@ class NightService:
         return self.deliver_information(prepared.id, result, claims=claims)
 
     def inject_inverse_failure(self, event_id: str) -> None:
-        event = self.journal.get(event_id)
-        event.inverse = {"op": "fail", "message": "injected inverse failure"}
+        self.journal.inject_inverse_failure(event_id)
 
     def undo(self, event_id: str, confirm: bool = False):
         preview = self.journal.undo(event_id, confirm=confirm)
@@ -288,5 +366,10 @@ class NightService:
         projection = self.queue.projection()
         projection["outcomes"] = self.outcomes.projection()
         projection["information"] = self.information.projection()
+        projection["transformations"] = {
+            "pending": [item for item in self.state.pending_transformations.values()
+                        if item.get("status") == "pending"],
+            "history": list(self.state.pending_transformations.values()),
+        }
         projection["context"] = {"lunatic_choices": self._lunatic_context()}
         return projection

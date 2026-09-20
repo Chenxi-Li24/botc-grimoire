@@ -48,6 +48,7 @@ class GameState:
     information_drafts: dict[str, Any] = field(default_factory=dict)
     information_deliveries: dict[str, Any] = field(default_factory=dict)
     information_notices: list[dict[str, Any]] = field(default_factory=list)
+    pending_transformations: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def empty(cls, player_count: int) -> "GameState":
@@ -91,3 +92,5 @@ class GameState:
         self.information_deliveries.update(source.information_deliveries)
         self.information_notices.clear()
         self.information_notices.extend(source.information_notices)
+        self.pending_transformations.clear()
+        self.pending_transformations.update(source.pending_transformations)

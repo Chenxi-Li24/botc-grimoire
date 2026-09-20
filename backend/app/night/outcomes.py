@@ -152,9 +152,16 @@ class OutcomeAdjudicator:
             self.state.seat(seat)
 
         inverse = self._restore_operations(outcome, self.state)
+        sourced_effects: dict[int, list] = {}
         if resolution in {"secret_death", "redirected"}:
             for seat_number in affected:
                 seat = self.state.seat(seat_number)
+                sourced_effects[seat_number] = [
+                    effect for effect in self.state.effect_records.values()
+                    if effect.source_seat == seat_number
+                    and effect.source_character == seat.character_id
+                    and effect.state != "ended"
+                ]
                 inverse.extend([
                     {"op": "set", "path": ["seats", seat_number, "alive"],
                      "value": seat.alive},
@@ -166,6 +173,8 @@ class OutcomeAdjudicator:
                      "value": seat.died_day},
                     {"op": "set", "path": ["seats", seat_number, "death_record"],
                      "value": deepcopy(seat.death_record)},
+                    *({"op": "restore_effect", "effect": effect.to_dict()}
+                      for effect in sourced_effects[seat_number]),
                 ])
         transformations = details.get("transformations", []) if resolution == "transformation" else []
         if resolution == "transformation" and not transformations:
@@ -209,9 +218,12 @@ class OutcomeAdjudicator:
                 seat.death_record = {
                     "event_id": resolution_event.id,
                     "outcome_id": outcome.id,
-                    "source_event": outcome.source_event,
-                    "source_seat": outcome.source_seat,
-                    "source_character": outcome.source_character,
+                    "source_event": outcome.metadata.get(
+                        "death_source_event", outcome.source_event),
+                    "source_seat": outcome.metadata.get(
+                        "death_source_seat", outcome.source_seat),
+                    "source_character": outcome.metadata.get(
+                        "death_source_character", outcome.source_character),
                     "ability": outcome.metadata.get("ability", outcome.source_character),
                     "phase": "night",
                     "night_no": self.queue.night_no,
@@ -224,6 +236,16 @@ class OutcomeAdjudicator:
                     "prevented_or_replaced": details.get("prevented_or_replaced", []),
                     "resolved_at": resolved_at,
                 }
+                changed_effects = self.effects.advance(
+                    "source_death",
+                    source_seat=seat_number,
+                    source_character=seat.character_id,
+                    source_active=False,
+                    permanent=True,
+                    reason="source_died",
+                )
+                for effect in changed_effects:
+                    effect.transitions[-1]["source_event"] = resolution_event.id
         for item in transformations:
             seat = self.state.seat(int(item["seat"]))
             seat.character_id = item["character_id"]

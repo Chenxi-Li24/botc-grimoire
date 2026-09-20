@@ -30,6 +30,12 @@ class EventJournal:
                  inverse_handlers: dict[str, InverseHandler] | None = None) -> None:
         self.state = state
         self.inverse_handlers = inverse_handlers or {}
+        self._injected_inverse_failures: set[str] = set()
+
+    def inject_inverse_failure(self, event_id: str) -> None:
+        """Arm a transient failure without mutating the persisted event ledger."""
+        self.get(event_id)
+        self._injected_inverse_failures.add(event_id)
 
     @property
     def records(self) -> list[EventRecord]:
@@ -201,6 +207,8 @@ class EventJournal:
         retractions: list[EventRecord] = []
         try:
             for original in ordered:
+                if original.id in self._injected_inverse_failures:
+                    raise UndoConflict("injected inverse failure")
                 event = candidate_by_id[original.id]
                 if self._is_message(event):
                     if event.inverse.get("op") == "fail":

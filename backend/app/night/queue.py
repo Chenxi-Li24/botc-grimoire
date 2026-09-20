@@ -95,6 +95,9 @@ class NightQueue:
                 return "skipped", "requires_demon_attack", []
             dependencies = [seat.died_at] if seat.died_at else []
             return "upcoming", None, dependencies
+        if (character.team == "demon"
+                and ability.get("created_demon_no_kill_night") == self.night_no):
+            return "skipped", "created_demon_no_kill_this_night", []
         if not seat.alive:
             return "skipped", "actor_dead", []
         if ability.get("active") is False or ability.get("can_act") is False:
