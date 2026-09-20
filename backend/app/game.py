@@ -13,18 +13,21 @@ import random
 import secrets
 import time
 from collections import Counter
-from dataclasses import dataclass
+from collections.abc import MutableMapping
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .night_order import NIGHT_ORDER
 from .roles import (COMPOSITION, DEMON, MINION, OUTSIDER, SCRIPTS,
-                    SCRIPT_ADJUST_ROLES, ROLE_ADJUSTMENTS, TOWNSFOLK)
+                    SCRIPT_ADJUST_ROLES, SCRIPT_PACKS, ROLE_ADJUSTMENTS, TOWNSFOLK)
 from .scripts.travelers import (DUSK_ORDER as TRAVELER_DUSK,
                                 RECOMMENDED as TRAVELER_RECOMMENDED,
                                 ROLE_BY_ID as TRAVELER_BY_ID,
                                 ROLES as TRAVELERS)
 from .scripts.wafu_leiming import NIGHT_ACTIONS
 from .scripts.fabled import ROLES as FABLED, ROLE_BY_ID as FABLED_BY_ID
+from .save_codec import decode_save, encode_save
+from .state import GameState, PlayerAccount, SeatState
 
 SAVE_PATH = Path(__file__).resolve().parent.parent / "data" / "game.json"
 
@@ -41,11 +44,48 @@ class Player:
     id: str
     name: str
     seat: int | None = None
-    role_id: str | None = None
-    alive: bool = True
-    died_day: int | None = None  # 死亡公开在第几天:夜里死=该夜天亮的 day_no,白天死=当天 day_no;复活/未死=None
-    dead_vote_used: bool = False  # 死票:每个死者整局只有一票,举手交出后置 True(复活重置)
     wish: str | None = None  # 许愿(仅大厅):善良/邪恶或自定义文字,说书人配板时参考;仅本人与说书人可见
+    _seat_state: SeatState | None = field(default=None, repr=False, compare=False)
+
+    def bind(self, seat_state: SeatState | None) -> None:
+        self._seat_state = seat_state
+
+    @property
+    def role_id(self) -> str | None:
+        return self._seat_state.character_id if self._seat_state else None
+
+    @role_id.setter
+    def role_id(self, value: str | None) -> None:
+        if self._seat_state is not None:
+            self._seat_state.character_id = value
+
+    @property
+    def alive(self) -> bool:
+        return self._seat_state.alive if self._seat_state else True
+
+    @alive.setter
+    def alive(self, value: bool) -> None:
+        if self._seat_state is not None:
+            self._seat_state.alive = value
+            self._seat_state.public_alive = value
+
+    @property
+    def died_day(self) -> int | None:
+        return self._seat_state.died_day if self._seat_state else None
+
+    @died_day.setter
+    def died_day(self, value: int | None) -> None:
+        if self._seat_state is not None:
+            self._seat_state.died_day = value
+
+    @property
+    def dead_vote_used(self) -> bool:
+        return self._seat_state.dead_vote_used if self._seat_state else False
+
+    @dead_vote_used.setter
+    def dead_vote_used(self, value: bool) -> None:
+        if self._seat_state is not None:
+            self._seat_state.dead_vote_used = value
 
     def public(self) -> dict:
         return {"id": self.id, "name": self.name, "seat": self.seat, "alive": self.alive}
@@ -67,31 +107,72 @@ class Player:
         return view
 
 
+class _SeatFieldMap(MutableMapping):
+    """Legacy mapping facade whose only storage is canonical SeatState."""
+
+    def __init__(self, manager, field_name, missing, on_set=None):
+        self.manager = manager
+        self.field_name = field_name
+        self.missing = missing
+        self.on_set = on_set
+
+    def _value(self, seat):
+        return getattr(self.manager.seat_state(int(seat)), self.field_name)
+
+    def __getitem__(self, seat):
+        value = self._value(seat)
+        if self.missing(value):
+            raise KeyError(seat)
+        return value
+
+    def __setitem__(self, seat, value):
+        state = self.manager.seat_state(int(seat))
+        setattr(state, self.field_name, value)
+        if self.on_set:
+            self.on_set(state, value)
+
+    def __delitem__(self, seat):
+        state = self.manager.seat_state(int(seat))
+        value = getattr(state, self.field_name)
+        if self.missing(value):
+            raise KeyError(seat)
+        if isinstance(value, list):
+            replacement = []
+        elif isinstance(value, bool):
+            replacement = not value
+        else:
+            replacement = None
+        setattr(state, self.field_name, replacement)
+        if self.on_set:
+            self.on_set(state, replacement)
+
+    def __iter__(self):
+        return (seat for seat in self.manager.seat_states
+                if not self.missing(self._value(seat)))
+
+    def __len__(self):
+        return sum(1 for _ in self)
+
+
 class GameManager:
     """一局游戏的全部状态;每次变更自动存档,重启自动恢复。"""
 
     def __init__(self) -> None:
-        self.reset()
         self.script_id: str = "trouble-brewing"  # 说书人可配置
         self.player_count: int = 6
+        self.reset()
         self._restore_autosave()  # 进程重启 → 恢复上次存档(若有)
 
     def reset(self) -> None:
         # 注意:reset 不写盘 → 误重置可用「读档」撤销;开始新局的第一次变更会覆盖存档
         self.players: dict[str, Player] = {}
+        self.seat_states: dict[int, SeatState] = {
+            seat: SeatState(seat=seat) for seat in range(1, self.player_count + 1)
+        }
         self.status: str = "lobby"  # lobby | playing
-        self.seat_roles: dict[int, str] = {}  # 预发身份:座位号 → 角色 id(未入座也能先发)
         self.current_dead_votes: set[int] = set()  # 当前提名中交出的死票座位(结算即清空;未结算时取消举手可归还)
-        self.seat_fakes: dict[int, str] = {}  # 认知覆盖:座位号 → 玩家看到的假角色 id(酒鬼/疯子)
         self.lunatic_minions: dict[int, list[int]] = {}  # 疯子:座位号 → 疯子以为的爪牙座位(说书人选,不一定是真爪牙)
         self.lunatic_bluffs: dict[int, list[str]] = {}  # 疯子:座位号 → 说书人给疯子的 3 个伪装(不一定是恶魔的真伪装)
-        self.seat_markers: dict[int, list] = {}  # 状态标记:座位号 → [poisoned/drunk/mad]
-        self.mad_about: dict[int, str] = {}  # 疯狂内容:座位号 → 善良角色 id(被疯狂者疯狂宣称自己是该角色)
-        self.seat_alive: dict[int, bool] = {}  # 空座生死(说书人标记为准):只存 False,复活即删除
-        self.seat_dead_day: dict[int, int] = {}  # 空座死亡公开在第几天
-        self.seat_dead_vote: dict[int, bool] = {}  # 空座死票是否已交
-        self.seat_role_changes: dict[int, str] = {}  # 角色转变:座位号 → 变成的新角色 id(说书人选择标记,告知玩家)
-        self.seat_team_changes: dict[int, str] = {}  # 阵营转变:座位号 → 新阵营 good/evil(说书人选择标记,告知玩家)
         self.phase: str | None = None  # None(大厅)| "night" | "day"
         self.day_stage: str = "talk"  # 白天子阶段:"talk" 公聊私聊 | "nom" 提名阶段(说书人控节奏)
         self.night_no: int = 1  # 当前是第几夜(1 起)
@@ -114,6 +195,7 @@ class GameManager:
         self.events: list[dict] = []  # 复盘事件日志:[{seq, phase, n, seat, type, data}] 追加式,只对新打的局有效
         self.event_seq: int = 0
         self.saved_at: float | None = None
+        self._legacy_save_backup_pending: bool = False
 
     @property
     def roles(self) -> dict:
@@ -122,6 +204,130 @@ class GameManager:
     @property
     def seats(self) -> dict[int, Player]:
         return {p.seat: p for p in self.players.values() if p.seat is not None}
+
+    def seat_state(self, seat: int) -> SeatState:
+        if not 1 <= int(seat) <= self.player_count:
+            raise KeyError(seat)
+        seat = int(seat)
+        if seat not in self.seat_states:
+            self.seat_states[seat] = SeatState(seat=seat)
+        return self.seat_states[seat]
+
+    def _replace_seat_map(self, field_name, values, empty_value, on_set=None) -> None:
+        for state in self.seat_states.values():
+            setattr(state, field_name, empty_value() if callable(empty_value) else empty_value)
+            if on_set:
+                on_set(state, getattr(state, field_name))
+        view = _SeatFieldMap(self, field_name, lambda value: False, on_set)
+        for seat, value in (values or {}).items():
+            view[int(seat)] = value
+
+    def _character_changed(self, state: SeatState, character_id: str | None) -> None:
+        if state.team_change_notice is not None:
+            return
+        role = self.roles.get(character_id) if character_id else None
+        state.alignment = "evil" if role and role["team"] in (MINION, DEMON) else "good"
+
+    def _team_notice_changed(self, state: SeatState, team: str | None) -> None:
+        if team in ("good", "evil"):
+            state.alignment = team
+        elif state.character_id:
+            self._character_changed(state, state.character_id)
+
+    @property
+    def seat_roles(self):
+        return _SeatFieldMap(self, "character_id", lambda value: value is None,
+                             self._character_changed)
+
+    @seat_roles.setter
+    def seat_roles(self, values):
+        self._replace_seat_map("character_id", values, None, self._character_changed)
+
+    @property
+    def seat_fakes(self):
+        return _SeatFieldMap(self, "perceived_character_id", lambda value: value is None)
+
+    @seat_fakes.setter
+    def seat_fakes(self, values):
+        self._replace_seat_map("perceived_character_id", values, None)
+
+    @property
+    def seat_markers(self):
+        return _SeatFieldMap(self, "legacy_markers", lambda value: not value)
+
+    @seat_markers.setter
+    def seat_markers(self, values):
+        self._replace_seat_map("legacy_markers", values, list)
+
+    @property
+    def mad_about(self):
+        return _SeatFieldMap(self, "mad_about", lambda value: value is None)
+
+    @mad_about.setter
+    def mad_about(self, values):
+        self._replace_seat_map("mad_about", values, None)
+
+    @property
+    def seat_alive(self):
+        return _SeatFieldMap(self, "alive", lambda value: value is True)
+
+    @seat_alive.setter
+    def seat_alive(self, values):
+        self._replace_seat_map("alive", values, True)
+
+    @property
+    def seat_dead_day(self):
+        return _SeatFieldMap(self, "died_day", lambda value: value is None)
+
+    @seat_dead_day.setter
+    def seat_dead_day(self, values):
+        self._replace_seat_map("died_day", values, None)
+
+    @property
+    def seat_dead_vote(self):
+        return _SeatFieldMap(self, "dead_vote_used", lambda value: value is False)
+
+    @seat_dead_vote.setter
+    def seat_dead_vote(self, values):
+        self._replace_seat_map("dead_vote_used", values, False)
+
+    @property
+    def seat_role_changes(self):
+        return _SeatFieldMap(self, "role_change_notice", lambda value: value is None)
+
+    @seat_role_changes.setter
+    def seat_role_changes(self, values):
+        self._replace_seat_map("role_change_notice", values, None)
+
+    @property
+    def seat_team_changes(self):
+        return _SeatFieldMap(self, "team_change_notice", lambda value: value is None,
+                             self._team_notice_changed)
+
+    @seat_team_changes.setter
+    def seat_team_changes(self, values):
+        self._replace_seat_map("team_change_notice", values, None,
+                               self._team_notice_changed)
+
+    def _canonical_state(self) -> GameState:
+        return GameState(
+            player_count=self.player_count,
+            players={player_id: PlayerAccount(
+                id=player.id, name=player.name, seat=player.seat, wish=player.wish,
+            ) for player_id, player in self.players.items()},
+            seats=self.seat_states,
+        )
+
+    def _bind_players_to_seats(self) -> None:
+        for state in self.seat_states.values():
+            state.claimed_by = None
+        for player in self.players.values():
+            if player.seat is None:
+                player.bind(None)
+                continue
+            state = self.seat_state(player.seat)
+            state.claimed_by = player.id
+            player.bind(state)
 
     # ---- 复盘事件日志 ----
 
@@ -139,24 +345,12 @@ class GameManager:
 
     # ---- 存档 ----
 
-    def save(self) -> None:
-        """任何状态变更后调用:原子写盘(临时文件 + os.replace)。"""
-        payload = {
-            "players": {pid: {"id": p.id, "name": p.name, "seat": p.seat,
-                              "role_id": p.role_id, "alive": p.alive,
-                              "died_day": p.died_day,
-                              "dead_vote_used": p.dead_vote_used,
-                              "wish": p.wish}
-                        for pid, p in self.players.items()},
+    def save_payload(self) -> dict:
+        """Build the complete serializable payload without touching disk."""
+        payload = encode_save(self._canonical_state())
+        payload.update({
             "status": self.status, "script_id": self.script_id,
-            "player_count": self.player_count,
-            "seat_roles": self.seat_roles, "seat_fakes": self.seat_fakes,
             "lunatic_minions": self.lunatic_minions, "lunatic_bluffs": self.lunatic_bluffs,
-            "seat_markers": self.seat_markers, "mad_about": self.mad_about,
-            "seat_alive": self.seat_alive, "seat_dead_day": self.seat_dead_day,
-            "seat_dead_vote": self.seat_dead_vote,
-            "seat_role_changes": self.seat_role_changes,
-            "seat_team_changes": self.seat_team_changes,
             "phase": self.phase, "night_no": self.night_no, "day_no": self.day_no,
             "day_stage": self.day_stage,
             "night_steps": self.night_steps, "night_idx": self.night_idx,
@@ -170,11 +364,21 @@ class GameManager:
             "winner": self.winner, "fabled": self.fabled,
             "chats": self.chats, "chat_seq": self.chat_seq,
             "events": self.events, "event_seq": self.event_seq,
-        }
-        SAVE_PATH.parent.mkdir(exist_ok=True)
+        })
+        return payload
+
+    def save(self) -> None:
+        """任何状态变更后调用:原子写盘(临时文件 + os.replace)。"""
+        payload = self.save_payload()
+        SAVE_PATH.parent.mkdir(parents=True, exist_ok=True)
         tmp = SAVE_PATH.with_suffix(".tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        if self._legacy_save_backup_pending and SAVE_PATH.exists():
+            backup = SAVE_PATH.with_suffix(".v1.json")
+            if not backup.exists():
+                backup.write_bytes(SAVE_PATH.read_bytes())
         os.replace(tmp, SAVE_PATH)
+        self._legacy_save_backup_pending = False
         self.saved_at = time.time()
 
     def _restore_autosave(self) -> None:
@@ -182,12 +386,19 @@ class GameManager:
             return
         try:
             d = json.loads(SAVE_PATH.read_text(encoding="utf-8"))
-            for pd in d["players"].values():  # 兼容:开发期间字段曾叫 died_night,迁移为 died_day
-                if "died_night" in pd:
-                    pd.setdefault("died_day", pd.pop("died_night"))
-            self.players = {pid: Player(**p) for pid, p in d["players"].items()}
-            for key in ("status", "script_id", "player_count", "seat_roles",
-                        "seat_fakes", "seat_markers", "phase", "night_no",
+            legacy_save = d.get("schema_version") != 2
+            script_id = d.get("script_id", "trouble-brewing")
+            if script_id not in SCRIPT_PACKS:
+                raise ValueError("unknown saved script")
+            core = decode_save(d, SCRIPT_PACKS[script_id])
+            self.script_id = script_id
+            self.player_count = core.player_count
+            self.seat_states = core.seats
+            self.players = {pid: Player(id=account.id, name=account.name,
+                                        seat=account.seat, wish=account.wish)
+                            for pid, account in core.players.items()}
+            self._bind_players_to_seats()
+            for key in ("status", "phase", "night_no",
                         "day_no", "night_steps", "night_idx", "nominations",
                         "current", "bluffs"):
                 setattr(self, key, d[key])
@@ -209,30 +420,25 @@ class GameManager:
                     m["from"] = _norm(m["from"])
                 self.chats.append(c)
             self.room_code = d.get("room_code") or f"{random.randrange(10000):04d}"  # 旧存档没有房间号 → 现生成
-            self.lunatic_minions = d.get("lunatic_minions", {})  # 旧存档没有疯子假爪牙/伪装字段 → 空
-            self.lunatic_bluffs = d.get("lunatic_bluffs", {})
+            self.lunatic_minions = {int(k): v for k, v in d.get("lunatic_minions", {}).items()}
+            self.lunatic_bluffs = {int(k): v for k, v in d.get("lunatic_bluffs", {}).items()}
             # 死票座位/旅行者 id 存档时统一转 str,读档时数字座位还原为 int(旅行者 id 保持 "t1" 字符串)
             self.current_dead_votes = {int(x) if isinstance(x, str) and x.isdigit() else x
                                        for x in d.get("current_dead_votes", [])}
-            self.seat_role_changes = d.get("seat_role_changes", {})  # 旧存档没有角色转变 → 空
-            self.mad_about = {int(k): v for k, v in d.get("mad_about", {}).items()}  # 旧存档没有疯狂内容 → 空
-            self.seat_alive = {int(k): v for k, v in d.get("seat_alive", {}).items()}  # 空座生死 → 空
-            self.seat_dead_day = {int(k): v for k, v in d.get("seat_dead_day", {}).items()}
-            self.seat_dead_vote = {int(k): v for k, v in d.get("seat_dead_vote", {}).items()}
-            self.seat_team_changes = d.get("seat_team_changes", {})  # 旧存档没有阵营转变 → 空
             self.travelers = d.get("travelers", [])  # 旧存档没有旅行者 → 空
             self.night_kills = d.get("night_kills", {})  # 旧存档没有夜晚刀人 → 空
             self.night_choices = d.get("night_choices", {})  # 旧存档没有夜晚信息交互 → 空
             self.fortuneteller_red = d.get("fortuneteller_red")  # 旧存档没有宿敌 → None
+            self._legacy_save_backup_pending = legacy_save
             self.saved_at = time.time()
         except (KeyError, TypeError, ValueError):
             pass  # 存档损坏 → 用干净状态开局
 
     def load(self) -> None:
         """说书人手动读档:放弃当前内存状态,从磁盘恢复。"""
-        self.reset()
         self.script_id = "trouble-brewing"
         self.player_count = 6
+        self.reset()
         self._restore_autosave()
 
     # ---- 局配置 ----
@@ -247,11 +453,10 @@ class GameManager:
         self.player_count = player_count
         for p in self.players.values():  # 改配置 → 清空座位与角色,玩家重新入座
             p.seat = None
-            p.role_id = None
-            p.alive = True
-            p.died_day = None
-        self.seat_roles = {}  # 预发身份一并清空
-        self.seat_fakes = {}  # 认知覆盖一并清空
+            p.bind(None)
+        self.seat_states = {
+            seat: SeatState(seat=seat) for seat in range(1, player_count + 1)
+        }
         self.lunatic_minions = {}
         self.lunatic_bluffs = {}
         self.seat_markers = {}  # 状态标记一并清空
@@ -328,14 +533,14 @@ class GameManager:
         owner = self.seats.get(seat)
         if owner and owner.id != player_id:
             raise ValueError(f"座位 {seat} 已被 {owner.name} 占用")
+        if me.seat is not None and me.seat != seat:
+            previous = self.seat_state(me.seat)
+            if previous.claimed_by == player_id:
+                previous.claimed_by = None
         me.seat = seat
-        # 预发身份跟随座位:入座即继承该座已发的角色(开局后迟到的玩家同样继承)
-        me.role_id = self.seat_roles.get(seat)
-        # 生死/死票同样以座位标记为准:空座被标死的角色,入座玩家继承死亡状态
-        if seat in self.seat_alive:
-            me.alive = self.seat_alive[seat]
-            me.died_day = self.seat_dead_day.get(seat)
-            me.dead_vote_used = self.seat_dead_vote.get(seat, False)
+        state = self.seat_state(seat)
+        state.claimed_by = player_id
+        me.bind(state)
         if (self.status == "lobby" and self.seat_roles
                 and len(self.seats) == self.player_count):
             self.status = "playing"  # 预发身份全部入座 → 自动开局
@@ -345,7 +550,13 @@ class GameManager:
     def remove_player(self, player_id: str) -> None:
         if player_id not in self.players:
             return
-        del self.players[player_id]  # 座位随玩家释放
+        player = self.players[player_id]
+        if player.seat is not None:
+            state = self.seat_state(player.seat)
+            if state.claimed_by == player_id:
+                state.claimed_by = None
+        player.bind(None)
+        del self.players[player_id]  # 只释放账号认领;角色与局内状态留在座位
         self.save()
 
     # ---- 旅行者 ----
@@ -499,11 +710,7 @@ class GameManager:
         self.seat_roles = {}  # 随机分配覆盖整局:清掉之前的预发草稿
         for seat in range(1, n + 1):
             rid = pool[seat - 1]["id"]
-            p = self.seats.get(seat)
-            if p:
-                p.role_id = rid
-            else:
-                self.seat_roles[seat] = rid  # 空座挂预发身份,等人迟到入座继承
+            self.seat_roles[seat] = rid  # 角色始终挂在座位,玩家账号只负责认领
         self.bluffs = self._pick_bluffs({r["id"] for r in pool})  # 配版时即抽好伪装
         # 认知覆盖不自动抽:假身份由说书人显式选定(ST 面板提示待定座位,玩家卡先别给看)
         self.seat_fakes = {}
@@ -616,8 +823,6 @@ class GameManager:
         self.lunatic_minions = new_lun_minions
         self.lunatic_bluffs = new_lun_bluffs
         self.seat_roles = dict(picked)  # 身份挂在座位上,没人入座也可以先发
-        for seat, player in seat_of.items():  # 已入座的玩家当场继承
-            player.role_id = picked[seat]
         if len(seat_of) == self.player_count:
             self.status = "playing"  # 全员已入座 → 立即开局;否则等 sit() 补满自动开局
             self._begin_night()
@@ -886,13 +1091,9 @@ class GameManager:
         if target not in self.seat_roles:
             entry["invalid"] = True
             return
-        p = self.seats.get(target)  # 空座也可变身(只改预发身份,便于测试)
-        entry["from"] = p.role_id if p is not None else self.seat_roles[target]
-        if p is not None:
-            p.role_id = char
+        entry["from"] = self.seat_roles[target]
         self.seat_roles[target] = char
-        if p is not None:
-            self.seat_role_changes[target] = char  # 玩家手机收到角色转变提示
+        self.seat_role_changes[target] = char  # 未领取座位也保留通知,领取后可见
         entry["applied"] = True
         self._log(seat, "transform", {"target": target, "char": char, "from": entry["from"]})
         if self.roles[char]["team"] == DEMON:
@@ -939,12 +1140,9 @@ class GameManager:
         if entry is None or not entry.get("applied"):
             raise ValueError("没有已生效的变身可撤销")
         char, target, prev = entry["char"], entry["targets"][0], entry.get("from")
-        p = self.seats.get(target)
         if prev:
-            if p is not None:
-                p.role_id = prev
-                self.seat_role_changes.pop(target, None)
             self.seat_roles[target] = prev
+            self.seat_role_changes.pop(target, None)
         self.night_steps = [st for st in self.night_steps
                             if not (st["key"] == char and st.get("_pithag"))]
         if self.roles[char]["team"] == DEMON:
@@ -1483,13 +1681,12 @@ class GameManager:
         if len(winners) != 1:
             return  # 平票:无人被处决
         nominee = winners[0]["nominee"]
-        player = self.seats.get(nominee)
-        if player is not None:
-            player.alive = False
-            player.died_day = self.day_no  # 白天结束时的处决:当天当场公开
-        elif nominee in self.seat_roles and self.seat_alive.get(nominee, True):
-            self.seat_alive[nominee] = False  # 空座同样可被处决
-            self.seat_dead_day[nominee] = self.day_no
+        state = self.seat_state(nominee)
+        if state.character_id and state.alive:
+            state.alive = False
+            state.public_alive = False
+            state.died_day = self.day_no  # 白天结束时的处决:当天当场公开
+            state.died_at = f"day:{self.day_no}:execution"
         winners[0]["executed"] = True
         self._log(nominee, "execution", {"votes": max_votes})
 
@@ -1498,31 +1695,39 @@ class GameManager:
     def toggle_alive(self, player_id: str) -> None:
         if player_id in self.players:
             p = self.players[player_id]
-            p.alive = not p.alive
-            if p.alive:  # 复活重置死票:再次死亡会获得新的死票
-                p.dead_vote_used = False
+            if p.seat is None:
+                raise ValueError("玩家还没有入座")
+            state = self.seat_state(p.seat)
+            state.alive = not state.alive
+            state.public_alive = (True if not state.alive and self.phase == "night"
+                                  else state.alive)
+            if state.alive:  # 复活重置死票:再次死亡会获得新的死票
+                state.dead_vote_used = False
                 self.current_dead_votes.discard(p.seat)
             # 死亡公开的天数:夜里死=天亮那天(night_no),白天死=当天(day_no),复活清空
-            p.died_day = (self.night_no if self.phase == "night" else self.day_no) if not p.alive else None
+            state.died_day = ((self.night_no if self.phase == "night" else self.day_no)
+                              if not state.alive else None)
+            state.died_at = (f"{self.phase}:{state.died_day}:storyteller"
+                             if not state.alive else None)
             self.save()
 
     def toggle_seat_alive(self, seat: int) -> None:
         """说书人按座位标记生死(空座同样可以):以说书人标记为准,而不是是否在座。"""
         if not 1 <= seat <= self.player_count or self._seat_real_role(seat) is None:
             raise ValueError("该座位没有角色")
-        p = self.seats.get(seat)
-        if p is not None:
-            self.toggle_alive(p.id)
-            return
-        cur = self.seat_alive.get(seat, True)
-        if cur:  # 标记死亡
-            self.seat_alive[seat] = False
-            self.seat_dead_day[seat] = self.day_no if self.phase == "day" else self.night_no
+        state = self.seat_state(seat)
+        if state.alive:  # 标记死亡
+            state.alive = False
+            state.public_alive = self.phase == "night"
+            state.died_day = self.day_no if self.phase == "day" else self.night_no
+            state.died_at = f"{self.phase}:{state.died_day}:storyteller"
             self._log(seat, "death", {"by": "st"})
         else:  # 复活
-            self.seat_alive.pop(seat, None)
-            self.seat_dead_day.pop(seat, None)
-            self.seat_dead_vote.pop(seat, None)
+            state.alive = True
+            state.public_alive = True
+            state.died_day = None
+            state.died_at = None
+            state.dead_vote_used = False
         self.save()
 
     def set_fake(self, seat: int, role_id: str | None,
@@ -1575,8 +1780,10 @@ class GameManager:
             if on:
                 if role is None or role not in self.roles:
                     raise ValueError("角色转变需选择要变成的角色")
-                self.seat_role_changes[seat] = role
                 prev = self._seat_real_role(seat)
+                self.seat_states[seat].ability_state["legacy_role_change"] = {"from": prev}
+                self.seat_roles[seat] = role
+                self.seat_role_changes[seat] = role
                 # 传刀识别:爪牙 → 恶魔
                 pass_demon = bool(prev and self.roles[prev]["team"] == MINION
                                   and self.roles[role]["team"] == DEMON)
@@ -1625,9 +1832,7 @@ class GameManager:
         out = []
         for i in range(1, self.player_count + 1):
             p = self.seats.get(i)
-            rid = p.role_id if p is not None else None
-            if rid is None:
-                rid = self.seat_roles.get(i)
+            rid = self.seat_state(i).character_id
             if rid and self.roles[rid]["team"] == team:
                 out.append({"seat": i, "name": p.name if p is not None else None,
                             "role": self.roles[rid]})
@@ -1638,24 +1843,18 @@ class GameManager:
         out = []
         for i in range(1, self.player_count + 1):
             p = self.seats.get(i)
-            r = p.role_id if p is not None else None
-            if r is None:
-                r = self.seat_roles.get(i)
+            r = self.seat_state(i).character_id
             if r == rid:
                 out.append({"seat": i, "name": p.name if p is not None else None})
         return out
 
     def _seat_real_role(self, seat: int) -> str | None:
-        """座位的真实角色 id(在座玩家持有,或空座预发)。"""
-        p = self.seats.get(seat)
-        return p.role_id if p is not None else self.seat_roles.get(seat)
+        """座位的真实角色 id;账号是否认领不影响角色存在。"""
+        return self.seat_state(seat).character_id
 
     def _seat_alive(self, seat: int) -> bool:
-        """座位生死(以说书人标记为准,而不是是否在座):已入座看玩家,空座看座位级标记。"""
-        p = self.seats.get(seat)
-        if p is not None:
-            return p.alive
-        return self.seat_alive.get(seat, True)
+        """座位生死只读取 canonical SeatState,与账号是否在线无关。"""
+        return self.seat_state(seat).alive
 
     def _seat_slots(self, st_view: bool, my_id: str | None = None) -> list[dict]:
         seat_of = self.seats
@@ -1846,21 +2045,23 @@ class GameManager:
                 wake = {"action": "pick", "count": 1}  # 守鸦人死于今夜:被唤醒指认
             if wake is not None:
                 if wake["action"] == "kill":
-                    wake["targets"] = [s for s in self.seats if self.seats[s].alive]
+                    wake["targets"] = [s for s in range(1, self.player_count + 1)
+                                       if self._seat_real_role(s) and self._seat_alive(s)]
                     entry = self.night_kills.get(str(self.night_no))
                     if entry:
                         chosen = entry.get("lunatic_seat") if real_rid == "lunatic" else entry.get("seat")
                         if chosen is not None:
                             view["my_kill"] = chosen
                 else:
-                    wake["targets"] = sorted(self.seats)  # 选人交互:所有入座玩家可选(含死者)
+                    wake["targets"] = [s for s in range(1, self.player_count + 1)
+                                       if self._seat_real_role(s)]  # 线下/未领取座位同样可选
                 view["night_wake"] = wake
                 if wake.get("grimoire"):
                     # 寡妇首夜查看魔典:全部座位的真实角色与旅行者(仅此夜、仅此步,睡下后不可再看)
                     view["grimoire"] = {
                         "seats": [{"seat": s,
                                    "name": p.name if (p := self.seats.get(s)) else None,
-                                   "alive": p.alive if (p := self.seats.get(s)) else None,
+                                   "alive": self._seat_alive(s),
                                    "role": self.roles[self.seat_roles[s]] if s in self.seat_roles else None}
                                   for s in range(1, self.player_count + 1)],
                         "travelers": [{"id": t["id"], "name": t["name"], "alive": t["alive"],
@@ -1916,11 +2117,10 @@ class GameManager:
 
     def storyteller_view(self) -> dict:
         # 处决门槛:存活玩家(不含旅行者)的一半及以上,向上取整;空座同样按说书人标记的生死计
-        seated_alive = sum(1 for p in self.players.values() if p.seat is not None and p.alive)
-        alive_count = seated_alive + sum(
-            1 for i in range(1, self.player_count + 1)
-            if i not in self.seats and i in self.seat_roles and self.seat_alive.get(i, True))
-        total_players = sum(1 for p in self.players.values() if p.seat is not None) + len(self.travelers)
+        alive_count = sum(1 for state in self.seat_states.values()
+                          if state.character_id and state.alive)
+        total_players = (sum(1 for state in self.seat_states.values() if state.character_id)
+                         + len(self.travelers))
         return {
             "status": self.status,
             "script": self.script_id,
