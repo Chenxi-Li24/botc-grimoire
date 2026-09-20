@@ -11,7 +11,7 @@ export async function resolveEntry({ hash, playerId, validatePlayer }) {
 
   try {
     await validatePlayer(playerId)
-    return { legacyUrl: '/legacy/' }
+    return { vuePage: 'player' }
   } catch {
     return 'join'
   }

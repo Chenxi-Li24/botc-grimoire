@@ -17,10 +17,10 @@ describe('entry routing', () => {
     })
   })
 
-  it('sends a valid returning player to legacy', async () => {
+  it('keeps a valid returning player in Vue', async () => {
     const validatePlayer = vi.fn().mockResolvedValue({})
     await expect(resolveEntry({ hash: '', playerId: 'p1', validatePlayer }))
-      .resolves.toEqual({ legacyUrl: '/legacy/' })
+      .resolves.toEqual({ vuePage: 'player' })
     expect(validatePlayer).toHaveBeenCalledWith('p1')
   })
 

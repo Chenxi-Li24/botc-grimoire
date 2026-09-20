@@ -55,6 +55,12 @@ class Hub:
             await self._send(ws, view)
         for player_id, sockets in list(self.players.items()):
             if player_id not in game.players:
+                for ws in list(sockets):
+                    try:
+                        await ws.close(code=4001, reason="未知身份")
+                    except Exception:
+                        pass
+                self.players.pop(player_id, None)
                 continue
             view = game.player_view(player_id)
             delivered = False

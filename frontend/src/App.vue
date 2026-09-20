@@ -1,16 +1,26 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import JoinPage from './pages/JoinPage.vue'
+import PlayerPage from './pages/PlayerPage.vue'
 import StorytellerPage from './pages/StorytellerPage.vue'
 import { api } from './services/api.js'
 import { goToLegacy, resolveEntry } from './services/navigation.js'
 import { clearPlayerId, getPlayerId } from './services/session.js'
 
 const page = ref('loading')
+const activePlayerId = ref(null)
 let routeVersion = 0
 
-function onJoined() {
-  goToLegacy('/legacy/')
+function onJoined(playerId) {
+  activePlayerId.value = playerId
+  page.value = 'player'
+}
+
+function onPlayerInvalid() {
+  routeVersion += 1
+  clearPlayerId()
+  activePlayerId.value = null
+  page.value = 'join'
 }
 
 async function routeCurrentEntry() {
@@ -25,6 +35,7 @@ async function routeCurrentEntry() {
   if (version !== routeVersion) return
 
   if (destination?.vuePage) {
+    if (destination.vuePage === 'player') activePlayerId.value = playerId
     page.value = destination.vuePage
     return
   }
@@ -41,6 +52,7 @@ async function routeCurrentEntry() {
   }
 
   if (playerId) clearPlayerId()
+  activePlayerId.value = null
   page.value = 'join'
 }
 
@@ -62,6 +74,11 @@ onBeforeUnmount(() => {
 <template>
   <div data-app-shell>
     <StorytellerPage v-if="page === 'storyteller'" />
+    <PlayerPage
+      v-else-if="page === 'player' && activePlayerId"
+      :player-id="activePlayerId"
+      @invalid="onPlayerInvalid"
+    />
     <JoinPage v-else-if="page === 'join'" @joined="onJoined" />
     <main v-else class="page center">
       <p>加载中…</p>
