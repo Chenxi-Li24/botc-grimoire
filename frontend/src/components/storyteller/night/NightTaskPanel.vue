@@ -23,7 +23,16 @@ const current = computed(() => props.night.currentTask)
 const isCurrent = computed(() => Boolean(step.value && current.value?.id === step.value.id))
 const actorRoleId = computed(() => step.value?.source?.ability_character || step.value?.perceived_as || step.value?.character_id)
 const role = computed(() => props.view.roles?.find((item) => item.id === actorRoleId.value) || null)
-const selection = computed(() => role.value?.selection || null)
+const selection = computed(() => {
+  const configured = role.value?.selection
+  const required = step.value?.required_fields || []
+  if (!configured || (!required.includes('targets') && !required.includes('character'))) return null
+  return {
+    ...configured,
+    players: required.includes('targets') ? configured.players : 0,
+    characters: required.includes('character') ? configured.characters : 0,
+  }
+})
 const targetSeat = computed(() => props.night.selectedTargets?.[0] || null)
 const selectedSeat = computed(() => props.view.seats?.find((item) => item.seat === props.night.selectedSeat) || null)
 const stepOutcomes = computed(() => (workflow.value.outcomes?.pending || []).filter((item) => (
@@ -44,6 +53,14 @@ const selectedEffects = computed(() => (workflow.value.effects?.history || []).f
 const stepEffects = computed(() => (workflow.value.effects?.history || []).filter((item) => (
   item.source_seat === step.value?.actor_seat
 )))
+const stepInformationHandled = computed(() => Boolean(
+  role.value?.information_resolver
+  && Object.prototype.hasOwnProperty.call(step.value?.values || {}, 'targets')
+))
+const stepOutcomeHandled = computed(() => Boolean(
+  Object.prototype.hasOwnProperty.call(step.value?.values || {}, 'targets')
+  && (role.value?.team === 'demon' || actorRoleId.value === 'lunatic')
+))
 const forceToken = computed(() => props.night.forceTokens?.[current.value?.id] || null)
 const omissions = computed(() => props.night.forceOmissions?.[current.value?.id] || [])
 const actionBusy = computed(() => props.pending.some((key) => key.startsWith('night:')))
@@ -59,6 +76,14 @@ function omissionLabel(value) {
   if (value.startsWith('information:')) return '信息尚未发送'
   if (value.startsWith('transformation:')) return '角色变化尚未确认'
   return value
+}
+function noticeText(notice) {
+  if (notice.message || notice.text) return notice.message || notice.text
+  const recipient = notice.actor_seat ? `${notice.actor_seat}号` : '对应玩家'
+  const payload = typeof notice.payload === 'string'
+    ? notice.payload
+    : JSON.stringify(notice.payload)
+  return `已自动发送给 ${recipient}：${payload}`
 }
 function targetRoleTeams() {
   return selection.value?.character_teams || []
@@ -76,7 +101,8 @@ function handleResultUpdate({ id, result }) {
   props.night.setInformationResult(id, result)
 }
 function roleCanCreateOutcome() {
-  return role.value?.team === 'demon' || actorRoleId.value === 'lunatic'
+  return Boolean(selection.value?.players)
+    && (role.value?.team === 'demon' || actorRoleId.value === 'lunatic')
 }
 async function submitAction() {
   if (!step.value || !isCurrent.value) return
@@ -164,7 +190,7 @@ function confirmUndo(eventId) {
         </section>
 
         <SeatTargetPicker
-          v-if="isCurrent && selection?.players"
+          v-if="isCurrent && selection?.players && !stepOutcomeHandled && !stepInformationHandled"
           :seats="view.seats"
           :roles="view.roles"
           :selected="night.selectedTargets"
@@ -200,7 +226,7 @@ function confirmUndo(eventId) {
         </label>
 
         <button
-          v-if="isCurrent && step.actor_seat && actorRoleId !== 'pithag' && !stepOutcomes.length && !stepDrafts.length"
+          v-if="isCurrent && step.actor_seat && actorRoleId !== 'pithag' && !stepOutcomes.length && !stepDrafts.length && !stepInformationHandled && !stepOutcomeHandled"
           class="btn primary task-submit"
           type="button"
           :disabled="!connected || actionBusy || (selection?.players && night.selectedTargets.length !== selection.players) || (selection?.characters && !night.selectedCharacter)"
@@ -219,6 +245,7 @@ function confirmUndo(eventId) {
           :drafts="stepDrafts"
           :results="night.informationResults"
           :claims="night.informationClaims"
+          :roles="view.roles"
           :connected="connected && isCurrent"
           :pending="pending"
           @set-result="handleResultUpdate"
@@ -228,7 +255,7 @@ function confirmUndo(eventId) {
 
         <section v-if="notices.length" class="night-card automatic-notices">
           <div class="night-card-heading"><h4>已自动发送</h4><span>无需确认</span></div>
-          <p v-for="(notice, index) in notices" :key="notice.id || index">{{ notice.message || notice.text || JSON.stringify(notice) }}</p>
+          <p v-for="(notice, index) in notices" :key="notice.id || index">{{ noticeText(notice) }}</p>
         </section>
 
         <EffectHistory v-if="stepEffects.length" :effects="stepEffects" />

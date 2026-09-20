@@ -14,6 +14,7 @@ export function useNightWorkflow(viewRef, { service, run }) {
   const forceTokens = ref({})
   const forceOmissions = ref({})
   const undoPreview = ref(null)
+  const autoPreparedSteps = new Set()
 
   const workflow = computed(() => viewRef.value?.night_workflow || null)
   const orderedSteps = computed(() => workflow.value?.steps || [])
@@ -115,6 +116,25 @@ export function useNightWorkflow(viewRef, { service, run }) {
   }
 
   function clearUndoPreview() { undoPreview.value = null }
+
+  watch([currentTask, () => viewRef.value?.roles], async ([step, roles]) => {
+    if (!step || step.status !== 'current' || !step.actor_seat) return
+    const required = step.required_fields || []
+    if (required.includes('targets') || required.includes('character')) return
+    const ability = step.source?.ability_character || step.perceived_as || step.character_id
+    const role = (roles || []).find((item) => item.id === ability)
+    if (!role?.information_resolver) return
+    if (Object.prototype.hasOwnProperty.call(step.values || {}, 'targets')) return
+    if (autoPreparedSteps.has(step.id)) return
+    autoPreparedSteps.add(step.id)
+    const response = await deliverInformation({
+      action: 'prepare',
+      step_id: step.id,
+      actor_seat: step.actor_seat,
+      targets: [],
+    })
+    if (!response) autoPreparedSteps.delete(step.id)
+  }, { immediate: true })
 
   watch(workflow, (next) => {
     if (!next) return

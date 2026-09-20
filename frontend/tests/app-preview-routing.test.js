@@ -18,9 +18,9 @@ vi.mock('../src/services/session.js', () => ({
 
 beforeEach(() => vi.clearAllMocks())
 
-it('renders the Vue storyteller preview destination', async () => {
-  resolveEntry.mockResolvedValue({ vuePage: 'storyteller-preview' })
+it('renders the canonical Vue storyteller destination', async () => {
+  resolveEntry.mockResolvedValue({ vuePage: 'storyteller' })
   const wrapper = mount(App)
   await flushPromises()
-  expect(wrapper.get('[data-storyteller-preview]').exists()).toBe(true)
+  expect(wrapper.get('[data-storyteller-page]').exists()).toBe(true)
 })

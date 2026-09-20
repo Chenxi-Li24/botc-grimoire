@@ -3,6 +3,7 @@ const props = defineProps({
   drafts: { type: Array, default: () => [] },
   results: { type: Object, default: () => ({}) },
   claims: { type: Object, default: () => ({}) },
+  roles: { type: Array, default: () => [] },
   connected: { type: Boolean, default: false },
   pending: { type: Array, default: () => [] },
 })
@@ -21,6 +22,27 @@ function parse(value) {
 function rows(draft) {
   return props.claims[draft.id] || []
 }
+function result(draft) {
+  return props.results[draft.id]
+    ?? (draft.resolver_key === 'dreamer' ? draft.legal_results?.[0] : draft.true_result)
+}
+function roleName(roleId) {
+  return props.roles.find((role) => role.id === roleId)?.name || roleId || '未知角色'
+}
+function dreamerPairLabel(pair) {
+  return `${roleName(pair.good_character)} / ${roleName(pair.evil_character)}`
+}
+function dreamerTruthLabel(draft) {
+  const pair = result(draft) || {}
+  const actual = draft.true_result?.character_id
+  const correct = actual === pair.good_character ? pair.good_character : pair.evil_character
+  const incorrect = actual === pair.good_character ? pair.evil_character : pair.good_character
+  return `正确：${roleName(correct)}；错误：${roleName(incorrect)}`
+}
+function requiresTruthRows(draft) {
+  return ['poisoned', 'drunk', 'information_override', 'vortox_forced_false']
+    .some((reason) => (draft.reason || '').includes(reason))
+}
 function setRows(draft, next) {
   emit('set-claims', { id: draft.id, claims: next })
 }
@@ -33,11 +55,12 @@ function updateClaim(draft, index, field, value) {
   )))
 }
 function deliver(draft) {
+  const claimRows = rows(draft)
   emit('deliver', {
     action: 'deliver',
     draft_id: draft.id,
-    delivered_result: parse(props.results[draft.id] ?? stringify(draft.true_result)),
-    claims: rows(draft),
+    delivered_result: parse(result(draft)),
+    claims: claimRows.length ? claimRows : undefined,
     reason: draft.reason || '',
   })
 }
@@ -55,7 +78,16 @@ function deliver(draft) {
         <p><strong>可发送结果</strong></p>
         <pre>{{ stringify(draft.legal_results) }}</pre>
       </details>
-      <label class="field-row">实际发送内容
+      <label v-if="draft.resolver_key === 'dreamer'" class="field-row">选择一善一恶角色
+        <select
+          :value="stringify(result(draft))"
+          @change="$emit('set-result', { id: draft.id, result: parse($event.target.value) })"
+        >
+          <option v-for="pair in draft.legal_results" :key="stringify(pair)" :value="stringify(pair)">{{ dreamerPairLabel(pair) }}</option>
+        </select>
+      </label>
+      <p v-if="draft.resolver_key === 'dreamer'" class="inline-note">{{ dreamerTruthLabel(draft) }}（发送后自动写入复盘真假标记）</p>
+      <label v-else class="field-row">实际发送内容
         <textarea
           rows="4"
           :value="results[draft.id] ?? stringify(draft.true_result)"
@@ -72,12 +104,12 @@ function deliver(draft) {
           </select>
           <button class="icon-button" type="button" aria-label="删除" @click="setRows(draft, rows(draft).filter((_, offset) => offset !== index))">×</button>
         </div>
-        <p v-if="draft.reason && !rows(draft).length" class="inline-warning">受中毒、醉酒或规则影响的信息必须至少标记一条真假记录。</p>
+        <p v-if="requiresTruthRows(draft) && !rows(draft).length" class="inline-warning">受中毒、醉酒或规则影响的信息必须至少标记一条真假记录。</p>
       </div>
       <button
         class="btn primary"
         type="button"
-        :disabled="!connected || pending.includes(`night:information:${draft.id}`) || (draft.reason && !rows(draft).length)"
+        :disabled="!connected || pending.includes(`night:information:${draft.id}`) || (requiresTruthRows(draft) && !rows(draft).length)"
         @click="deliver(draft)"
       >发送并记录</button>
     </article>

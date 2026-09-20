@@ -223,7 +223,8 @@ class NightService:
         step = self.step(step_id)
         if step.actor_seat is None:
             raise NavigationConflict("invalid_actor", "该步骤没有行动座位")
-        selected = self._validate_targets(step, selected_seats)
+        selected = (self._validate_targets(step, selected_seats)
+                    if "targets" in step.required_fields else [])
         values: dict[str, Any] = {"targets": selected}
         if character_id is not None:
             values["character"] = character_id

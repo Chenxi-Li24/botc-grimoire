@@ -20,6 +20,18 @@ function choice(outcome) {
 function update(outcome, field, value) {
   emit('update-choice', { id: outcome.id, value: { ...choice(outcome), [field]: value } })
 }
+function resolve(outcome) {
+  const selected = choice(outcome)
+  const carriesAffectedSeats = ['secret_death', 'redirected', 'transformation'].includes(selected.resolution)
+  emit('resolve', {
+    outcome_id: outcome.id,
+    resolution: selected.resolution,
+    affected_seats: carriesAffectedSeats
+      ? (selected.affected_seats || outcome.selected_seats)
+      : [],
+    rationale: selected.rationale || '',
+  })
+}
 </script>
 
 <template>
@@ -42,7 +54,7 @@ function update(outcome, field, value) {
         class="btn primary"
         type="button"
         :disabled="!connected || pending.includes(`night:outcome:${outcome.id}`)"
-        @click="$emit('resolve', { outcome_id: outcome.id, resolution: choice(outcome).resolution, affected_seats: choice(outcome).affected_seats || outcome.selected_seats, rationale: choice(outcome).rationale || '' })"
+        @click="resolve(outcome)"
       >确认裁定</button>
     </article>
   </section>

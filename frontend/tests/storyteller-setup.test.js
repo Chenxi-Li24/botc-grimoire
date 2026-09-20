@@ -74,6 +74,6 @@ it('turns lobby mutations into a read-only summary after play begins', () => {
     props: { view: { ...lobbyView, status: 'playing', phase: 'night', night_no: 1 } },
   })
   expect(wrapper.text()).toContain('大厅配置已锁定')
-  expect(wrapper.text()).toContain('完整控制台')
+  expect(wrapper.text()).toContain('旧版白天与复盘工具')
   expect(wrapper.text()).not.toContain('随机分配角色')
 })

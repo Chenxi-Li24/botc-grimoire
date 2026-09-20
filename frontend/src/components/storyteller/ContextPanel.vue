@@ -58,7 +58,7 @@ const selected = computed(() => props.view.seats?.find((seat) => (
     :error="error"
   />
   <PlayerDetailPanel
-    v-else-if="selected"
+    v-else-if="selected?.player"
     :seat="selected"
     @close="$emit('clear-selection')"
   />

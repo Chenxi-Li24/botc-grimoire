@@ -1189,7 +1189,7 @@ class GameManager:
         entry = self.night_kills.get(str(self.night_no))
         if not entry or entry.get("seat") is None:
             return
-        if entry.get("arbitrary"):
+        if entry.get("arbitrary") or self.night._arbitrary_death_source() is not None:
             return
         seat = entry["seat"]
         victim = self.seats.get(seat)

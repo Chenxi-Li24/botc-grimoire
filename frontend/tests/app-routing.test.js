@@ -2,16 +2,19 @@ import { describe, expect, it, vi } from 'vitest'
 import { resolveEntry } from '../src/services/navigation.js'
 
 describe('entry routing', () => {
-  it('keeps the complete storyteller route on legacy', async () => {
+  it('opens the canonical storyteller route in Vue', async () => {
     await expect(resolveEntry({
       hash: '#/storyteller', playerId: null, validatePlayer: vi.fn(),
-    })).resolves.toEqual({ legacyUrl: '/legacy/#/storyteller' })
+    })).resolves.toEqual({ vuePage: 'storyteller' })
   })
 
-  it('opens only the explicit storyteller preview in Vue', async () => {
+  it('redirects the old preview route to the canonical storyteller route', async () => {
     await expect(resolveEntry({
       hash: '#/storyteller-preview', playerId: null, validatePlayer: vi.fn(),
-    })).resolves.toEqual({ vuePage: 'storyteller-preview' })
+    })).resolves.toEqual({
+      redirectHash: '#/storyteller',
+      vuePageAfterRedirect: 'storyteller',
+    })
   })
 
   it('sends a valid returning player to legacy', async () => {

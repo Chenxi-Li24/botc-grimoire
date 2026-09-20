@@ -32,6 +32,16 @@ def req(path: str, method: str = "GET", body: dict | None = None, headers: dict 
         return json.loads(resp.read())
 
 
+def finish_night() -> dict:
+    """按动态夜序推进到天亮，不再假设旧步骤表与运行队列等长。"""
+    for _ in range(100):
+        state = req("/api/state", headers=ST)
+        if state["phase"] == "day":
+            return state
+        req("/api/night/next", "POST", headers=ST)
+    raise AssertionError("夜晚在 100 次推进后仍未结束")
+
+
 async def main() -> None:
     # 幂等:先重置,清掉上一局可能残留的状态
     req("/api/reset", "POST", headers=ST)
@@ -193,8 +203,7 @@ async def main() -> None:
     print("NIGHT 开局进入第 1 夜,dusk 起 dawn 止 OK")
 
     # 走到天亮
-    for _ in range(len(state["night"]["steps"])):
-        state = req("/api/night/next", "POST", headers=ST)
+    state = finish_night()
     assert state["phase"] == "day" and state["day_no"] == 1
     print("NIGHT 走完第 1 夜 → 第 1 天 OK")
 
@@ -279,8 +288,7 @@ async def main() -> None:
     print("SAVE  读档撤销重置,恢复第 2 夜与死者 OK")
 
     # 平票:两人同样最高票并列 → 天黑无人被处决(读档恢复的是第 2 夜,走到白天再试)
-    for _ in range(len(req("/api/state", "GET", headers=ST)["night"]["steps"])):
-        req("/api/night/next", "POST", headers=ST)
+    finish_night()
     assert req("/api/state", "GET", headers=ST)["day_stage"] == "talk", "读档后天亮也应回到公聊阶段"
     req("/api/day/stage", "POST", {"stage": "nom"}, ST)
     req("/api/nomination", "POST", {"nominator": 1, "nominee": 2}, ST)
@@ -381,7 +389,10 @@ async def main() -> None:
         req(f"/api/player/{pid}/sit", "POST", {"seat": seat})
     state = req("/api/assign", "POST", headers=ST)  # 只 4 人入座也应能发牌并开局
     assert state["status"] == "playing" and state["phase"] == "night" and state["night_no"] == 1
-    empty_roles = {str(seat): rid for seat, rid in state["seat_roles"].items()}
+    assigned_roles = {str(seat): rid for seat, rid in state["seat_roles"].items()}
+    assert set(assigned_roles) == {"1", "2", "3", "4", "5", "6"}, assigned_roles
+    empty_roles = {str(slot["seat"]): assigned_roles[str(slot["seat"])]
+                   for slot in state["seats"] if slot["player"] is None}
     assert set(empty_roles) == {"5", "6"}, empty_roles
     rids = {r["id"] for r in state["roles"]}
     assert set(empty_roles.values()) <= rids, "空座预发角色应在板子角色表中"
@@ -455,9 +466,8 @@ async def main() -> None:
     assert pview["sentinel"] is True and pview["composition"] == [3, 1, 1, 1], \
         "玩家应知哨兵在场但不知方向、不见实际配比"
     state = req("/api/assign", "POST", headers=ST)  # 随机发牌:+1 应作用于实际配比
-    teams = Counter(p["role"]["team"] for s in state["seats"] for p in [s["player"]] if p)
-    teams += Counter(next(r["team"] for r in state["roles"] if r["id"] == rid)
-                     for rid in state["seat_roles"].values())
+    teams = Counter(next(r["team"] for r in state["roles"] if r["id"] == rid)
+                    for rid in state["seat_roles"].values())
     assert teams.get("outsider", 0) in (2, 4), f"哨兵 +1 后外来者应为 2 或 4(视男爵),实际 {dict(teams)}"
     try:  # 开局后不能再改哨兵
         req("/api/sentinel", "POST", {"value": 0}, ST)
@@ -485,9 +495,8 @@ async def main() -> None:
     assert pview["sentinel"] is True and pview["composition"] == [3, 1, 1, 1], \
         "哨兵不变:玩家应知在场但不知方向、配比仍是官方基础"
     state = req("/api/assign", "POST", headers=ST)  # 不变:实际配比不因哨兵改变
-    teams = Counter(p["role"]["team"] for s in state["seats"] for p in [s["player"]] if p)
-    teams += Counter(next(r["team"] for r in state["roles"] if r["id"] == rid)
-                     for rid in state["seat_roles"].values())
+    teams = Counter(next(r["team"] for r in state["roles"] if r["id"] == rid)
+                    for rid in state["seat_roles"].values())
     assert teams.get("outsider", 0) in (1, 3), \
         f"哨兵不变时外来者应为 1 或 3(仅视男爵),实际 {dict(teams)}"
     print(f"SENTI 哨兵不变:实际配比 {dict(teams)},配比未因哨兵改变 OK")
@@ -557,8 +566,7 @@ async def main() -> None:
     print("TRAV  指派官员/邪恶:本人知阵营+恶魔,他人只知角色 OK")
 
     # 夜晚步骤注入:官员在黄昏阶段行动(第 2 夜,紧跟黄昏步)
-    for _ in range(len(req("/api/state", "GET", headers=ST)["night"]["steps"])):
-        req("/api/night/next", "POST", headers=ST)
+    finish_night()
     state = req("/api/day/end", "POST", headers=ST)
     steps = state["night"]["steps"]
     assert steps[0]["key"] == "dusk" and steps[1]["key"] == "bureaucrat", \
@@ -566,8 +574,7 @@ async def main() -> None:
     print("TRAV  第 2 夜步骤表含官员步,紧跟黄昏 OK")
 
     # 白天:旅行者参与提名与投票;流放门槛 = 全体(6+1)一半 = 4 票,通过即当场流放(不等天黑)
-    for _ in range(len(state["night"]["steps"])):
-        state = req("/api/night/next", "POST", headers=ST)
+    state = finish_night()
     assert state["phase"] == "day"
     assert state["day_stage"] == "talk", "天亮应先进入公聊私聊阶段"
     req("/api/day/stage", "POST", {"stage": "nom"}, ST)
@@ -725,8 +732,7 @@ async def main() -> None:
     assert dview1["lunatic_kill"] == 3, "恶魔应得知疯子刀了谁(官方规则)"
     tview = req(f"/api/me/{k_ids[2]}")
     assert "lunatic_kill" not in tview, "其他玩家不应看到疯子的选择"
-    for _ in range(len(steps) - lun_idx):
-        req("/api/night/next", "POST", headers=ST)
+    finish_night()
     st = req("/api/state", "GET", headers=ST)
     assert st["phase"] == "day" and st["seats"][2]["player"]["alive"], "疯子的刀不执行"
     try:  # 镇民没有刀人能力
@@ -747,8 +753,7 @@ async def main() -> None:
     st = req("/api/state", "GET", headers=ST)
     assert st["night_kills"]["2"]["seat"] == 5 and st["night_kills"]["2"]["by"] == 1, "说书人应看到恶魔的选择"
     assert st["seats"][4]["player"]["alive"], "天亮前被刀者仍存活"
-    for _ in range(len(steps) - imp_idx):
-        req("/api/night/next", "POST", headers=ST)
+    finish_night()
     st = req("/api/state", "GET", headers=ST)
     assert st["phase"] == "day" and not st["seats"][4]["player"]["alive"], "天亮应自动执行恶魔刀人"
     pview = req(f"/api/me/{k_ids[2]}")
@@ -815,8 +820,7 @@ async def main() -> None:
     gf_view = req(f"/api/me/{n_ids[1]}")
     assert gf_view["night_choice"]["reply"] == "外来者:陌客", "教父手机应收到首夜外来者信息"
     # 第二夜起教父可正常选人
-    for _ in range(len(steps) - gf_idx):
-        req("/api/night/next", "POST", headers=ST)
+    finish_night()
     req("/api/day/end", "POST", headers=ST)
     steps2 = req("/api/state", "GET", headers=ST)["night"]["steps"]
     gf2_idx = next(i for i, s in enumerate(steps2) if s["key"] == "godfather")
@@ -880,8 +884,7 @@ async def main() -> None:
         req(f"/api/player/{pid}/sit", "POST", {"seat": seat})
     # 第一夜无麻脸巫婆步骤 → 走完到第 2 夜
     steps = req("/api/state", "GET", headers=ST)["night"]["steps"]
-    for _ in range(len(steps)):
-        req("/api/night/next", "POST", headers=ST)
+    finish_night()
     req("/api/day/end", "POST", headers=ST)
     steps = req("/api/state", "GET", headers=ST)["night"]["steps"]
     ph_idx = next(i for i, s in enumerate(steps) if s["key"] == "pithag")
@@ -903,23 +906,32 @@ async def main() -> None:
     assert st["seats"][5]["player"]["role"]["id"] == "grandmother", "确认后贤者应变祖母"
     pview6 = req(f"/api/me/{p_ids[5]}")
     assert pview6["role_changed"]["id"] == "grandmother", "被变身玩家应收到角色转变提示"
-    keys = [s["key"] for s in st["night"]["steps"]]
+    keys = [s["character_id"] for s in st["night_workflow"]["steps"]]
     assert "grandmother" in keys, "祖母步应按行动轮次注入本夜步骤"
     # 说书人撤销(容错):角色恢复、注入步骤移除
     st = req("/api/night/transform", "POST", {"seat": 2}, ST)
     assert st["seats"][5]["player"]["role"]["id"] == "savant", "撤销后贤者应恢复"
-    keys = [s["key"] for s in st["night"]["steps"]]
+    keys = [s["character_id"] for s in st["night_workflow"]["steps"]]
     assert "grandmother" not in keys, "撤销后注入步骤应移除"
     # 创造恶魔:本夜死亡由说书人决定,恶魔手机刀不生效
     req(f"/api/player/{p_ids[1]}/choice", "POST", {"targets": [6], "char": "fang-gu"})
     st = req("/api/state", "GET", headers=ST)
-    assert st["night_kills"]["2"]["arbitrary"] is True, "创造恶魔应标记本夜死亡由说书人决定"
+    demon_change = next(item for item in reversed(st["night_workflow"]["transformations"]["history"])
+                        if item["new_character"] == "fang-gu")
+    assert demon_change["status"] == "confirmed" and demon_change["creates_demon"], \
+        "创造恶魔应记录已确认的变身事务"
+    assert "all_deaths_this_night_are_storyteller_arbitrary" in demon_change["demon_consequences"], \
+        "创造恶魔应标记本夜死亡由说书人决定"
+    created_demon_step = next(item for item in st["night_workflow"]["steps"]
+                              if item["actor_seat"] == 6 and item["character_id"] == "fang-gu")
+    assert created_demon_step["status"] == "skipped" \
+        and created_demon_step["skip_reason"] == "created_demon_no_kill_this_night", \
+        "新造恶魔本夜不应获得正常刀人行动"
     steps2 = st["night"]["steps"]
     imp_idx = next(i for i, s in enumerate(steps2) if s["key"] == "imp")
     req("/api/night/goto", "POST", {"idx": imp_idx}, ST)
     req(f"/api/player/{p_ids[0]}/kill", "POST", {"seat": 5})  # 恶魔仍选(不知情)
-    for _ in range(len(steps2) - imp_idx):
-        req("/api/night/next", "POST", headers=ST)
+    finish_night()
     st = req("/api/state", "GET", headers=ST)
     assert st["phase"] == "day" and st["seats"][4]["player"]["alive"], \
         "创造恶魔之夜恶魔刀不执行,死亡由说书人决定"
@@ -951,7 +963,11 @@ async def main() -> None:
         assert e.code == 400
     req(f"/api/player/{c_ids[1]}/choice", "POST", {"targets": [6], "char": "chef"})
     st = req("/api/state", "GET", headers=ST)
-    assert "mad" in st["seats"][5]["markers"] and st["seats"][5]["mad_about"]["id"] == "chef", \
+    mad_effect = next(effect for effect in st["seats"][5]["effects"]
+                      if effect["type"] == "mad" and effect["source_character"] == "cerenovus")
+    assert mad_effect["state"] == "active" \
+        and mad_effect["expected_end"] == "next_cerenovus_choice" \
+        and st["seats"][5]["mad_about"]["id"] == "chef", \
         "洗脑师提交应自动标记疯狂"
     mview = req(f"/api/me/{c_ids[5]}")
     assert mview["my_mad"]["role"]["id"] == "chef", "被疯狂者手机应被告知疯狂内容"
@@ -960,8 +976,15 @@ async def main() -> None:
     # 重新提交 → 旧目标解除,新目标生效
     req(f"/api/player/{c_ids[1]}/choice", "POST", {"targets": [5], "char": "dreamer"})
     st = req("/api/state", "GET", headers=ST)
-    assert "mad" not in st["seats"][5].get("markers", []), "旧目标疯狂应解除"
-    assert st["seats"][4]["mad_about"]["id"] == "dreamer", "新目标应被疯狂"
+    old_effect = next(effect for effect in st["seats"][5]["effect_history"]
+                      if effect["id"] == mad_effect["id"])
+    assert old_effect["state"] == "ended" and not st["seats"][5]["effects"], \
+        "旧目标疯狂应解除并保留历史"
+    new_effect = next(effect for effect in st["seats"][4]["effect_history"]
+                      if effect["type"] == "mad" and effect["source_character"] == "cerenovus"
+                      and effect["state"] == "active")
+    assert new_effect["payload"]["claimed_character"] == "dreamer" \
+        and st["seats"][4]["mad_about"]["id"] == "dreamer", "新目标应被疯狂"
     # 说书人手动标记:须带善良角色内容;解除后通知消失
     try:
         req("/api/marker", "POST", {"seat": 4, "marker": "mad", "on": True}, ST)
@@ -1010,8 +1033,7 @@ async def main() -> None:
     st = req("/api/marker", "POST", {"seat": 6, "marker": "role-change", "on": True, "role": "grandmother"}, ST)
     assert st["seats"][5]["role_change"]["id"] == "grandmother", "空座角色转变应可见"
     # 空座生死以说书人标记为准:白天标记空座死亡 → 进死亡名单、计入侵活数
-    for _ in range(len(steps) - ft_idx):
-        req("/api/night/next", "POST", headers=ST)
+    finish_night()
     st = req("/api/seat/6/alive", "POST", headers=ST)  # 白天标死空座占卜师
     assert st["seats"][5]["alive"] is False, "空座应能被标死"
     st = req("/api/state", "GET", headers=ST)
@@ -1034,8 +1056,7 @@ async def main() -> None:
     st = req("/api/state", "GET", headers=ST)
     assert st["night_kills"]["2"]["seat"] == 3 and st["night_kills"]["2"]["by"] == 7, \
         "空座恶魔应能代操作刀人"
-    for _ in range(len(steps) - imp_idx):
-        req("/api/night/next", "POST", headers=ST)
+    finish_night()
     st = req("/api/state", "GET", headers=ST)
     assert st["phase"] == "day" and not st["seats"][2]["player"]["alive"], "空座恶魔刀人天亮应执行"
     # 空座投票:死亡空座(座 6)交出唯一死票,可收回、结算后不可再用
@@ -1187,8 +1208,7 @@ async def main() -> None:
         raise AssertionError("夜晚私聊未被拒绝")
     except urllib.error.HTTPError as e:
         assert e.code == 400
-    for _ in range(len(req("/api/state", "GET", headers=ST)["night"]["steps"])):
-        req("/api/night/next", "POST", headers=ST)
+    finish_night()
     req(f"/api/chat/create?player_id={ch_ids[0]}", "POST", {"invitees": [2, 3, "st"]})
     v2 = req(f"/api/me/{ch_ids[1]}")
     assert len(v2["chat"]["invites"]) == 1, "被邀请者应看到邀请"
