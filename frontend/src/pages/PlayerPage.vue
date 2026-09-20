@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import PlayerBoard from '../components/player/PlayerBoard.vue'
+import PlayerChat from '../components/player/PlayerChat.vue'
 import PlayerDayAction from '../components/player/PlayerDayAction.vue'
 import PlayerLobby from '../components/player/PlayerLobby.vue'
 import PlayerNightAction from '../components/player/PlayerNightAction.vue'
@@ -26,6 +27,25 @@ const connected = computed(() => connectionStatus.value === 'connected')
 const service = createPlayerService(props.playerId)
 const { pending, error, run } = usePlayerActions({ service, connected })
 const selectedParticipant = ref(null)
+const playerChat = ref(null)
+
+async function handleChatCommand(command) {
+  const cid = command.cid ?? 'new'
+  const operations = {
+    create: () => service.createChat(command.invitees),
+    'respond-invite': () => service.respondInvite(command.cid, command.accept),
+    request: () => service.requestChat(command.cid),
+    'invite-more': () => service.inviteMore(command.cid, command.invitees),
+    approve: () => service.approveRequest(command.cid, command.who, command.approve),
+    send: () => service.sendChat(command.cid, command.text),
+    leave: () => service.leaveChat(command.cid),
+    close: () => service.closeChat(command.cid),
+  }
+  const operation = operations[command.type]
+  if (!operation) return
+  const response = await run(`chat:${command.type}:${cid}`, operation)
+  if (response && command.type === 'send') playerChat.value?.markSent(command.text)
+}
 </script>
 
 <template>
@@ -62,6 +82,16 @@ const selectedParticipant = ref(null)
         :selected-participant="selectedParticipant"
         @nominate="run('nominate', () => service.nominate($event))"
         @vote="run('vote', () => service.vote())"
+      />
+      <PlayerChat
+        v-if="view.phase === 'day' && view.chat"
+        ref="playerChat"
+        :chat="view.chat"
+        :seats="view.seats"
+        :travelers="view.travelers_public"
+        :connected="connected"
+        :pending="pending"
+        @command="handleChatCommand"
       />
       <PublicTimeline :view="view" />
       <PlayerRoleCard :view="view" />
