@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .night.models import EffectRecord, EventRecord
+from .night.models import EffectRecord, EventRecord, PendingOutcome
 
 
 @dataclass
@@ -25,6 +25,7 @@ class SeatState:
     mad_about: str | None = None
     role_change_notice: str | None = None
     team_change_notice: str | None = None
+    death_record: dict | None = None
 
 
 @dataclass
@@ -42,6 +43,7 @@ class GameState:
     seats: dict[int, SeatState] = field(default_factory=dict)
     event_records: list[EventRecord] = field(default_factory=list)
     effect_records: dict[str, EffectRecord] = field(default_factory=dict)
+    pending_outcomes: dict[str, PendingOutcome] = field(default_factory=dict)
 
     @classmethod
     def empty(cls, player_count: int) -> "GameState":
@@ -77,3 +79,5 @@ class GameState:
         self.event_records.extend(source.event_records)
         self.effect_records.clear()
         self.effect_records.update(source.effect_records)
+        self.pending_outcomes.clear()
+        self.pending_outcomes.update(source.pending_outcomes)

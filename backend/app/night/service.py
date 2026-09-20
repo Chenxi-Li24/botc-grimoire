@@ -10,6 +10,8 @@ from ..catalog import ScriptPack
 from ..state import GameState
 from .effects import EffectLedger
 from .journal import EventJournal
+from .models import PendingOutcome
+from .outcomes import OutcomeAdjudicator
 from .queue import NightQueue, NightStep
 
 
@@ -48,6 +50,9 @@ class NightService:
             self.queue.restore(restored_queue)
         else:
             self.queue.build()
+        self.outcomes = OutcomeAdjudicator(
+            state, pack, journal, effects, self.queue,
+        )
 
     def record_fields(self, step_id: str, values: dict[str, Any]) -> NightStep:
         step = next((item for item in self.queue.steps if item.id == step_id), None)
@@ -138,8 +143,102 @@ class NightService:
     def rebuild(self, cause_event_id: str | None = None) -> list[NightStep]:
         return self.queue.rebuild_suffix(cause_event_id)
 
+    def select_outcome(self, step_id: str, selected_seats: list[int]) -> PendingOutcome:
+        step = next((item for item in self.queue.steps if item.id == step_id), None)
+        if step is None:
+            raise NavigationConflict("stale_step", "夜晚步骤已变化", {"step_id": step_id})
+        if step.actor_seat is None:
+            raise NavigationConflict("invalid_actor", "该步骤没有行动座位")
+        self.record_fields(step_id, {"targets": list(selected_seats)})
+        dependencies = [item for item in step.depends_on
+                        if any(event.id == item for event in self.journal.records)]
+        selection = self.journal.append(
+            "action_selection",
+            {"step_id": step.id, "source_seat": step.actor_seat,
+             "source_character": step.character_id,
+             "selected_seats": list(selected_seats)},
+            {"op": "noop"},
+            depends_on=dependencies,
+        )
+        character = self.pack.character_by_id.get(step.character_id)
+        is_demon_attack = bool(character and character.team == "demon")
+        return self.outcomes.create(
+            source_event=selection.id,
+            source_seat=step.actor_seat,
+            source_character=step.character_id,
+            selected_seats=selected_seats,
+            metadata={
+                "step_id": step.id,
+                "night_no": self.queue.night_no,
+                "ability": step.perceived_as or step.character_id,
+                "is_demon_attack": is_demon_attack,
+                "lunatic_choice": step.character_id == "lunatic",
+            },
+        )
+
+    def resolve_outcome(self, outcome_id: str, resolution: str, **kwargs) -> PendingOutcome:
+        return self.outcomes.resolve(outcome_id, resolution, **kwargs)
+
+    def resolve_test_attack(self, source: int, target: int,
+                            resolution: str = "secret_death") -> PendingOutcome:
+        character_id = self.state.seat(source).character_id
+        if character_id is None:
+            raise ValueError("source seat has no character")
+        try:
+            step = self.queue.step_for(source, character_id)
+        except KeyError:
+            step = NightStep(
+                id=f"test:{self.queue.night_no}:{source}:{character_id}",
+                actor_seat=source,
+                character_id=character_id,
+                perceived_as=self.state.seat(source).perceived_character_id,
+                trigger="normal",
+                order=0,
+            )
+            self.queue.steps.append(step)
+        outcome = self.select_outcome(step.id, [target])
+        chosen_resolution = "choice_only" if character_id == "lunatic" else resolution
+        return self.resolve_outcome(outcome.id, chosen_resolution)
+
+    def publish_dawn(self) -> dict[str, Any]:
+        return self.outcomes.publish_dawn()
+
+    def undo(self, event_id: str, confirm: bool = False):
+        preview = self.journal.undo(event_id, confirm=confirm)
+        if confirm:
+            for undone_id in preview.event_ids:
+                event = self.journal.get(undone_id)
+                step_id = event.payload.get("step_id")
+                step = next((item for item in self.queue.steps if item.id == step_id), None)
+                if step is None:
+                    continue
+                if event.kind == "action_selection":
+                    step.values.pop("targets", None)
+                    step.status = "undone"
+                    step.skip_reason = "event_undone"
+                elif event.kind == "forced_skip" and step.skip_reason == "forced":
+                    step.status = "undone"
+                    step.skip_reason = "event_undone"
+            self.queue.rebuild_suffix()
+        return preview
+
+    def _lunatic_context(self) -> list[dict[str, Any]]:
+        return [
+            {"lunatic_seat": outcome.source_seat,
+             "target_seats": list(outcome.selected_seats),
+             "outcome_id": outcome.id}
+            for outcome in self.state.pending_outcomes.values()
+            if (outcome.status == "resolved"
+                and outcome.resolution == "choice_only"
+                and outcome.source_character == "lunatic"
+                and outcome.metadata.get("night_no") == self.queue.night_no)
+        ]
+
     def dump(self) -> dict[str, Any]:
         return self.queue.dump()
 
     def projection(self) -> dict[str, Any]:
-        return self.queue.projection()
+        projection = self.queue.projection()
+        projection["outcomes"] = self.outcomes.projection()
+        projection["context"] = {"lunatic_choices": self._lunatic_context()}
+        return projection

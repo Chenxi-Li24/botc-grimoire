@@ -90,6 +90,9 @@ class NightQueue:
             died_tonight = (not seat.alive and seat.died_day == self.night_no)
             if not died_tonight:
                 return "skipped", "death_trigger_not_met", []
+            if (character.id == "sage"
+                    and not (seat.death_record or {}).get("is_demon_attack")):
+                return "skipped", "requires_demon_attack", []
             dependencies = [seat.died_at] if seat.died_at else []
             return "upcoming", None, dependencies
         if not seat.alive:

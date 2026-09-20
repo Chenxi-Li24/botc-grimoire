@@ -91,7 +91,8 @@ class Player:
             self._seat_state.dead_vote_used = value
 
     def public(self) -> dict:
-        return {"id": self.id, "name": self.name, "seat": self.seat, "alive": self.alive}
+        visible_alive = (self._seat_state.public_alive if self._seat_state else self.alive)
+        return {"id": self.id, "name": self.name, "seat": self.seat, "alive": visible_alive}
 
     def private(self, roles: dict, fake_id: str | None = None) -> dict:
         """玩家自己看到的视图。fake_id 为认知覆盖:酒鬼看到说书人标记的假镇民角色。"""
@@ -104,6 +105,7 @@ class Player:
     def storyteller(self, roles: dict) -> dict:
         """说书人全知视图。"""
         view = self.public()
+        view["alive"] = self.alive
         view["wish"] = self.wish  # 许愿仅说书人可见(玩家座位列表里的 public() 不带)
         if self.role_id:
             view["role"] = roles[self.role_id]
@@ -199,6 +201,7 @@ class GameManager:
         self.event_seq: int = 0
         self.journal_events = []  # 新夜晚引擎:可撤销、带依赖的不可变事件
         self.effect_records = {}  # 新夜晚引擎:含来源、生命周期与完整历史的状态效果
+        self.pending_outcomes = {}  # 选择与结果分离;等待说书人裁定或已裁定的夜晚结果
         self.saved_at: float | None = None
         self._legacy_save_backup_pending: bool = False
         self._bind_night_ledgers()
@@ -325,6 +328,7 @@ class GameManager:
             seats=self.seat_states,
             event_records=self.journal_events,
             effect_records=self.effect_records,
+            pending_outcomes=self.pending_outcomes,
         )
 
     def _bind_night_ledgers(self) -> None:
@@ -472,6 +476,7 @@ class GameManager:
             self.seat_states = core.seats
             self.journal_events = core.event_records
             self.effect_records = core.effect_records
+            self.pending_outcomes = core.pending_outcomes
             self.players = {pid: Player(id=account.id, name=account.name,
                                         seat=account.seat, wish=account.wish)
                             for pid, account in core.players.items()}
@@ -540,6 +545,7 @@ class GameManager:
         }
         self.journal_events = []
         self.effect_records = {}
+        self.pending_outcomes = {}
         self._bind_night_ledgers()
         self.lunatic_minions = {}
         self.lunatic_bluffs = {}
@@ -1053,6 +1059,7 @@ class GameManager:
             raise ValueError("现在是夜晚,不能结束白天")
         self._end_day_execution()  # 白天结束:结算处决(最多票者死,平票无人死)
         self.recall_chats()  # 天黑:私聊即焚,全部关闭
+        self.effects.advance("dusk")  # 结束“持续到黄昏”的中毒/疯狂等语义时限
         self.night_no += 1
         self._begin_night()
         self.save()
@@ -2018,10 +2025,14 @@ class GameManager:
             p = seat_of.get(i)
             if p is None:
                 slot = {"seat": i, "player": None}
+                seat_state = self.seat_state(i)
                 if st_view and i in self.seat_roles:  # 空座上的预发身份,说书人可见
                     slot["assigned_role"] = self.roles[self.seat_roles[i]]
                 if st_view and i in self.seat_roles:  # 空座生死:以说书人标记为准
                     slot["alive"] = self.seat_alive.get(i, True)
+                    slot["secret_dead"] = (not seat_state.alive
+                                           and seat_state.public_alive)
+                    slot["death_record"] = seat_state.death_record
                 if st_view and i in self.seat_fakes:  # 空座也能先标记认知覆盖
                     slot["fake_role"] = self.roles[self.seat_fakes[i]]
                 if st_view and i in self.seat_markers:  # 空座同样挂状态标记(测试/控制)
@@ -2040,12 +2051,13 @@ class GameManager:
                 continue
             entry = p.storyteller(self.roles) if st_view else p.public()
             slot = {"seat": i, "player": entry}
-            # 夜里死的人天亮才公开:夜晚阶段对所有玩家(含死者本人)伪装成还活着——
-            # 玩家手机常扣在桌面上,座位骷髅会提前暴露死者;死者夜里由说书人当面告知
-            if (not st_view and self.phase == "night" and not p.alive
-                    and p.died_day == self.night_no):
-                entry["alive"] = True
-            if not p.alive and not p.dead_vote_used:  # 死票还没交出:骷髅旁 🗳 常驻(公开信息)
+            if st_view:
+                seat_state = self.seat_state(i)
+                slot["secret_dead"] = (not seat_state.alive and seat_state.public_alive)
+                slot["death_record"] = seat_state.death_record
+            if (not p.alive and not p.dead_vote_used
+                    and (st_view or not self.seat_state(i).public_alive)):
+                # 秘密死亡公开前不能用死票图标侧漏。
                 slot["dead_vote_left"] = True
             if st_view and i in self.seat_fakes:  # 认知覆盖标记,说书人可见
                 slot["fake_role"] = self.roles[self.seat_fakes[i]]
@@ -2132,10 +2144,7 @@ class GameManager:
             view["review"] = self.build_review()  # 复盘时间线(结算页可切到独立复盘页)
         if not started:
             return view
-        # 夜里死的人天亮才公开:死者本人的卡夜里也先不显示死亡(手机在桌上会被旁人看到骷髅/死亡提示)
-        if (self.phase == "night" and me.seat is not None and not me.alive
-                and me.died_day == self.night_no):
-            view["me"]["alive"] = True
+        # 座位玩家是否公开死亡统一由 SeatState.public_alive 决定。
         if (me_traveler is not None and self.phase == "night" and not me_traveler["alive"]
                 and me_traveler["died_day"] == self.night_no):
             view["traveler"]["alive"] = True  # 旅行者夜里死:本人卡同样天亮前不显示
@@ -2144,8 +2153,8 @@ class GameManager:
         for p in self.players.values():
             if p.seat is None or p.alive or p.died_day is None:
                 continue
-            if self.phase == "night" and p.died_day == self.night_no:
-                continue  # 今夜刚死:天亮才公开
+            if self.seat_state(p.seat).public_alive:
+                continue  # 秘密死亡尚未由天亮事件公开
             deaths.append({"seat": p.seat, "name": p.name, "day": p.died_day})
         for t in self.travelers:
             if t["alive"] or t["died_day"] is None:
@@ -2159,8 +2168,8 @@ class GameManager:
                 continue
             if self.seat_alive.get(i, True) or i not in self.seat_dead_day:
                 continue
-            if self.phase == "night" and self.seat_dead_day[i] == self.night_no:
-                continue
+            if self.seat_state(i).public_alive:
+                continue  # 秘密死亡尚未由天亮事件公开
             deaths.append({"seat": i, "name": self.roles[self.seat_roles[i]]["name"],
                            "day": self.seat_dead_day[i], "empty": True})
         deaths.sort(key=lambda d: (d["day"], str(d["seat"])))

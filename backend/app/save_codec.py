@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from .catalog import ScriptPack
-from .night.models import EffectRecord, EventRecord
+from .night.models import EffectRecord, EventRecord, PendingOutcome
 from .state import GameState, PlayerAccount, SeatState
 
 SCHEMA_VERSION = 2
@@ -53,6 +53,10 @@ def decode_save(payload: dict, pack: ScriptPack) -> GameState:
         for effect in state.effect_records.values():
             if not 1 <= effect.target_seat <= player_count:
                 raise ValueError(f"effect target {effect.target_seat} is outside configured range")
+        state.pending_outcomes = {
+            outcome_id: PendingOutcome.from_dict({**item, "id": outcome_id})
+            for outcome_id, item in payload.get("pending_outcomes", {}).items()
+        }
         return state
 
     state = GameState.empty(player_count)
@@ -122,6 +126,8 @@ def encode_save(state: GameState) -> dict:
         "event_records": [event.to_dict() for event in state.event_records],
         "effect_records": {effect_id: effect.to_dict()
                            for effect_id, effect in state.effect_records.items()},
+        "pending_outcomes": {outcome_id: outcome.to_dict()
+                             for outcome_id, outcome in state.pending_outcomes.items()},
     }
     # Validate that round-tripping the canonical section is structurally safe before disk replace.
     if len(payload["seats"]) != state.player_count:
