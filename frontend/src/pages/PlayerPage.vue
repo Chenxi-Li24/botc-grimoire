@@ -5,6 +5,7 @@ import PlayerChat from '../components/player/PlayerChat.vue'
 import PlayerDayAction from '../components/player/PlayerDayAction.vue'
 import PlayerLobby from '../components/player/PlayerLobby.vue'
 import PlayerNightAction from '../components/player/PlayerNightAction.vue'
+import PlayerResult from '../components/player/PlayerResult.vue'
 import PlayerRoleCard from '../components/player/PlayerRoleCard.vue'
 import PlayerShell from '../components/player/PlayerShell.vue'
 import PublicTimeline from '../components/player/PublicTimeline.vue'
@@ -56,8 +57,9 @@ async function handleChatCommand(command) {
   </main>
   <PlayerShell v-else data-player-page :view="view" :connection-status="connectionStatus">
     <p v-if="error" class="error" role="alert">{{ error.message }}</p>
+    <PlayerResult v-if="view.result" :view="view" />
     <PlayerLobby
-      v-if="view.status === 'lobby' || (view.me?.seat == null && !view.traveler)"
+      v-else-if="view.status === 'lobby' || (view.me?.seat == null && !view.traveler)"
       :view="view"
       :connected="connected"
       :pending="pending"

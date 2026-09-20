@@ -86,3 +86,26 @@ export function makeDayPlayerView(overrides = {}) {
     ...overrides,
   })
 }
+
+export function makeFinishedPlayerView(overrides = {}) {
+  const base = makeDayPlayerView({
+    result: {
+      winner: 'good',
+      seats: [
+        { seat: 1, name: '阿青', alive: true, role: { id: 'chef', name: '厨师', team: 'townsfolk' } },
+        { seat: 2, name: '小白', alive: false, role: { id: 'imp', name: '小恶魔', team: 'demon' } },
+      ],
+      travelers: [
+        { id: 't1', name: '阿旅', alive: true, align: 'evil', role: { id: 'scapegoat', name: '替罪羊' } },
+      ],
+    },
+    review: {
+      has_data: true,
+      groups: [{
+        phase: 'night', n: 1, label: '第 1 夜',
+        items: [{ text: '信息错误', wrong: true, why: '中毒' }],
+      }],
+    },
+  })
+  return { ...base, ...overrides }
+}

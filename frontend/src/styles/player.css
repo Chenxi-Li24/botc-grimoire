@@ -1,0 +1,49 @@
+body:has(.player-shell) {
+  min-width: 0;
+  overflow-x: hidden;
+  background:
+    radial-gradient(circle at 50% -20%, rgb(112 35 46 / 24%), transparent 42%),
+    var(--bg);
+}
+
+.player-shell,
+.player-shell * {
+  min-width: 0;
+}
+
+.player-shell button,
+.player-shell select,
+.player-shell input {
+  min-height: 44px;
+}
+
+.player-shell button,
+.player-shell .input,
+.player-shell select {
+  max-width: 100%;
+}
+
+.player-shell .input {
+  width: 100%;
+}
+
+.player-shell button {
+  touch-action: manipulation;
+}
+
+.player-shell p,
+.player-shell span,
+.player-shell strong {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 420px) {
+  .player-shell .player-content {
+    padding: 12px;
+  }
+
+  .player-shell .btn {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+}
