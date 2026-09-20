@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import JoinPanel from './JoinPanel.vue'
 import ManualAssignmentPanel from './ManualAssignmentPanel.vue'
 import PlayerDetailPanel from './PlayerDetailPanel.vue'
+import NightTaskPanel from './night/NightTaskPanel.vue'
 
 const props = defineProps({
   view: { type: Object, required: true },
@@ -11,6 +12,7 @@ const props = defineProps({
   connected: { type: Boolean, default: false },
   pending: { type: Array, default: () => [] },
   error: { type: Object, default: null },
+  night: { type: Object, default: null },
 })
 defineEmits([
   'clear-selection', 'toggle-role', 'toggle-bluff', 'set-fake',
@@ -19,7 +21,7 @@ defineEmits([
 ])
 
 const selected = computed(() => props.view.seats?.find((seat) => (
-  seat.seat === props.selectedSeat && seat.player
+  seat.seat === props.selectedSeat
 )) || null)
 </script>
 
@@ -46,6 +48,14 @@ const selected = computed(() => props.view.seats?.find((seat) => (
     @set-godfather="$emit('set-godfather', $event)"
     @cancel="$emit('cancel-manual')"
     @confirm="$emit('confirm-manual')"
+  />
+  <NightTaskPanel
+    v-else-if="view.status === 'playing' && view.phase === 'night' && night"
+    :view="view"
+    :night="night"
+    :connected="connected"
+    :pending="pending"
+    :error="error"
   />
   <PlayerDetailPanel
     v-else-if="selected"

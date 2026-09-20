@@ -7,6 +7,10 @@ const props = defineProps({
   contextualSeat: { type: Number, default: null },
   draftAssignments: { type: Object, default: null },
   roles: { type: Array, default: () => [] },
+  actingSeat: { type: Number, default: null },
+  draftTargets: { type: Array, default: () => [] },
+  nightSeatContext: { type: Array, default: () => [] },
+  nightEffects: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['select-seat'])
 
@@ -27,6 +31,14 @@ function draftRole(seat) {
 function serverRoleId(seat) {
   return seat.player?.role?.id || seat.assigned_role?.id || null
 }
+
+function contextFor(seat) {
+  return props.nightSeatContext.find((item) => item.seat === seat.seat) || null
+}
+
+function effectsFor(seat) {
+  return props.nightEffects.filter((item) => item.target_seat === seat.seat)
+}
 </script>
 
 <template>
@@ -42,6 +54,10 @@ function serverRoleId(seat) {
         :draft-mode="draftAssignments !== null"
         :draft-role="draftRole(seat)"
         :draft-modified="draftAssignments !== null && (draftAssignments[String(seat.seat)] || null) !== serverRoleId(seat)"
+        :acting="actingSeat === seat.seat"
+        :draft-target="draftTargets.includes(seat.seat)"
+        :secret-dead="Boolean(contextFor(seat)?.secret_dead)"
+        :effects="effectsFor(seat)"
         @select="emit('select-seat', $event)"
       />
       <div class="grimoire-center" aria-hidden="true">

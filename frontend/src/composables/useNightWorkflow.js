@@ -9,8 +9,11 @@ export function useNightWorkflow(viewRef, { service, run }) {
   const targetDrafts = ref({})
   const characterDrafts = ref({})
   const informationClaims = ref({})
+  const informationResults = ref({})
   const outcomeChoices = ref({})
   const forceTokens = ref({})
+  const forceOmissions = ref({})
+  const undoPreview = ref(null)
 
   const workflow = computed(() => viewRef.value?.night_workflow || null)
   const orderedSteps = computed(() => workflow.value?.steps || [])
@@ -55,6 +58,10 @@ export function useNightWorkflow(viewRef, { service, run }) {
     }
   }
 
+  function setInformationResult(draftId, result) {
+    informationResults.value = { ...informationResults.value, [draftId]: result }
+  }
+
   function setOutcomeChoice(outcomeId, choice) {
     outcomeChoices.value = { ...outcomeChoices.value, [outcomeId]: { ...choice } }
   }
@@ -66,8 +73,10 @@ export function useNightWorkflow(viewRef, { service, run }) {
     const stepId = result?.current_step_id || payload.step_id
     if (result?.blocked && result.force_token && stepId) {
       forceTokens.value = { ...forceTokens.value, [stepId]: result.force_token }
+      forceOmissions.value = { ...forceOmissions.value, [stepId]: result.omissions || [] }
     } else if (stepId) {
       const next = { ...forceTokens.value }; delete next[stepId]; forceTokens.value = next
+      const omissions = { ...forceOmissions.value }; delete omissions[stepId]; forceOmissions.value = omissions
     }
     return response
   }
@@ -92,10 +101,20 @@ export function useNightWorkflow(viewRef, { service, run }) {
     commandKey('pit-hag', payload.preview_id || payload.actor_seat),
     () => service.confirmPitHag(payload),
   )
-  const undoNightEvent = (payload) => run(
-    commandKey('undo', payload.event_id),
-    () => service.undoNightEvent(payload),
-  )
+  async function undoNightEvent(payload) {
+    const response = await run(
+      commandKey('undo', payload.event_id),
+      () => service.undoNightEvent(payload),
+    )
+    if (response) {
+      undoPreview.value = payload.confirm
+        ? null
+        : { ...response.result, root_event_id: payload.event_id }
+    }
+    return response
+  }
+
+  function clearUndoPreview() { undoPreview.value = null }
 
   watch(workflow, (next) => {
     if (!next) return
@@ -114,9 +133,13 @@ export function useNightWorkflow(viewRef, { service, run }) {
       .filter(([id]) => unfinishedStepIds.has(id)))
     informationClaims.value = Object.fromEntries(Object.entries(informationClaims.value)
       .filter(([id]) => pendingDraftIds.has(id)))
+    informationResults.value = Object.fromEntries(Object.entries(informationResults.value)
+      .filter(([id]) => pendingDraftIds.has(id)))
     outcomeChoices.value = Object.fromEntries(Object.entries(outcomeChoices.value)
       .filter(([id]) => pendingOutcomeIds.has(id)))
     forceTokens.value = Object.fromEntries(Object.entries(forceTokens.value)
+      .filter(([id]) => unfinishedStepIds.has(id)))
+    forceOmissions.value = Object.fromEntries(Object.entries(forceOmissions.value)
       .filter(([id]) => unfinishedStepIds.has(id)))
 
     if (inspectedStepId.value && !stepIds.has(inspectedStepId.value)) {
@@ -139,8 +162,11 @@ export function useNightWorkflow(viewRef, { service, run }) {
     targetDrafts,
     characterDrafts,
     informationClaims,
+    informationResults,
     outcomeChoices,
     forceTokens,
+    forceOmissions,
+    undoPreview,
     setInspectedStep,
     inspectCurrentTask,
     setSelectedSeat,
@@ -148,6 +174,7 @@ export function useNightWorkflow(viewRef, { service, run }) {
     setTargets,
     setSelectedCharacter,
     setInformationClaims,
+    setInformationResult,
     setOutcomeChoice,
     navigate,
     selectNightTargets,
@@ -156,6 +183,7 @@ export function useNightWorkflow(viewRef, { service, run }) {
     applyNightEffect,
     confirmPitHag,
     undoNightEvent,
+    clearUndoPreview,
     commandKey,
   }
 }

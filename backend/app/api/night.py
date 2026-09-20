@@ -114,7 +114,15 @@ def create_night_router(game: GameManager, hub: Any,
             else:
                 if body.step_id is None:
                     raise NavigationConflict("missing_step", "选择目标需要 step_id")
-                result = game.night.select_outcome(body.step_id, body.selected_seats)
+                if body.create_outcome:
+                    result = game.night.select_outcome(body.step_id, body.selected_seats)
+                else:
+                    result = game.night.record_selection(
+                        body.step_id,
+                        body.selected_seats,
+                        character_id=body.character_id,
+                        acknowledged=body.acknowledged,
+                    )
             return await success(result)
         except Exception as exc:
             _raise_domain(exc)
@@ -141,11 +149,23 @@ def create_night_router(game: GameManager, hub: Any,
             if body.action == "prepare":
                 if body.actor_seat is None:
                     raise ValueError("prepare 需要 actor_seat")
+                source_event = body.source_event
+                if body.step_id is not None:
+                    step = game.night.step(body.step_id)
+                    if step.actor_seat != body.actor_seat:
+                        raise NavigationConflict(
+                            "invalid_actor", "信息接收者与当前步骤不一致",
+                            {"step_id": body.step_id, "actor_seat": body.actor_seat},
+                        )
+                    selection = game.night.record_selection(
+                        body.step_id, body.targets,
+                    )
+                    source_event = selection.id
                 result = game.night.prepare_information(
                     body.actor_seat,
                     body.targets,
                     registrations=body.registrations,
-                    source_event=body.source_event,
+                    source_event=source_event,
                 )
             elif body.action == "deliver":
                 if body.draft_id is None:
@@ -173,6 +193,13 @@ def create_night_router(game: GameManager, hub: Any,
     @router.post("/effect")
     async def effect(body: EffectBody) -> dict[str, Any]:
         try:
+            if body.step_id is not None:
+                step = game.night.step(body.step_id)
+                if step.actor_seat != body.source_seat:
+                    raise NavigationConflict(
+                        "invalid_actor", "效果来源与当前步骤不一致",
+                        {"step_id": body.step_id, "source_seat": body.source_seat},
+                    )
             if body.action == "source_ability":
                 if body.active is None:
                     raise ValueError("source_ability 需要 active")
@@ -197,6 +224,13 @@ def create_night_router(game: GameManager, hub: Any,
                         body.source_seat, body.target_seat,
                         body.claimed_character,
                     )
+                if body.step_id is not None:
+                    game.night.record_fields(
+                        body.step_id,
+                        {"targets": [body.target_seat],
+                         **({"character": body.claimed_character}
+                            if body.claimed_character else {})},
+                    )
             return await success(result)
         except Exception as exc:
             _raise_domain(exc)
@@ -204,6 +238,15 @@ def create_night_router(game: GameManager, hub: Any,
     @router.post("/pit-hag")
     async def pit_hag(body: PitHagBody) -> dict[str, Any]:
         try:
+            if body.step_id is not None:
+                step = game.night.step(body.step_id)
+                if (body.actor_seat is not None
+                        and step.actor_seat != body.actor_seat):
+                    raise NavigationConflict(
+                        "invalid_actor", "麻脸巫婆与当前步骤不一致",
+                        {"step_id": body.step_id,
+                         "actor_seat": body.actor_seat},
+                    )
             if body.action == "preview":
                 if (body.actor_seat is None or body.target_seat is None
                         or body.character_id is None):
@@ -213,6 +256,12 @@ def create_night_router(game: GameManager, hub: Any,
                 result = game.night.preview_pit_hag(
                     body.actor_seat, body.target_seat, body.character_id,
                 )
+                if body.step_id is not None:
+                    game.night.record_fields(
+                        body.step_id,
+                        {"targets": [body.target_seat],
+                         "character": body.character_id},
+                    )
             elif body.preview_id is not None:
                 result = game.night.confirm_pit_hag_preview(body.preview_id)
             else:

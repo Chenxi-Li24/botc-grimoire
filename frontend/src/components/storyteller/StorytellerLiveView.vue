@@ -23,6 +23,39 @@ const { pending, error, run } = useStorytellerCommand({ connected })
 const manual = useManualAssignment(view)
 const nightWorkflow = useNightWorkflow(view, { service, run })
 const selectedSeat = nightWorkflow.selectedSeat
+const nightContext = computed(() => ({
+  workflow: nightWorkflow.workflow.value,
+  orderedSteps: nightWorkflow.orderedSteps.value,
+  currentTask: nightWorkflow.currentTask.value,
+  inspectedStep: nightWorkflow.inspectedStep.value,
+  inspectedStepId: nightWorkflow.inspectedStepId.value,
+  selectedSeat: nightWorkflow.selectedSeat.value,
+  selectedTargets: nightWorkflow.selectedTargets.value,
+  selectedCharacter: nightWorkflow.selectedCharacter.value,
+  informationClaims: nightWorkflow.informationClaims.value,
+  informationResults: nightWorkflow.informationResults.value,
+  outcomeChoices: nightWorkflow.outcomeChoices.value,
+  forceTokens: nightWorkflow.forceTokens.value,
+  forceOmissions: nightWorkflow.forceOmissions.value,
+  undoPreview: nightWorkflow.undoPreview.value,
+  setInspectedStep: nightWorkflow.setInspectedStep,
+  inspectCurrentTask: nightWorkflow.inspectCurrentTask,
+  setSelectedSeat: nightWorkflow.setSelectedSeat,
+  toggleTarget: nightWorkflow.toggleTarget,
+  setTargets: nightWorkflow.setTargets,
+  setSelectedCharacter: nightWorkflow.setSelectedCharacter,
+  setInformationClaims: nightWorkflow.setInformationClaims,
+  setInformationResult: nightWorkflow.setInformationResult,
+  setOutcomeChoice: nightWorkflow.setOutcomeChoice,
+  navigate: nightWorkflow.navigate,
+  selectNightTargets: nightWorkflow.selectNightTargets,
+  resolveOutcome: nightWorkflow.resolveOutcome,
+  deliverInformation: nightWorkflow.deliverInformation,
+  applyNightEffect: nightWorkflow.applyNightEffect,
+  confirmPitHag: nightWorkflow.confirmPitHag,
+  undoNightEvent: nightWorkflow.undoNightEvent,
+  clearUndoPreview: nightWorkflow.clearUndoPreview,
+}))
 const manualContext = computed(() => ({
   active: manual.active.value,
   assignments: manual.assignments.value,
@@ -88,7 +121,7 @@ watch(() => view.value?.seats, (nextSeats) => {
   if (selectedSeat.value === null || !nextSeats) return
   const selected = nextSeats.find((seat) => seat.seat === selectedSeat.value)
   if (manual.active.value && selected) return
-  if (!selected?.player) selectedSeat.value = null
+  if (!selected) selectedSeat.value = null
 })
 </script>
 
@@ -115,12 +148,14 @@ watch(() => view.value?.seats, (nextSeats) => {
         :pending="pending"
         :error="error"
         :manual-active="manual.active.value"
+        :night="nightContext"
         @configure="configure"
         @set-sentinel="setSentinel"
         @toggle-fabled="toggleFabled"
         @begin-manual="beginManual"
         @assign-random="assignRandom"
         @start="startGame"
+        @inspect-step="nightWorkflow.setInspectedStep($event); rightOpen = true"
       />
     </template>
     <template #board>
@@ -129,6 +164,10 @@ watch(() => view.value?.seats, (nextSeats) => {
         :selected-seat="selectedSeat"
         :draft-assignments="manual.active.value ? manual.assignments.value : null"
         :roles="view.roles"
+        :acting-seat="nightWorkflow.currentTask.value?.actor_seat || null"
+        :draft-targets="nightWorkflow.selectedTargets.value"
+        :night-seat-context="nightWorkflow.workflow.value?.seat_context || []"
+        :night-effects="nightWorkflow.workflow.value?.effects?.current || []"
         @select-seat="selectSeat"
       />
     </template>
@@ -140,6 +179,7 @@ watch(() => view.value?.seats, (nextSeats) => {
         :connected="connected"
         :pending="pending"
         :error="error"
+        :night="nightContext"
         @clear-selection="selectedSeat = null"
         @toggle-role="manual.toggleRole(selectedSeat, $event)"
         @toggle-bluff="manual.setBluff"

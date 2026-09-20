@@ -17,6 +17,9 @@ class SelectNightTargetsBody(BaseModel):
     step_id: str | None = None
     selected_seats: list[int] = Field(default_factory=list)
     arbitrary_death: bool = False
+    create_outcome: bool = True
+    character_id: str | None = None
+    acknowledged: bool = False
 
 
 class ResolveOutcomeBody(BaseModel):
@@ -39,6 +42,7 @@ class InformationClaimBody(BaseModel):
 class InformationBody(BaseModel):
     action: Literal["prepare", "deliver", "correct"]
     actor_seat: int | None = None
+    step_id: str | None = None
     targets: list[int] = Field(default_factory=list)
     registrations: list[dict[str, Any]] = Field(default_factory=list)
     source_event: str | None = None
@@ -52,6 +56,7 @@ class InformationBody(BaseModel):
 class EffectBody(BaseModel):
     action: Literal["poisoner", "widow", "cerenovus", "source_ability"]
     source_seat: int
+    step_id: str | None = None
     target_seat: int | None = None
     claimed_character: str | None = None
     active: bool | None = None
@@ -61,6 +66,7 @@ class EffectBody(BaseModel):
 class PitHagBody(BaseModel):
     action: Literal["preview", "confirm"] = "confirm"
     preview_id: str | None = None
+    step_id: str | None = None
     actor_seat: int | None = None
     target_seat: int | None = None
     character_id: str | None = None

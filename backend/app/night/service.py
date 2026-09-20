@@ -211,24 +211,42 @@ class NightService:
                 )
         return selected
 
-    def select_outcome(self, step_id: str, selected_seats: list[int]) -> PendingOutcome:
+    def step(self, step_id: str) -> NightStep:
         step = next((item for item in self.queue.steps if item.id == step_id), None)
         if step is None:
             raise NavigationConflict("stale_step", "夜晚步骤已变化", {"step_id": step_id})
+        return step
+
+    def record_selection(self, step_id: str, selected_seats: list[int], *,
+                         character_id: str | None = None,
+                         acknowledged: bool = False):
+        step = self.step(step_id)
         if step.actor_seat is None:
             raise NavigationConflict("invalid_actor", "该步骤没有行动座位")
         selected = self._validate_targets(step, selected_seats)
-        self.record_fields(step_id, {"targets": selected})
+        values: dict[str, Any] = {"targets": selected}
+        if character_id is not None:
+            values["character"] = character_id
+        if acknowledged:
+            values["acknowledged"] = True
+        self.record_fields(step_id, values)
         dependencies = [item for item in step.depends_on
                         if any(event.id == item for event in self.journal.records)]
-        selection = self.journal.append(
+        return self.journal.append(
             "action_selection",
             {"step_id": step.id, "source_seat": step.actor_seat,
              "source_character": step.character_id,
-             "selected_seats": selected},
+             "selected_seats": selected,
+             **({"character_id": character_id} if character_id else {}),
+             **({"acknowledged": True} if acknowledged else {})},
             {"op": "noop"},
             depends_on=dependencies,
         )
+
+    def select_outcome(self, step_id: str, selected_seats: list[int]) -> PendingOutcome:
+        step = self.step(step_id)
+        selection = self.record_selection(step_id, selected_seats)
+        selected = selection.payload["selected_seats"]
         character = self.pack.character_by_id.get(step.character_id)
         is_demon_attack = bool(character and character.team == "demon")
         arbitrary_source = self._arbitrary_death_source()
@@ -406,6 +424,8 @@ class NightService:
                     continue
                 if event.kind == "action_selection":
                     step.values.pop("targets", None)
+                    step.values.pop("character", None)
+                    step.values.pop("acknowledged", None)
                     step.status = "undone"
                     step.skip_reason = "event_undone"
                 elif event.kind == "forced_skip" and step.skip_reason == "forced":
