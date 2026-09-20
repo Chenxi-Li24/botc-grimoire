@@ -6,20 +6,20 @@
 
 from . import (bad_moon_rising, mantanghong, sects_and_violets,
                trouble_brewing, wafu_leiming)
+from ..catalog import compile_builtin_packs, pack_to_view
+from ..night_order import NIGHT_ORDER
 from .common import (COMPOSITION, DEMON, MINION, OUTSIDER,
                      ROLE_ADJUSTMENTS, TEAM_LABELS, TOWNSFOLK)
 
 _MODULES = (trouble_brewing, bad_moon_rising, sects_and_violets,
             wafu_leiming, mantanghong)
 
-SCRIPTS = {
-    m.SCRIPT_ID: {"name": m.NAME, "en": m.EN,
-                  "min_players": m.MIN_PLAYERS, "roles": m.ROLES}
-    for m in _MODULES
-}
+SCRIPT_PACKS = compile_builtin_packs(_MODULES, NIGHT_ORDER)
+SCRIPTS = {script_id: pack_to_view(pack)
+           for script_id, pack in SCRIPT_PACKS.items()}
 
 # 各脚本会触发配比调整的角色(抽中后生效)
 SCRIPT_ADJUST_ROLES = {m.SCRIPT_ID: m.ADJUST_ROLES for m in _MODULES}
 
 __all__ = ["COMPOSITION", "DEMON", "MINION", "OUTSIDER", "ROLE_ADJUSTMENTS",
-           "SCRIPTS", "SCRIPT_ADJUST_ROLES", "TEAM_LABELS", "TOWNSFOLK"]
+           "SCRIPTS", "SCRIPT_PACKS", "SCRIPT_ADJUST_ROLES", "TEAM_LABELS", "TOWNSFOLK"]

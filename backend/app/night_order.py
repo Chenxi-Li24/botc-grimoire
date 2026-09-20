@@ -199,3 +199,15 @@ NIGHT_ORDER = {
         ],
     },
 }
+
+
+SPECIAL_NIGHT_STEPS = frozenset({"dusk", "dawn", "minioninfo", "demoninfo"})
+
+
+def night_positions(script_id, kind):
+    """Return stable order indexes for character steps in a generated sheet."""
+    return {
+        step["key"]: index
+        for index, step in enumerate(NIGHT_ORDER[script_id][kind])
+        if step["key"] not in SPECIAL_NIGHT_STEPS
+    }

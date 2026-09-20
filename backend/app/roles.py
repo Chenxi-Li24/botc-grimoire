@@ -9,7 +9,7 @@
 
 from .scripts import (COMPOSITION, DEMON, MINION, OUTSIDER,  # noqa: F401
                       ROLE_ADJUSTMENTS, SCRIPTS,
-                      SCRIPT_ADJUST_ROLES, TEAM_LABELS, TOWNSFOLK)
+                      SCRIPT_ADJUST_ROLES, SCRIPT_PACKS, TEAM_LABELS, TOWNSFOLK)
 from .scripts import (bad_moon_rising, mantanghong,  # noqa: F401
                       sects_and_violets, trouble_brewing, wafu_leiming)
 
@@ -21,4 +21,4 @@ MTH_ROLES = mantanghong.ROLES
 
 __all__ = ["COMPOSITION", "DEMON", "MINION", "OUTSIDER", "ROLE_ADJUSTMENTS",
            "SCRIPTS", "SCRIPT_ADJUST_ROLES", "TEAM_LABELS", "TOWNSFOLK",
-           "TB_ROLES", "BMR_ROLES", "SV_ROLES", "VAFR_ROLES", "MTH_ROLES"]
+           "SCRIPT_PACKS", "TB_ROLES", "BMR_ROLES", "SV_ROLES", "VAFR_ROLES", "MTH_ROLES"]
