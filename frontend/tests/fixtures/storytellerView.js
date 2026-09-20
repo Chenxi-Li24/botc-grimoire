@@ -69,3 +69,52 @@ export const lobbyView = {
   ],
   chats: [],
 }
+
+export const activeNomination = (votes = []) => ({
+  nominator: 1,
+  nominee: 2,
+  votes,
+})
+
+export function makeStorytellerDayView(overrides = {}) {
+  const role = (id, name, team = 'townsfolk') => ({ id, name, team })
+  const seated = (id, name, seat, assignedRole, alive = true, deadVoteUsed = false) => ({
+    id,
+    name,
+    seat,
+    alive,
+    dead_vote_used: deadVoteUsed,
+    role: assignedRole,
+    markers: [],
+  })
+
+  const view = {
+    ...structuredClone(lobbyView),
+    status: 'playing',
+    phase: 'day',
+    night_no: 1,
+    day_no: 1,
+    day_stage: 'nom',
+    seats: [
+      { seat: 1, player: seated('p1', '阿青', 1, role('chef', '厨师')), dead_vote_left: true },
+      { seat: 2, player: seated('p2', '小白', 2, role('empath', '共情者')), dead_vote_left: true },
+      { seat: 3, player: seated('p3', '阿紫', 3, role('monk', '僧侣')), dead_vote_left: true },
+      { seat: 4, player: seated('p4', '阿金', 4, role('soldier', '士兵')), dead_vote_left: true },
+      { seat: 5, player: null, assigned_role: role('mayor', '镇长'), alive: true, dead_vote_left: true },
+      { seat: 6, player: seated('p6', '阿灰', 6, role('recluse', '隐士', 'outsider'), false), dead_vote_left: true },
+    ],
+    travelers: [
+      { id: 't1', name: '旅人甲', alive: true, exiled: false, dead_vote_used: false, alignment: 'good' },
+      { id: 't2', name: '旅人乙', alive: false, exiled: true, dead_vote_used: true, alignment: 'evil' },
+    ],
+    alive_count: 5,
+    total_players: 8,
+    quorum: 3,
+    exile_quorum: 4,
+    current: activeNomination([1, 2]),
+    nominations: [],
+    deaths: [],
+  }
+
+  return { ...view, ...overrides }
+}

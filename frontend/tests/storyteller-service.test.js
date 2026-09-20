@@ -48,3 +48,25 @@ it('preserves backend errors for the initiating panel', async () => {
   await expect(service.configure('trouble-brewing', 6))
     .rejects.toThrow('本局已开始，不能修改配置')
 })
+
+it('maps every daytime command and preserves traveler participant ids', async () => {
+  const service = createStorytellerService('secret')
+  await service.setDayStage('nom')
+  await service.startNomination(2, 't1')
+  await service.toggleVote('t1')
+  await service.resolveNomination(true)
+  await service.endDay()
+
+  expect(api.mock.calls.map(([path]) => path)).toEqual([
+    '/api/day/stage',
+    '/api/nomination',
+    '/api/nomination/vote',
+    '/api/nomination/resolve',
+    '/api/day/end',
+  ])
+  expect(JSON.parse(api.mock.calls[0][1].body)).toEqual({ stage: 'nom' })
+  expect(JSON.parse(api.mock.calls[1][1].body)).toEqual({ nominator: 2, nominee: 't1' })
+  expect(JSON.parse(api.mock.calls[2][1].body)).toEqual({ seat: 't1' })
+  expect(JSON.parse(api.mock.calls[3][1].body)).toEqual({ passed: true })
+  expect(api.mock.calls[4][1]).not.toHaveProperty('body')
+})

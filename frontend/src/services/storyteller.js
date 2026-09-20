@@ -24,5 +24,10 @@ export function createStorytellerService(password) {
     applyNightEffect: (payload) => command('/api/night/effect', payload),
     confirmPitHag: (payload) => command('/api/night/pit-hag', payload),
     undoNightEvent: (payload) => command('/api/night/undo', payload),
+    setDayStage: (stage) => command('/api/day/stage', { stage }),
+    startNomination: (nominator, nominee) => command('/api/nomination', { nominator, nominee }),
+    toggleVote: (seat) => command('/api/nomination/vote', { seat }),
+    resolveNomination: (passed) => command('/api/nomination/resolve', { passed }),
+    endDay: () => command('/api/day/end'),
   }
 }
