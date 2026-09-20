@@ -9,6 +9,12 @@ class NightTiming:
     first: int | None = None
     other: int | None = None
     trigger: str = "normal"
+    first_trigger: str | None = None
+    other_trigger: str | None = None
+
+    def trigger_for(self, first_night: bool) -> str:
+        selected = self.first_trigger if first_night else self.other_trigger
+        return selected or self.trigger
 
 
 @dataclass(frozen=True)

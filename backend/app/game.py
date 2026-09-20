@@ -20,6 +20,7 @@ from pathlib import Path
 from .night_order import NIGHT_ORDER
 from .night.effects import EffectLedger
 from .night.journal import EventJournal
+from .night.service import NightService
 from .roles import (COMPOSITION, DEMON, MINION, OUTSIDER, SCRIPTS,
                     SCRIPT_ADJUST_ROLES, SCRIPT_PACKS, ROLE_ADJUSTMENTS, TOWNSFOLK)
 from .scripts.travelers import (DUSK_ORDER as TRAVELER_DUSK,
@@ -201,6 +202,7 @@ class GameManager:
         self.saved_at: float | None = None
         self._legacy_save_backup_pending: bool = False
         self._bind_night_ledgers()
+        self._bind_night_service()
 
     @property
     def roles(self) -> dict:
@@ -330,6 +332,46 @@ class GameManager:
         self.journal = EventJournal(core)
         self.effects = EffectLedger(core)
 
+    def _traveler_night_actions(self) -> list[dict]:
+        actions = []
+        for role_id in TRAVELER_DUSK:
+            holders = [traveler for traveler in self.travelers
+                       if traveler["role_id"] == role_id and traveler["alive"]]
+            if not holders:
+                continue
+            if role_id == "apprentice" and not any(
+                traveler["joined_no"] == self.night_no
+                if traveler["joined_phase"] == "night"
+                else traveler["joined_no"] + 1 == self.night_no
+                for traveler in holders
+            ):
+                continue
+            role = TRAVELER_BY_ID[role_id]
+            actions.append({
+                "character_id": role_id,
+                "traveler_ids": [traveler["id"] for traveler in holders],
+                "name": f"🎒 {role['name']}",
+                "reminder": role["ability"],
+                "required_fields": ["acknowledged"],
+            })
+        return actions
+
+    def _bind_night_service(self, restored_queue: dict | None = None) -> None:
+        self.night = NightService(
+            self.journal.state,
+            SCRIPT_PACKS[self.script_id],
+            self.night_no,
+            self.journal,
+            self.effects,
+            traveler_actions=self._traveler_night_actions(),
+            restored_queue=restored_queue,
+        )
+
+    def _rebuild_night_queue(self, cause_event_id: str | None = None) -> None:
+        if self.phase == "night" and hasattr(self, "night"):
+            self.night.queue.traveler_actions = self._traveler_night_actions()
+            self.night.rebuild(cause_event_id)
+
     def _migrate_legacy_effects(self) -> None:
         """Expose pre-ledger markers as sourced manual effects without losing history."""
         for state in self.seat_states.values():
@@ -397,6 +439,7 @@ class GameManager:
             "winner": self.winner, "fabled": self.fabled,
             "chats": self.chats, "chat_seq": self.chat_seq,
             "events": self.events, "event_seq": self.event_seq,
+            "night_queue_state": self.night.dump(),
         })
         return payload
 
@@ -466,6 +509,7 @@ class GameManager:
             self.night_kills = d.get("night_kills", {})  # 旧存档没有夜晚刀人 → 空
             self.night_choices = d.get("night_choices", {})  # 旧存档没有夜晚信息交互 → 空
             self.fortuneteller_red = d.get("fortuneteller_red")  # 旧存档没有宿敌 → None
+            self._bind_night_service(d.get("night_queue_state"))
             self._legacy_save_backup_pending = legacy_save
             self.saved_at = time.time()
         except (KeyError, TypeError, ValueError):
@@ -523,6 +567,7 @@ class GameManager:
         self.chats = []  # 私聊清空(换板子=新局)
         self.chat_seq = 0
         self.status = "lobby"
+        self._bind_night_service()
         self.save()
 
     def set_sentinel(self, value: int) -> None:
@@ -581,6 +626,7 @@ class GameManager:
         state = self.seat_state(seat)
         state.claimed_by = player_id
         me.bind(state)
+        self._rebuild_night_queue()
         if (self.status == "lobby" and self.seat_roles
                 and len(self.seats) == self.player_count):
             self.status = "playing"  # 预发身份全部入座 → 自动开局
@@ -597,6 +643,7 @@ class GameManager:
                 state.claimed_by = None
         player.bind(None)
         del self.players[player_id]  # 只释放账号认领;角色与局内状态留在座位
+        self._rebuild_night_queue()
         self.save()
 
     # ---- 旅行者 ----
@@ -636,6 +683,7 @@ class GameManager:
         }
         self.travelers.append(t)
         self._log(None, "traveler_join", {"name": t["name"]})
+        self._rebuild_night_queue()
         self.save()
         return t
 
@@ -660,6 +708,7 @@ class GameManager:
             "dead_vote_used": False,
         }
         self.travelers.append(t)
+        self._rebuild_night_queue()
         self.save()
         return t
 
@@ -676,6 +725,7 @@ class GameManager:
         if align:
             t["align"] = align
         self._log(None, "traveler_assign", {"name": t["name"], "role": role_id, "align": t["align"]})
+        self._rebuild_night_queue()
         self.save()
 
     def exile_traveler(self, traveler_id: str, exiled: bool) -> None:
@@ -686,6 +736,7 @@ class GameManager:
         t["died_day"] = (self.day_no if self.phase == "day" else self.night_no) if exiled else None
         if exiled:
             self._log(None, "traveler_exile", {"name": t["name"]})
+        self._rebuild_night_queue()
         self.save()
 
     def toggle_traveler_alive(self, traveler_id: str) -> None:
@@ -695,6 +746,7 @@ class GameManager:
             raise ValueError("已流放:先撤销流放才能改动生死")
         t["alive"] = not t["alive"]
         t["died_day"] = None if t["alive"] else (self.day_no if self.phase == "day" else self.night_no)
+        self._rebuild_night_queue()
         self.save()
 
     def _target(self, target: int | str) -> tuple[Player | None, dict | None]:
@@ -902,6 +954,11 @@ class GameManager:
 
     def _begin_night(self) -> None:
         """进入夜晚:按本夜在场角色组装步骤表(酒鬼的假角色作为附加步骤)。"""
+        rebuild_existing = (
+            hasattr(self, "night")
+            and self.phase == "night"
+            and self.night.queue.night_no == self.night_no
+        )
         if self.night_no == 1 and not self.bluffs:  # 兜底:老存档没伪装时第一夜补抽,后续夜不再重抽
             present = set(self.seat_roles.values()) | {p.role_id for p in self.players.values() if p.role_id}
             self.bluffs = self._pick_bluffs(present)
@@ -956,6 +1013,10 @@ class GameManager:
         self.night_steps = steps
         self.night_idx = 0
         self.phase = "night"
+        if rebuild_existing:
+            self.night.rebuild()
+        else:
+            self._bind_night_service()
 
     def night_goto(self, idx: int) -> None:
         if self.phase != "night":
@@ -1134,6 +1195,7 @@ class GameManager:
         entry["from"] = self.seat_roles[target]
         self.seat_roles[target] = char
         self.seat_role_changes[target] = char  # 未领取座位也保留通知,领取后可见
+        self._rebuild_night_queue()
         entry["applied"] = True
         self._log(seat, "transform", {"target": target, "char": char, "from": entry["from"]})
         if self.roles[char]["team"] == DEMON:
@@ -1183,6 +1245,7 @@ class GameManager:
         if prev:
             self.seat_roles[target] = prev
             self.seat_role_changes.pop(target, None)
+            self._rebuild_night_queue()
         self.night_steps = [st for st in self.night_steps
                             if not (st["key"] == char and st.get("_pithag"))]
         if self.roles[char]["team"] == DEMON:
@@ -1749,6 +1812,7 @@ class GameManager:
                               if not state.alive else None)
             state.died_at = (f"{self.phase}:{state.died_day}:storyteller"
                              if not state.alive else None)
+            self._rebuild_night_queue()
             self.save()
 
     def toggle_seat_alive(self, seat: int) -> None:
@@ -1768,6 +1832,7 @@ class GameManager:
             state.died_day = None
             state.died_at = None
             state.dead_vote_used = False
+        self._rebuild_night_queue()
         self.save()
 
     def set_fake(self, seat: int, role_id: str | None,
@@ -1831,6 +1896,7 @@ class GameManager:
                                                 "pass_demon": pass_demon})
             else:
                 self.seat_role_changes.pop(seat, None)
+            self._rebuild_night_queue()
             self.save()
             return
         if marker == "team-change":  # 带数据的标记:说书人选新阵营,角标/玩家提示按阵营配色
@@ -1841,6 +1907,7 @@ class GameManager:
                 self._log(seat, "team_change", {"team": team})
             else:
                 self.seat_team_changes.pop(seat, None)
+            self._rebuild_night_queue()
             self.save()
             return
         if marker == "mad":  # 疯狂带内容:被疯狂者疯狂宣称自己是某善良角色(手机会被告知)
@@ -2271,6 +2338,7 @@ class GameManager:
             "night_kills": self.night_kills,  # 夜晚刀人:恶魔/疯子的手机选择(说书人可见)
             "night_choices": self.night_choices,  # 夜晚信息交互:各座位选择与说书人回复
             "night_actions": NIGHT_ACTIONS,  # 夜晚行动配置(前端代操作面板用)
+            "night_workflow": self.night.projection(),  # Vue 夜晚工作台的权威动态队列
             "fortuneteller_red": self.fortuneteller_red,  # 占卜师宿敌(红鲱鱼):只有说书人知道
             # 已加入的玩家(含未入座):许愿仅说书人可见,配板/手动发身份时参考
             "players": [{"id": p.id, "name": p.name, "seat": p.seat, "alive": p.alive,

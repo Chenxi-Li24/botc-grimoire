@@ -49,6 +49,7 @@ COMPLEX_HANDLERS = {
 }
 
 SELECTIONS = {
+    "lunatic": SelectionSpec(players=1),
     "fortuneteller": SelectionSpec(players=2, allow_self=True),
     "dreamer": SelectionSpec(players=1, allow_self=False),
     "gambler": SelectionSpec(players=1, characters=1),
@@ -154,6 +155,9 @@ def compile_script_pack(module, order: dict[str, list[dict]]) -> ScriptPack:
                 first=first,
                 other=other,
                 trigger=_trigger_for(role_id, first, other),
+                first_trigger=("start-knowing" if role_id in START_KNOWING
+                               else "first-night"),
+                other_trigger=("death" if role_id in DEATH_TRIGGERS else "normal"),
             ),
             selection=selection,
             information_resolver=resolver,
