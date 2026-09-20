@@ -7,7 +7,8 @@
 - [x] Storyteller lobby setup and role assignment
 - [x] Storyteller night workflow
 - [x] Player page migrated
-- [ ] Storyteller day/review tools migrated
+- [x] Storyteller daytime nomination/voting workflow migrated
+- [ ] Storyteller traveler/chat/end-game/review administration migrated
 - [ ] Legacy frontend removed
 - [ ] Backend routers and domains modularized
 
@@ -22,7 +23,9 @@
   酒鬼/疯子认知覆盖、传奇角色、哨兵调整和人未齐强制开局。
 - 已迁移的夜晚操作：动态座位夜序、秘密死亡裁定、结构化信息发送与真假标记、
   麻脸巫婆角色变化、限时异常状态、依赖撤销及天亮公开死亡。
-- 白天、提名投票、旅行者、聊天及结束复盘暂时通过“旧版白天与复盘工具”进入。
+- 已迁移的白天操作：公聊/提名阶段切换、混合座位与旅行者提名、实时举手与死亡票、
+  结票、处决领先/平票提示、提名历史和结束白天。
+- 旅行者加入与阵营管理、说书人私聊监管、胜负宣布和复盘编辑暂时通过页头旧版工具进入。
 - 旧版夜晚操作已改为只读跳转页，不能再推进或修改夜晚状态。
 
 ## 玩家 Vue 正式入口

@@ -98,6 +98,20 @@ async function configure({ script, playerCount }) {
 
 const setSentinel = (value) => run('sentinel', () => service.setSentinel(value))
 const toggleFabled = ({ id, on }) => run(`fabled:${id}`, () => service.toggleFabled(id, on))
+const setDayStage = (stage) => run('day:stage', () => service.setDayStage(stage))
+const startNomination = ({ nominator, nominee }) => run(
+  'day:nomination',
+  () => service.startNomination(nominator, nominee),
+)
+const toggleVote = (participant) => run(
+  `day:vote:${participant}`,
+  () => service.toggleVote(participant),
+)
+const resolveNomination = (passed) => run(
+  'day:resolve',
+  () => service.resolveNomination(passed),
+)
+const endDay = () => run('day:end', () => service.endDay())
 
 async function assignRandom() {
   const result = await run('assign-random', () => service.assignRandom())
@@ -156,6 +170,11 @@ watch(() => view.value?.seats, (nextSeats) => {
         @assign-random="assignRandom"
         @start="startGame"
         @inspect-step="nightWorkflow.setInspectedStep($event); rightOpen = true"
+        @set-day-stage="setDayStage"
+        @start-nomination="startNomination"
+        @toggle-vote="toggleVote"
+        @resolve-nomination="resolveNomination"
+        @end-day="endDay"
       />
     </template>
     <template #board>

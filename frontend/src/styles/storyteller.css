@@ -40,7 +40,7 @@
   padding: 16px;
   display: grid;
   gap: 16px;
-  grid-template-columns: 260px minmax(560px, 1fr) 320px;
+  grid-template-columns: 300px minmax(560px, 1fr) 320px;
 }
 
 .storyteller-panel {
@@ -286,6 +286,68 @@ body:has(.storyteller-shell) { overflow: hidden; }
 .undo-row { padding: 8px 0; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--text); text-align: left; cursor: pointer; }
 .undo-row small { grid-column: 1; color: var(--dim); font-size: 9px; }.undo-row strong { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: #ffd479; font-size: 10px; }
 .task-submit { width: 100%; }
+
+.storyteller-controls:has(.day-control-panel) { overflow: hidden; }
+.day-control-panel { height: 100%; min-height: 0; overflow: auto; padding-bottom: 0; }
+.day-panel-header, .day-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.day-stage-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.day-stage-switch button {
+  min-height: 44px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--panel) 84%, black);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 11px;
+}
+.day-stage-switch button.active { border-color: #d6ad55; background: #57442a; color: #ffe3a3; }
+.day-card { padding: 12px; display: grid; gap: 11px; border: 1px solid var(--line); border-radius: 12px; background: rgb(255 255 255 / 2%); }
+.day-card h3 { margin-top: 3px; font-size: 14px; }
+.day-status-chip, .vote-summary { padding: 4px 7px; border-radius: 999px; background: rgb(255 255 255 / 6%); color: var(--dim); font-size: 10px; white-space: nowrap; }
+.vote-summary.reached { background: rgb(65 135 83 / 25%); color: #9ee1af; }
+.vote-summary.below { background: rgb(125 93 43 / 22%); color: #ffd479; }
+.nomination-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.nomination-columns fieldset { min-width: 0; display: grid; align-content: start; gap: 6px; border: 0; }
+.nomination-columns legend { margin-bottom: 7px; color: var(--dim); font-size: 11px; }
+.participant-choice {
+  min-width: 0;
+  min-height: 44px;
+  padding: 7px 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--panel) 84%, black);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.participant-choice span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.participant-choice small { color: var(--dim); font-size: 9px; }
+.participant-choice.selected, .participant-choice.on { border-color: #d6ad55; background: #57442a; color: #ffe3a3; }
+.nomination-composer > .btn { width: 100%; min-height: 44px; }
+.voter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.history-day { display: grid; gap: 5px; padding-top: 9px; border-top: 1px solid var(--line); }
+.history-day h4 { color: var(--dim); font-size: 11px; }
+.history-day p { font-size: 11px; line-height: 1.45; }
+.day-resolution {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  margin: 0 -18px;
+  padding: 12px 18px 18px;
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 96%, black);
+  box-shadow: 0 -12px 20px rgb(0 0 0 / 16%);
+}
+.resolution-actions, .execution-standing { display: grid; gap: 8px; }
+.resolution-actions p, .execution-standing p { font-size: 11px; line-height: 1.45; }
+.day-resolution .confirm-action .btn { min-height: 44px; }
 
 @media (max-width: 1179px) {
   .storyteller-grid { grid-template-columns: minmax(0, 1fr); }
