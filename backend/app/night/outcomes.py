@@ -175,6 +175,11 @@ class OutcomeAdjudicator:
                      "value": deepcopy(seat.death_record)},
                     *({"op": "restore_effect", "effect": effect.to_dict()}
                       for effect in sourced_effects[seat_number]),
+                    *({"op": "set",
+                       "path": ["seats", effect.target_seat, "mad_about"],
+                       "value": self.state.seat(effect.target_seat).mad_about}
+                      for effect in sourced_effects[seat_number]
+                      if effect.type == "mad"),
                 ])
         transformations = details.get("transformations", []) if resolution == "transformation" else []
         if resolution == "transformation" and not transformations:
@@ -246,6 +251,12 @@ class OutcomeAdjudicator:
                 )
                 for effect in changed_effects:
                     effect.transitions[-1]["source_event"] = resolution_event.id
+                    if effect.type == "mad" and effect.state == "ended":
+                        target_state = self.state.seat(effect.target_seat)
+                        if target_state.mad_about == effect.payload.get(
+                            "claimed_character"
+                        ):
+                            target_state.mad_about = None
         for item in transformations:
             seat = self.state.seat(int(item["seat"]))
             seat.character_id = item["character_id"]

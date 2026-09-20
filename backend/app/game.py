@@ -20,6 +20,7 @@ from pathlib import Path
 from .night_order import NIGHT_ORDER
 from .night.effects import EffectLedger
 from .night.journal import EventJournal
+from .night.models import timestamp
 from .night.service import NightService
 from .roles import (COMPOSITION, DEMON, MINION, OUTSIDER, SCRIPTS,
                     SCRIPT_ADJUST_ROLES, SCRIPT_PACKS, ROLE_ADJUSTMENTS, TOWNSFOLK)
@@ -415,6 +416,23 @@ class GameManager:
             state = self.seat_state(player.seat)
             state.claimed_by = player.id
             player.bind(state)
+
+    def mark_private_deliveries_delivered(self, player_id: str) -> bool:
+        """Record observable websocket delivery without requiring player acknowledgement."""
+        player = self.players.get(player_id)
+        if player is None or player.seat is None:
+            return False
+        active_events = {event.id for event in self.journal_events
+                         if event.state == "active"}
+        delivered_at = timestamp()
+        changed = False
+        for delivery in self.information_deliveries.values():
+            if (delivery.actor_seat == player.seat
+                    and delivery.source_event in active_events
+                    and delivery.delivered_at is None):
+                delivery.delivered_at = delivered_at
+                changed = True
+        return changed
 
     # ---- 复盘事件日志 ----
 
@@ -1045,32 +1063,70 @@ class GameManager:
         else:
             self._bind_night_service()
 
+    def _sync_legacy_night_index(self) -> None:
+        current = self.night.queue.current
+        if current is None:
+            return
+        ability = current.source.get("ability_character", current.character_id)
+        for index, legacy in enumerate(self.night_steps):
+            if legacy.get("key") != ability:
+                continue
+            fake_for = legacy.get("fake_for")
+            if fake_for is not None and fake_for != current.actor_seat:
+                continue
+            self.night_idx = index
+            return
+
+    def navigate_night(self, *, direction: str | None = None,
+                       step_id: str | None = None,
+                       force_token: str | None = None):
+        if self.winner:
+            raise ValueError("本局已结束,先撤销结算")
+        if self.phase != "night":
+            raise ValueError("现在是白天,没有夜晚步骤")
+        if step_id is not None:
+            result = self.night.navigate(step_id=step_id)
+        else:
+            result = self.night.navigate(
+                direction=direction,
+                force=force_token is not None,
+                force_token=force_token,
+            )
+        self._sync_legacy_night_index()
+        if result.at_end and not result.blocked:
+            self._apply_night_kills()  # 迁移期兼容仍由旧手机入口提交的刀人
+            self.night.publish_dawn()
+            self.phase = "day"
+            self.day_no += 1
+            self.day_stage = "talk"
+        return result
+
     def night_goto(self, idx: int) -> None:
         if self.phase != "night":
             raise ValueError("现在是白天,没有夜晚步骤")
         if not 0 <= idx < len(self.night_steps):
             raise ValueError(f"步骤需在 0~{len(self.night_steps) - 1} 之间")
-        self.night_idx = idx
+        legacy = self.night_steps[idx]
+        key = legacy.get("key")
+        fake_for = legacy.get("fake_for")
+        step = next((item for item in self.night.queue.steps
+                     if item.source.get("ability_character", item.character_id) == key
+                     and (fake_for is None or item.actor_seat == fake_for)), None)
+        if step is None:
+            raise ValueError("旧版步骤已不在当前动态夜序中")
+        self.navigate_night(step_id=step.id)
         self.save()
 
     def night_next(self) -> None:
-        if self.winner:
-            raise ValueError("本局已结束,先撤销结算")
-        if self.phase != "night":
-            raise ValueError("现在是白天,不能推进夜晚")
-        if self.night_idx + 1 < len(self.night_steps):
-            self.night_idx += 1
-        else:  # 走完最后一步(dawn)→ 天亮
-            self._apply_night_kills()  # 恶魔刀人自动执行:夜里死,天亮才公开
-            self.phase = "day"
-            self.day_no += 1
-            self.day_stage = "talk"  # 天亮先进入公聊私聊阶段,说书人宣布后才进提名
+        result = self.navigate_night(direction="next")
+        if result.blocked:
+            result = self.navigate_night(
+                direction="next", force_token=result.force_token,
+            )
         self.save()
 
     def night_prev(self) -> None:
-        if self.phase != "night" or self.night_idx <= 0:
-            raise ValueError("已经在第一步,不能后退")
-        self.night_idx -= 1
+        self.navigate_night(direction="previous")
         self.save()
 
     def end_day(self) -> None:
@@ -1196,76 +1252,60 @@ class GameManager:
         self.night_choices.setdefault(str(self.night_no), {})[str(seat)] = entry
         if act.get("char") and char in self.roles:
             if eff == "pithag":
-                self._apply_pithag(seat)  # 自动转变(提交即生效);角色在场 → 静默无效
+                self._apply_pithag(seat)  # 旧入口适配:通过新事务处理器确认
             elif eff == "cerenovus":
-                self._apply_cerenovus(seat)  # 疯狂自动生效:被疯狂者手机被告知
+                self._apply_cerenovus(seat)  # 旧入口适配:写入可溯源疯狂效果
+        elif eff == "widow" and targets:
+            effect = self.night.apply_widow(seat, targets[0])
+            entry["effect_id"] = effect.id
+            entry["applied"] = True
         self._log(seat, "choice", {"role": eff, "targets": sorted(targets),
                                    "char": entry.get("char")})
         self.save()
 
     def _apply_pithag(self, seat: int) -> None:
-        """自动应用麻脸巫婆的变身:角色在场(存活或死亡,含空座预发)→ 静默无效,麻脸巫婆自己不知道;
-        生效则角色立即改变并告知玩家;创造恶魔 → 本夜死亡由说书人决定;
-        新角色在本夜行动顺序中位于麻脸巫婆之后 → 注入其步骤,按轮次发动行动。"""
+        """Legacy submission adapter for the canonical preview/confirm transaction."""
         entry = self.night_choices.get(str(self.night_no), {}).get(str(seat))
         if entry is None or entry.get("role") != "pithag" or entry.get("applied"):
             return
         char, target = entry["char"], entry["targets"][0]
-        in_play = ({p.role_id for p in self.players.values() if p.role_id}
-                   | set(self.seat_roles.values()))
-        if char in in_play:
-            entry["invalid"] = True  # 已在场:静默不生效(说书人可见,麻脸巫婆不知情)
-            self._log(seat, "transform_invalid", {"target": target, "char": char})
-            return
-        if target not in self.seat_roles:
+        preview = self.night.preview_pit_hag(seat, target, char)
+        event = self.night.confirm_pit_hag_preview(preview.id)
+        entry["preview_id"] = preview.id
+        entry["event_id"] = event.id
+        entry["from"] = preview.old_character
+        entry["applied"] = event.kind == "pit_hag_transformation"
+        if not entry["applied"]:
             entry["invalid"] = True
-            return
-        entry["from"] = self.seat_roles[target]
-        self.seat_roles[target] = char
-        self.seat_role_changes[target] = char  # 未领取座位也保留通知,领取后可见
-        self._rebuild_night_queue()
-        entry["applied"] = True
-        self._log(seat, "transform", {"target": target, "char": char, "from": entry["from"]})
-        if self.roles[char]["team"] == DEMON:
-            # 创造恶魔:当晚死亡由说书人决定,天亮跳过自动刀人
-            self.night_kills.setdefault(str(self.night_no), {})["arbitrary"] = True
-        # 按行动轮次发动:新角色在本夜顺序中位于麻脸巫婆之后 → 紧跟其后注入步骤
-        kind = "first" if self.night_no == 1 else "other"
-        sheet = [st["key"] for st in NIGHT_ORDER[self.script_id][kind]]
-        if char in sheet and "pithag" in sheet and sheet.index(char) > sheet.index("pithag"):
-            pithag_i = next((i for i, st in enumerate(self.night_steps) if st["key"] == "pithag"), None)
-            if pithag_i is not None and not any(st["key"] == char for st in self.night_steps):
-                r = self.roles[char]
-                self.night_steps.insert(pithag_i + 1, {"key": char, "name": r["name"],
-                                                       "hint": r["ability"], "_pithag": True})
+        self._log(seat, ("transform" if entry["applied"] else "transform_invalid"),
+                  {"target": target, "char": char, "from": preview.old_character})
 
     def _apply_cerenovus(self, seat: int) -> None:
-        """洗脑师疯狂自动生效:目标被疯狂(宣称自己是所选善良角色),手机即时通知;
-        重新提交 → 旧目标解除、新目标生效(说书人可随时手动清除)。"""
+        """Legacy submission adapter for sourced Cerenovus madness."""
         entry = self.night_choices.get(str(self.night_no), {}).get(str(seat))
         if entry is None or entry.get("role") != "cerenovus":
             return
         char, target = entry["char"], entry["targets"][0]
-        prev = entry.get("prev_target")
-        if prev is not None and prev != target:  # 改选:解除上一个目标的疯狂
-            cur = set(self.seat_markers.get(prev, ()))
-            cur.discard("mad")
-            if cur:
-                self.seat_markers[prev] = list(cur)
-            else:
-                self.seat_markers.pop(prev, None)
-            self.mad_about.pop(prev, None)
+        effect = self.night.apply_cerenovus(seat, target, char)
         entry["prev_target"] = target
-        cur = set(self.seat_markers.get(target, ()))
-        cur.add("mad")
-        self.seat_markers[target] = list(cur)
-        self.mad_about[target] = char
+        entry["effect_id"] = effect.id
         entry["applied"] = True
         entry.pop("invalid", None)
         self._log(seat, "mad", {"target": target, "char": char})
 
     def revert_pithag(self, seat: int) -> None:
         """说书人撤销已生效的麻脸巫婆变身(容错):恢复角色、移除注入步骤与「死亡由说书人决定」标记。"""
+        canonical = next((event for event in reversed(self.journal_events)
+                          if event.state == "active"
+                          and event.kind == "pit_hag_transformation"
+                          and event.payload.get("actor_seat") == seat), None)
+        if canonical is not None:
+            self.night.undo(canonical.id, confirm=True)
+            entry = self.night_choices.get(str(self.night_no), {}).get(str(seat))
+            if entry is not None and entry.get("event_id") == canonical.id:
+                entry["applied"] = False
+            self.save()
+            return
         entry = self.night_choices.get(str(self.night_no), {}).get(str(seat))
         if entry is None or not entry.get("applied"):
             raise ValueError("没有已生效的变身可撤销")
@@ -2116,6 +2156,39 @@ class GameManager:
             return True  # 第 2 夜起 / 白天:首夜会面早已发生
         return any(s["key"] == key for s in self.night_steps[:self.night_idx + 1])
 
+    def _player_night_workflow(self, seat: int) -> dict:
+        """Project only this seat's prompt and delivered message, never adjudication facts."""
+        current = self.night.queue.current
+        prompt = None
+        if current is not None and current.actor_seat == seat:
+            prompt = {
+                "id": current.id,
+                "character_id": current.perceived_as or current.character_id,
+                "trigger": current.trigger,
+                "status": ("current" if current.status == "upcoming"
+                           else current.status),
+                "required_fields": list(current.required_fields),
+                "values": {key: value for key, value in current.values.items()
+                           if key in {"targets", "character", "acknowledged"}},
+                "name": current.name,
+                "reminder": current.reminder,
+            }
+        event_states = {event.id: event.state for event in self.journal_events}
+        deliveries = []
+        for delivery in self.information_deliveries.values():
+            if delivery.actor_seat != seat:
+                continue
+            item = delivery.to_dict()
+            for hidden in (
+                "real_character", "true_result", "claims", "registrations",
+                "effect_snapshot", "reason", "corrections",
+            ):
+                item.pop(hidden, None)
+            item["retracted"] = event_states.get(delivery.source_event) == "undone"
+            deliveries.append(item)
+        return {"night_no": self.night_no, "prompt": prompt,
+                "deliveries": deliveries}
+
     def player_view(self, player_id: str) -> dict:
         me = self.players[player_id]
         fake_id = self.seat_fakes.get(me.seat) if me.seat is not None else None
@@ -2153,6 +2226,8 @@ class GameManager:
                 view["me"]["role"] = TRAVELER_BY_ID[me_traveler["role_id"]]
         elif started:
             view["me"] = me.private(self.roles, fake_id)
+            if me.seat is not None:
+                view["night_workflow"] = self._player_night_workflow(me.seat)
         # 结算:说书人宣布游戏结束 → 全场揭晓真实角色与获胜方
         if self.winner is not None:
             view["result"] = {

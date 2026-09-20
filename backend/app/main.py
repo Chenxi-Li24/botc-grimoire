@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Response, WebSocket
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from .api import NightCommandError, create_night_router, night_error_response
 from .game import GameManager
 from .net import get_lan_ip
 
@@ -35,6 +36,8 @@ class Hub:
         elif who in game.players:
             self.players.setdefault(who, set()).add(ws)
             await ws.send_json(game.player_view(who))
+            if game.mark_private_deliveries_delivered(who):
+                game.save()
         else:
             await ws.close(code=4001, reason="未知身份")
             return
@@ -54,15 +57,19 @@ class Hub:
             if player_id not in game.players:
                 continue
             view = game.player_view(player_id)
+            delivered = False
             for ws in list(sockets):
-                await self._send(ws, view)
+                delivered = await self._send(ws, view) or delivered
+            if delivered and game.mark_private_deliveries_delivered(player_id):
+                game.save()
 
     @staticmethod
-    async def _send(ws: WebSocket, view: dict) -> None:
+    async def _send(ws: WebSocket, view: dict) -> bool:
         try:
             await ws.send_json(view)
+            return True
         except Exception:
-            pass  # 断开的连接由 disconnect() 清理
+            return False  # 断开的连接由 disconnect() 清理
 
 
 hub = Hub()
@@ -192,6 +199,20 @@ def require_storyteller(x_password: str = Header(default="", alias="X-Storytelle
         raise HTTPException(status_code=401, detail="说书人密码错误")
 
 
+app.add_exception_handler(NightCommandError, night_error_response)
+app.include_router(create_night_router(game, hub, require_storyteller))
+
+
+def deprecated_storyteller_view(replacement: str) -> dict[str, Any]:
+    return {
+        **game.storyteller_view(),
+        "deprecation": {
+            "deprecated": True,
+            "replacement": replacement,
+        },
+    }
+
+
 # ---- 玩家接口 ----
 
 @app.post("/api/join")
@@ -302,7 +323,7 @@ async def revert_pithag(body: TransformBody) -> dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await hub.push_all()
-    return game.storyteller_view()
+    return deprecated_storyteller_view("/api/night/undo")
 
 
 @app.post("/api/night/reply", dependencies=[Depends(require_storyteller)])
@@ -313,7 +334,7 @@ async def reply_night_choice(body: NightReplyBody) -> dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await hub.push_all()
-    return game.storyteller_view()
+    return deprecated_storyteller_view("/api/night/information")
 
 
 class EndBody(BaseModel):
@@ -365,7 +386,7 @@ async def seat_kill(seat: int, body: SeatKillBody) -> dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await hub.push_all()
-    return game.storyteller_view()
+    return deprecated_storyteller_view("/api/night/select")
 
 
 @app.post("/api/seat/{seat}/alive", dependencies=[Depends(require_storyteller)])
@@ -387,7 +408,7 @@ async def seat_choice(seat: int, body: SeatChoiceBody) -> dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await hub.push_all()
-    return game.storyteller_view()
+    return deprecated_storyteller_view("/api/night/select")
 
 
 # ---- 旅行者接口(说书人) ----
@@ -583,7 +604,7 @@ async def night_next() -> dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await hub.push_all()
-    return game.storyteller_view()
+    return deprecated_storyteller_view("/api/night/step")
 
 
 @app.post("/api/night/prev", dependencies=[Depends(require_storyteller)])
@@ -593,7 +614,7 @@ async def night_prev() -> dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await hub.push_all()
-    return game.storyteller_view()
+    return deprecated_storyteller_view("/api/night/step")
 
 
 @app.post("/api/night/goto", dependencies=[Depends(require_storyteller)])
@@ -603,7 +624,7 @@ async def night_goto(body: GotoBody) -> dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await hub.push_all()
-    return game.storyteller_view()
+    return deprecated_storyteller_view("/api/night/step")
 
 
 @app.post("/api/day/end", dependencies=[Depends(require_storyteller)])

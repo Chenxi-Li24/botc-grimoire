@@ -255,7 +255,7 @@ class InformationEngine:
             source_event=event.id,
             draft_id=draft.id,
             automatic=automatic,
-            delivered_at=timestamp(),
+            delivered_at=None,
         )
         self.state.information_deliveries[delivery.id] = delivery
         draft.status = "delivered"

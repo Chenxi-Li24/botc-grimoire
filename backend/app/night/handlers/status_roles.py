@@ -16,17 +16,32 @@ class StatusRoleHandlers:
     def __init__(self, night: "NightService") -> None:
         self.night = night
 
+    def _validate_source(self, source: int, character: str) -> None:
+        holder = self.night.state.seat(source)
+        if holder.character_id != character:
+            raise ValueError(f"source seat is not {character}")
+
+    def _validate_target(self, target: int) -> None:
+        if self.night.state.seat(target).character_id is None:
+            raise ValueError("target seat has no character")
+
     def _apply(self, effect_type: str, source: int, target: int, *,
                source_character: str, payload: dict,
                lifetime_policy: dict,
-               depends_on: list[str] | None = None) -> EffectRecord:
+               depends_on: list[str] | None = None,
+               inverse_operations: list[dict] | None = None,
+               transaction_id: str | None = None) -> EffectRecord:
         effect_id = uuid4().hex
         event = self.night.journal.append(
             f"{source_character}_effect_applied",
             {"source_seat": source, "target_seat": target,
              "effect_type": effect_type, "payload": payload},
-            {"op": "end_effect", "effect_id": effect_id},
+            {"op": "batch", "operations": [
+                {"op": "end_effect", "effect_id": effect_id},
+                *(inverse_operations or []),
+            ]},
             depends_on=depends_on or [],
+            transaction_id=transaction_id,
         )
         effect = self.night.effects.apply(
             effect_type,
@@ -41,6 +56,8 @@ class StatusRoleHandlers:
         return effect
 
     def apply_poisoner(self, source: int, target: int) -> EffectRecord:
+        self._validate_source(source, "poisoner")
+        self._validate_target(target)
         return self._apply(
             "poisoned", source, target,
             source_character="poisoner",
@@ -54,6 +71,8 @@ class StatusRoleHandlers:
         )
 
     def apply_widow(self, source: int, target: int) -> EffectRecord:
+        self._validate_source(source, "widow")
+        self._validate_target(target)
         return self._apply(
             "poisoned", source, target,
             source_character="widow",
@@ -68,6 +87,8 @@ class StatusRoleHandlers:
 
     def apply_cerenovus(self, source: int, target: int,
                         claimed_character: str) -> EffectRecord:
+        self._validate_source(source, "cerenovus")
+        self._validate_target(target)
         if claimed_character not in self.night.pack.character_by_id:
             raise ValueError("claimed character is not in this script")
         team = self.night.pack.character_by_id[claimed_character].team
@@ -80,27 +101,47 @@ class StatusRoleHandlers:
             and effect.state != "ended"
         ]
         replacement_events = []
+        transaction_id = uuid4().hex
         for effect in previous:
+            target_state = self.night.state.seat(effect.target_seat)
             replacement = self.night.journal.append(
                 "cerenovus_effect_replaced",
                 {"effect_id": effect.id, "source_seat": source,
                  "target_seat": target},
-                {"op": "restore_effect", "effect": effect.to_dict()},
+                {"op": "batch", "operations": [
+                    {"op": "restore_effect", "effect": effect.to_dict()},
+                    {"op": "set",
+                     "path": ["seats", effect.target_seat, "mad_about"],
+                     "value": target_state.mad_about},
+                ]},
                 depends_on=[effect.source_event],
+                transaction_id=transaction_id,
             )
             replacement_events.append(replacement.id)
             self.night.effects.transition(effect.id, "ended", "replaced_by_next_choice",
                                           trigger="next_choice")
-        return self._apply(
+            target_state.mad_about = None
+        target_state = self.night.state.seat(target)
+        previous_mad_about = target_state.mad_about
+        effect = self._apply(
             "mad", source, target,
             source_character="cerenovus",
             payload={"claimed_character": claimed_character,
                      "chosen_night": self.night.queue.night_no,
                      "replaces": [effect.id for effect in previous]},
             lifetime_policy={"kind": "until_next_choice",
-                             "expected_end": "next_cerenovus_choice"},
+                             "expected_end": "next_cerenovus_choice",
+                             "suspend_with_source": True,
+                             "end_on_source_loss": True},
             depends_on=replacement_events,
+            inverse_operations=[
+                {"op": "set", "path": ["seats", target, "mad_about"],
+                 "value": previous_mad_about},
+            ],
+            transaction_id=transaction_id,
         )
+        target_state.mad_about = claimed_character
+        return effect
 
     def set_source_ability(self, source: int, *, active: bool,
                            permanent: bool = False) -> list[EffectRecord]:
@@ -112,6 +153,12 @@ class StatusRoleHandlers:
         previous_ability = deepcopy(ability)
         before = [effect.to_dict() for effect in self.night.state.effect_records.values()
                   if effect.source_seat == source and effect.state != "ended"]
+        mad_about_before = {
+            effect.target_seat: self.night.state.seat(effect.target_seat).mad_about
+            for effect in self.night.state.effect_records.values()
+            if effect.source_seat == source and effect.state != "ended"
+            and effect.type == "mad"
+        }
         event = self.night.journal.append(
             "source_ability_changed",
             {"source_seat": source, "source_character": source_character,
@@ -121,6 +168,9 @@ class StatusRoleHandlers:
                  "path": ["seats", source, "ability_state", source_character],
                  "value": previous_ability},
                 *({"op": "restore_effect", "effect": effect} for effect in before),
+                *({"op": "set", "path": ["seats", seat, "mad_about"],
+                   "value": value}
+                  for seat, value in mad_about_before.items()),
             ]},
         )
         ability["active"] = bool(active)
@@ -140,4 +190,8 @@ class StatusRoleHandlers:
         )
         for effect in changed:
             effect.transitions[-1]["source_event"] = event.id
+            if effect.type == "mad" and effect.state == "ended":
+                target_state = self.night.state.seat(effect.target_seat)
+                if target_state.mad_about == effect.payload.get("claimed_character"):
+                    target_state.mad_about = None
         return changed

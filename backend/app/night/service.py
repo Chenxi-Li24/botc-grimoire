@@ -74,13 +74,28 @@ class NightService:
         self._force_tokens.pop(step_id, None)
         return step
 
-    @staticmethod
-    def _missing(step: NightStep) -> list[str]:
+    def _missing(self, step: NightStep) -> list[str]:
         missing = []
         for field_name in step.required_fields:
             value = step.values.get(field_name)
             if value is None or value == "" or value == []:
                 missing.append(field_name)
+        for outcome in self.state.pending_outcomes.values():
+            if (outcome.status == "pending"
+                    and outcome.metadata.get("step_id") == step.id):
+                missing.append(f"outcome:{outcome.id}")
+        selection_events = {
+            event.id for event in self.journal.records
+            if event.payload.get("step_id") == step.id
+        }
+        for draft in self.state.information_drafts.values():
+            if draft.status == "pending" and draft.source_event in selection_events:
+                missing.append(f"information:{draft.id}")
+        for preview in self.state.pending_transformations.values():
+            if (preview.get("status") == "pending"
+                    and preview.get("actor_seat") == step.actor_seat
+                    and step.character_id == "pithag"):
+                missing.append(f"pit_hag:{preview['id']}")
         return missing
 
     def _index(self, step_id: str | None) -> int:
@@ -161,20 +176,56 @@ class NightService:
     def rebuild(self, cause_event_id: str | None = None) -> list[NightStep]:
         return self.queue.rebuild_suffix(cause_event_id)
 
+    def _validate_targets(self, step: NightStep,
+                          selected_seats: list[int]) -> list[int]:
+        selected = [int(seat) for seat in selected_seats]
+        ability_id = step.source.get("ability_character", step.character_id)
+        character = self.pack.character_by_id.get(ability_id)
+        selection = character.selection if character else None
+        if selection and selection.players != len(selected):
+            raise NavigationConflict(
+                "invalid_target_count",
+                f"该行动需要选择 {selection.players} 名玩家",
+                {"required": selection.players, "received": len(selected)},
+            )
+        if (not selection or selection.distinct_players) and len(set(selected)) != len(selected):
+            raise NavigationConflict("duplicate_targets", "不能重复选择同一座位")
+        for target in selected:
+            try:
+                holder = self.state.seat(target)
+            except KeyError as exc:
+                raise NavigationConflict(
+                    "invalid_target", "目标座位无效", {"seat": target},
+                ) from exc
+            if holder.character_id is None:
+                raise NavigationConflict(
+                    "empty_target", "目标座位尚未配置角色", {"seat": target},
+                )
+            if selection and not selection.allow_self and target == step.actor_seat:
+                raise NavigationConflict(
+                    "self_target_forbidden", "该角色不能选择自己", {"seat": target},
+                )
+            if selection and selection.alive_only and not holder.alive:
+                raise NavigationConflict(
+                    "target_must_be_alive", "该行动只能选择存活玩家", {"seat": target},
+                )
+        return selected
+
     def select_outcome(self, step_id: str, selected_seats: list[int]) -> PendingOutcome:
         step = next((item for item in self.queue.steps if item.id == step_id), None)
         if step is None:
             raise NavigationConflict("stale_step", "夜晚步骤已变化", {"step_id": step_id})
         if step.actor_seat is None:
             raise NavigationConflict("invalid_actor", "该步骤没有行动座位")
-        self.record_fields(step_id, {"targets": list(selected_seats)})
+        selected = self._validate_targets(step, selected_seats)
+        self.record_fields(step_id, {"targets": selected})
         dependencies = [item for item in step.depends_on
                         if any(event.id == item for event in self.journal.records)]
         selection = self.journal.append(
             "action_selection",
             {"step_id": step.id, "source_seat": step.actor_seat,
              "source_character": step.character_id,
-             "selected_seats": list(selected_seats)},
+             "selected_seats": selected},
             {"op": "noop"},
             depends_on=dependencies,
         )
@@ -186,7 +237,7 @@ class NightService:
             source_event=selection.id,
             source_seat=step.actor_seat,
             source_character=step.character_id,
-            selected_seats=selected_seats,
+            selected_seats=selected,
             metadata={
                 "step_id": step.id,
                 "night_no": self.queue.night_no,
@@ -218,11 +269,27 @@ class NightService:
                 "arbitrary_death_unavailable",
                 "本夜没有麻脸巫婆创造恶魔所产生的任意死亡",
             )
+        selected = [int(seat) for seat in selected_seats]
+        if not selected:
+            raise NavigationConflict("missing_targets", "任意死亡至少需要一个目标")
+        if len(set(selected)) != len(selected):
+            raise NavigationConflict("duplicate_targets", "不能重复选择同一座位")
+        for target in selected:
+            try:
+                holder = self.state.seat(target)
+            except KeyError as exc:
+                raise NavigationConflict(
+                    "invalid_target", "目标座位无效", {"seat": target},
+                ) from exc
+            if holder.character_id is None:
+                raise NavigationConflict(
+                    "empty_target", "目标座位尚未配置角色", {"seat": target},
+                )
         event = self.journal.append(
             "pit_hag_arbitrary_death_selection",
             {"source_seat": source["seat"],
              "source_character": source["character"],
-             "selected_seats": list(selected_seats),
+             "selected_seats": selected,
              "night_no": self.queue.night_no},
             {"op": "noop"},
             depends_on=[source["event_id"]],
@@ -231,7 +298,7 @@ class NightService:
             source_event=event.id,
             source_seat=source["seat"],
             source_character=source["character"],
-            selected_seats=selected_seats,
+            selected_seats=selected,
             metadata={
                 "night_no": self.queue.night_no,
                 "ability": "pithag_created_demon",
@@ -364,6 +431,9 @@ class NightService:
 
     def projection(self) -> dict[str, Any]:
         projection = self.queue.projection()
+        projection["current_task"] = (
+            self.queue.current.to_dict(current=True) if self.queue.current else None
+        )
         projection["outcomes"] = self.outcomes.projection()
         projection["information"] = self.information.projection()
         projection["transformations"] = {
@@ -371,5 +441,40 @@ class NightService:
                         if item.get("status") == "pending"],
             "history": list(self.state.pending_transformations.values()),
         }
+        all_effects = list(self.state.effect_records.values())
+        projection["effects"] = {
+            "current": [effect.to_dict() for effect in all_effects
+                        if effect.state != "ended"],
+            "history": [effect.to_dict() for effect in all_effects],
+        }
+        projection["seat_context"] = [
+            {
+                "seat": seat.seat,
+                "claimed_by": seat.claimed_by,
+                "character_id": seat.character_id,
+                "perceived_character_id": seat.perceived_character_id,
+                "alignment": seat.alignment,
+                "alive": seat.alive,
+                "public_alive": seat.public_alive,
+                "secret_dead": not seat.alive and seat.public_alive,
+                "effect_ids": list(seat.effect_ids),
+            }
+            for seat in sorted(self.state.seats.values(), key=lambda item: item.seat)
+            if seat.character_id is not None
+        ]
+        undo_previews = []
+        for event in reversed(self.journal.records[-20:]):
+            if event.state != "active":
+                continue
+            preview = self.journal.undo(event.id, confirm=False)
+            undo_previews.append({
+                "event_id": event.id,
+                "kind": event.kind,
+                "created_at": event.created_at,
+                "event_ids": preview.event_ids,
+                "events": preview.events,
+                "retractions": preview.retractions,
+            })
+        projection["undo_previews"] = undo_previews
         projection["context"] = {"lunatic_choices": self._lunatic_context()}
         return projection

@@ -171,6 +171,10 @@ class PitHagHandler:
             and effect.source_character == preview.old_character
             and effect.state != "ended"
         ]
+        sourced_mad_about = {
+            effect.target_seat: self.night.state.seat(effect.target_seat).mad_about
+            for effect in sourced_effects if effect.type == "mad"
+        }
         no_dashii_targets = (self._no_dashii_neighbors(preview.target_seat)
                               if preview.new_character == "nodashii" else [])
         no_dashii_effects = {seat: uuid4().hex for seat in no_dashii_targets}
@@ -194,6 +198,9 @@ class PitHagHandler:
              "value": None},
             *({"op": "restore_effect", "effect": effect.to_dict()}
               for effect in sourced_effects),
+            *({"op": "set", "path": ["seats", seat, "mad_about"],
+               "value": value}
+              for seat, value in sourced_mad_about.items()),
             *({"op": "end_effect", "effect_id": effect_id}
               for effect_id in no_dashii_effects.values()),
         ]
@@ -215,6 +222,10 @@ class PitHagHandler:
             self.night.effects.transition(effect.id, "ended", "source_character_changed",
                                           trigger="source_lost")
             effect.transitions[-1]["source_event"] = event.id
+            if effect.type == "mad":
+                target_state = self.night.state.seat(effect.target_seat)
+                if target_state.mad_about == effect.payload.get("claimed_character"):
+                    target_state.mad_about = None
         for seat, effect_id in no_dashii_effects.items():
             self.night.effects.apply(
                 "poisoned",
