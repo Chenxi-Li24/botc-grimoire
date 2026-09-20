@@ -142,6 +142,8 @@ class EventJournal:
     def _apply_inverse(self, state: GameState, event: EventRecord,
                        inverse: dict[str, Any]) -> None:
         op = inverse.get("op")
+        if op == "fail":
+            raise UndoConflict(inverse.get("message", "injected inverse failure"))
         if op == "noop":
             return
         if op == "batch":
@@ -201,6 +203,9 @@ class EventJournal:
             for original in ordered:
                 event = candidate_by_id[original.id]
                 if self._is_message(event):
+                    if event.inverse.get("op") == "fail":
+                        raise UndoConflict(event.inverse.get(
+                            "message", "injected inverse failure"))
                     retractions.append(EventRecord(
                         id=uuid4().hex,
                         kind="message_retraction",

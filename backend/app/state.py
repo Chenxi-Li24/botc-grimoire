@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from .night.models import EffectRecord, EventRecord, PendingOutcome
 
@@ -44,6 +45,9 @@ class GameState:
     event_records: list[EventRecord] = field(default_factory=list)
     effect_records: dict[str, EffectRecord] = field(default_factory=dict)
     pending_outcomes: dict[str, PendingOutcome] = field(default_factory=dict)
+    information_drafts: dict[str, Any] = field(default_factory=dict)
+    information_deliveries: dict[str, Any] = field(default_factory=dict)
+    information_notices: list[dict[str, Any]] = field(default_factory=list)
 
     @classmethod
     def empty(cls, player_count: int) -> "GameState":
@@ -81,3 +85,9 @@ class GameState:
         self.effect_records.update(source.effect_records)
         self.pending_outcomes.clear()
         self.pending_outcomes.update(source.pending_outcomes)
+        self.information_drafts.clear()
+        self.information_drafts.update(source.information_drafts)
+        self.information_deliveries.clear()
+        self.information_deliveries.update(source.information_deliveries)
+        self.information_notices.clear()
+        self.information_notices.extend(source.information_notices)

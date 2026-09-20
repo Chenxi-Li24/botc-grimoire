@@ -202,6 +202,9 @@ class GameManager:
         self.journal_events = []  # 新夜晚引擎:可撤销、带依赖的不可变事件
         self.effect_records = {}  # 新夜晚引擎:含来源、生命周期与完整历史的状态效果
         self.pending_outcomes = {}  # 选择与结果分离;等待说书人裁定或已裁定的夜晚结果
+        self.information_drafts = {}
+        self.information_deliveries = {}
+        self.information_notices = []
         self.saved_at: float | None = None
         self._legacy_save_backup_pending: bool = False
         self._bind_night_ledgers()
@@ -329,6 +332,9 @@ class GameManager:
             event_records=self.journal_events,
             effect_records=self.effect_records,
             pending_outcomes=self.pending_outcomes,
+            information_drafts=self.information_drafts,
+            information_deliveries=self.information_deliveries,
+            information_notices=self.information_notices,
         )
 
     def _bind_night_ledgers(self) -> None:
@@ -477,6 +483,9 @@ class GameManager:
             self.journal_events = core.event_records
             self.effect_records = core.effect_records
             self.pending_outcomes = core.pending_outcomes
+            self.information_drafts = core.information_drafts
+            self.information_deliveries = core.information_deliveries
+            self.information_notices = core.information_notices
             self.players = {pid: Player(id=account.id, name=account.name,
                                         seat=account.seat, wish=account.wish)
                             for pid, account in core.players.items()}
@@ -515,6 +524,11 @@ class GameManager:
             self.night_choices = d.get("night_choices", {})  # 旧存档没有夜晚信息交互 → 空
             self.fortuneteller_red = d.get("fortuneteller_red")  # 旧存档没有宿敌 → None
             self._bind_night_service(d.get("night_queue_state"))
+            if self.fortuneteller_red is not None:
+                for holder in self._role_seats("fortuneteller"):
+                    self.night.abilities.set_fortune_teller_red_herring(
+                        holder["seat"], self.fortuneteller_red,
+                    )
             self._legacy_save_backup_pending = legacy_save
             self.saved_at = time.time()
         except (KeyError, TypeError, ValueError):
@@ -546,6 +560,9 @@ class GameManager:
         self.journal_events = []
         self.effect_records = {}
         self.pending_outcomes = {}
+        self.information_drafts = {}
+        self.information_deliveries = {}
+        self.information_notices = []
         self._bind_night_ledgers()
         self.lunatic_minions = {}
         self.lunatic_bluffs = {}
@@ -1286,6 +1303,8 @@ class GameManager:
             raise ValueError("本局没有占卜师,不需要标记宿敌")
         if seat is None:
             self.fortuneteller_red = None
+            for holder in self._role_seats("fortuneteller"):
+                self.night.abilities.set_fortune_teller_red_herring(holder["seat"], None)
             self.save()
             return
         if not 1 <= seat <= self.player_count:
@@ -1299,6 +1318,8 @@ class GameManager:
         if rid == "fortuneteller":
             raise ValueError("宿敌不能是占卜师本人")
         self.fortuneteller_red = seat
+        for holder in self._role_seats("fortuneteller"):
+            self.night.abilities.set_fortune_teller_red_herring(holder["seat"], seat)
         self.save()
 
     def set_day_stage(self, stage: str) -> None:

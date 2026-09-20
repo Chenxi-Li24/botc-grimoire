@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from .catalog import ScriptPack
+from .night.information import InformationDelivery, InformationDraft
 from .night.models import EffectRecord, EventRecord, PendingOutcome
 from .state import GameState, PlayerAccount, SeatState
 
@@ -57,6 +58,15 @@ def decode_save(payload: dict, pack: ScriptPack) -> GameState:
             outcome_id: PendingOutcome.from_dict({**item, "id": outcome_id})
             for outcome_id, item in payload.get("pending_outcomes", {}).items()
         }
+        state.information_drafts = {
+            draft_id: InformationDraft.from_dict({**item, "id": draft_id})
+            for draft_id, item in payload.get("information_drafts", {}).items()
+        }
+        state.information_deliveries = {
+            delivery_id: InformationDelivery.from_dict({**item, "id": delivery_id})
+            for delivery_id, item in payload.get("information_deliveries", {}).items()
+        }
+        state.information_notices = list(payload.get("information_notices", ()))
         return state
 
     state = GameState.empty(player_count)
@@ -128,6 +138,11 @@ def encode_save(state: GameState) -> dict:
                            for effect_id, effect in state.effect_records.items()},
         "pending_outcomes": {outcome_id: outcome.to_dict()
                              for outcome_id, outcome in state.pending_outcomes.items()},
+        "information_drafts": {draft_id: draft.to_dict()
+                               for draft_id, draft in state.information_drafts.items()},
+        "information_deliveries": {delivery_id: delivery.to_dict()
+                                   for delivery_id, delivery in state.information_deliveries.items()},
+        "information_notices": list(state.information_notices),
     }
     # Validate that round-tripping the canonical section is structurally safe before disk replace.
     if len(payload["seats"]) != state.player_count:

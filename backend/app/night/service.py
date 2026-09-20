@@ -8,7 +8,9 @@ from uuid import uuid4
 
 from ..catalog import ScriptPack
 from ..state import GameState
+from .ability_state import AbilityStateStore
 from .effects import EffectLedger
+from .information import InformationDelivery, InformationDraft, InformationEngine
 from .journal import EventJournal
 from .models import PendingOutcome
 from .outcomes import OutcomeAdjudicator
@@ -52,6 +54,13 @@ class NightService:
             self.queue.build()
         self.outcomes = OutcomeAdjudicator(
             state, pack, journal, effects, self.queue,
+        )
+        self.abilities = AbilityStateStore(state)
+        for seat in state.seats.values():
+            if seat.character_id:
+                self.abilities.set(seat.seat, "current_night", night_no, "_system")
+        self.information = InformationEngine(
+            state, pack, journal, effects, self.abilities,
         )
 
     def record_fields(self, step_id: str, values: dict[str, Any]) -> NightStep:
@@ -128,6 +137,12 @@ class NightService:
                 self._force_tokens.pop(step.id, None)
                 forced_event_id = event.id
             else:
+                if step.actor_seat is not None and not step.values.get("_wake_recorded"):
+                    self.abilities.record_wake(
+                        step.actor_seat, self.queue.night_no, step.id,
+                        reason=step.trigger,
+                    )
+                    step.values["_wake_recorded"] = True
                 step.status = "completed"
                 forced_event_id = None
         else:
@@ -203,6 +218,38 @@ class NightService:
     def publish_dawn(self) -> dict[str, Any]:
         return self.outcomes.publish_dawn()
 
+    def prepare_information(self, actor_seat: int, targets: list[int] | None = None, *,
+                            registrations: list[dict] | None = None,
+                            source_event: str | None = None) -> InformationDraft | InformationDelivery:
+        return self.information.prepare(
+            actor_seat,
+            targets,
+            registrations=registrations,
+            source_event=source_event,
+        )
+
+    def deliver_information(self, draft_id: str, delivered_result: Any, **kwargs) -> InformationDelivery:
+        return self.information.deliver(draft_id, delivered_result, **kwargs)
+
+    def correct_information(self, delivery_id: str, claims: list[dict], reason: str) -> dict:
+        return self.information.correct(delivery_id, claims, reason)
+
+    def deliver_test_information(self, actor: int,
+                                 depends_on: list[str] | None = None) -> InformationDelivery:
+        prepared = self.prepare_information(
+            actor,
+            source_event=(depends_on or [None])[-1],
+        )
+        if isinstance(prepared, InformationDelivery):
+            return prepared
+        result = prepared.true_result
+        claims = [{"label": "test_result", "value": result, "truthful": True}]
+        return self.deliver_information(prepared.id, result, claims=claims)
+
+    def inject_inverse_failure(self, event_id: str) -> None:
+        event = self.journal.get(event_id)
+        event.inverse = {"op": "fail", "message": "injected inverse failure"}
+
     def undo(self, event_id: str, confirm: bool = False):
         preview = self.journal.undo(event_id, confirm=confirm)
         if confirm:
@@ -240,5 +287,6 @@ class NightService:
     def projection(self) -> dict[str, Any]:
         projection = self.queue.projection()
         projection["outcomes"] = self.outcomes.projection()
+        projection["information"] = self.information.projection()
         projection["context"] = {"lunatic_choices": self._lunatic_context()}
         return projection
