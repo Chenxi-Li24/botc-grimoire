@@ -2160,10 +2160,39 @@ class GameManager:
         """Project only this seat's prompt and delivered message, never adjudication facts."""
         current = self.night.queue.current
         prompt = None
+        lunatic_choices = []
         if current is not None and current.actor_seat == seat:
+            ability_id = current.source.get(
+                "ability_character", current.perceived_as or current.character_id,
+            )
+            ability = self.night.pack.character_by_id.get(ability_id)
+            selection = ability.selection if ability else None
+            needs_targets = "targets" in current.required_fields
+            needs_character = "character" in current.required_fields
+            target_seats = []
+            if needs_targets:
+                for candidate in sorted(self.seat_states.values(), key=lambda item: item.seat):
+                    if candidate.character_id is None:
+                        continue
+                    if selection and not selection.allow_self and candidate.seat == seat:
+                        continue
+                    if selection and selection.alive_only and not candidate.alive:
+                        continue
+                    target_seats.append(candidate.seat)
+            character_candidates = []
+            if needs_character:
+                allowed = selection.character_teams if selection else ()
+                for character in self.night.pack.characters:
+                    if allowed and character.team not in allowed:
+                        continue
+                    character_candidates.append({
+                        "id": character.id,
+                        "name": self.night.pack.locale[character.name_key],
+                        "team": character.team,
+                    })
             prompt = {
                 "id": current.id,
-                "character_id": current.perceived_as or current.character_id,
+                "character_id": ability_id,
                 "trigger": current.trigger,
                 "status": ("current" if current.status == "upcoming"
                            else current.status),
@@ -2172,7 +2201,14 @@ class GameManager:
                            if key in {"targets", "character", "acknowledged"}},
                 "name": current.name,
                 "reminder": current.reminder,
+                "target_seats": target_seats,
+                "player_count": selection.players if selection and needs_targets else 0,
+                "character_candidates": character_candidates,
+                "allow_self": selection.allow_self if selection else True,
+                "alive_only": selection.alive_only if selection else False,
             }
+            if ability and ability.team == DEMON:
+                lunatic_choices = self.night._lunatic_context()
         event_states = {event.id: event.state for event in self.journal_events}
         deliveries = []
         for delivery in self.information_deliveries.values():
@@ -2187,7 +2223,7 @@ class GameManager:
             item["retracted"] = event_states.get(delivery.source_event) == "undone"
             deliveries.append(item)
         return {"night_no": self.night_no, "prompt": prompt,
-                "deliveries": deliveries}
+                "deliveries": deliveries, "lunatic_choices": lunatic_choices}
 
     def player_view(self, player_id: str) -> dict:
         me = self.players[player_id]

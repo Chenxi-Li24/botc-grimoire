@@ -22,6 +22,12 @@ class SelectNightTargetsBody(BaseModel):
     acknowledged: bool = False
 
 
+class PlayerNightActionBody(BaseModel):
+    step_id: str
+    selected_seats: list[int] = Field(default_factory=list)
+    character_id: str | None = None
+
+
 class ResolveOutcomeBody(BaseModel):
     outcome_id: str
     resolution: Literal[

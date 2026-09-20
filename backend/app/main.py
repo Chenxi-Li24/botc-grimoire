@@ -12,8 +12,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .api import NightCommandError, create_night_router, night_error_response
+from .api.schemas import PlayerNightActionBody
 from .game import GameManager
 from .net import get_lan_ip
+from .night.player_actions import submit_player_night_action
+from .night.service import NavigationConflict
 
 STORYTELLER_PASSWORD = os.environ.get("STORYTELLER_PASSWORD", "grimoire")
 
@@ -317,6 +320,20 @@ async def night_choice(player_id: str, body: NightChoiceBody) -> dict[str, Any]:
         game.submit_night_choice(player_id, body.targets, body.char)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await hub.push_all()
+    return game.player_view(player_id)
+
+
+@app.post("/api/player/{player_id}/night-action")
+async def player_night_action(player_id: str, body: PlayerNightActionBody) -> dict[str, Any]:
+    """Submit the current seat-owned action to the canonical night workflow."""
+    try:
+        submit_player_night_action(game, player_id, body)
+    except NavigationConflict as exc:
+        raise NightCommandError(exc.code, str(exc), exc.details) from exc
+    except ValueError as exc:
+        raise NightCommandError("invalid_player_action", str(exc)) from exc
+    game.save()
     await hub.push_all()
     return game.player_view(player_id)
 

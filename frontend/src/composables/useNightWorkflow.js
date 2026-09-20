@@ -147,10 +147,21 @@ export function useNightWorkflow(viewRef, { service, run }) {
     const pendingOutcomeIds = asIdSet(next.outcomes?.pending)
     const seatIds = new Set((next.seat_context || []).map((seat) => seat.seat))
 
-    targetDrafts.value = Object.fromEntries(Object.entries(targetDrafts.value)
+    const nextTargetDrafts = Object.fromEntries(Object.entries(targetDrafts.value)
       .filter(([id]) => unfinishedStepIds.has(id)))
-    characterDrafts.value = Object.fromEntries(Object.entries(characterDrafts.value)
+    const nextCharacterDrafts = Object.fromEntries(Object.entries(characterDrafts.value)
       .filter(([id]) => unfinishedStepIds.has(id)))
+    for (const step of steps) {
+      if (!unfinishedStepIds.has(step.id)) continue
+      if (Object.prototype.hasOwnProperty.call(step.values || {}, 'targets')) {
+        nextTargetDrafts[step.id] = [...(step.values.targets || [])]
+      }
+      if (Object.prototype.hasOwnProperty.call(step.values || {}, 'character')) {
+        nextCharacterDrafts[step.id] = step.values.character || null
+      }
+    }
+    targetDrafts.value = nextTargetDrafts
+    characterDrafts.value = nextCharacterDrafts
     informationClaims.value = Object.fromEntries(Object.entries(informationClaims.value)
       .filter(([id]) => pendingDraftIds.has(id)))
     informationResults.value = Object.fromEntries(Object.entries(informationResults.value)

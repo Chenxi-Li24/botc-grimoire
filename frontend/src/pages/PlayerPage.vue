@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import PlayerBoard from '../components/player/PlayerBoard.vue'
 import PlayerLobby from '../components/player/PlayerLobby.vue'
+import PlayerNightAction from '../components/player/PlayerNightAction.vue'
 import PlayerRoleCard from '../components/player/PlayerRoleCard.vue'
 import PlayerShell from '../components/player/PlayerShell.vue'
 import { usePlayerActions } from '../composables/usePlayerActions.js'
@@ -44,6 +45,13 @@ const selectedParticipant = ref(null)
     />
     <template v-else>
       <PlayerBoard :view="view" @select-participant="selectedParticipant = $event" />
+      <PlayerNightAction
+        v-if="view.phase === 'night'"
+        :view="view"
+        :connected="connected"
+        :pending="pending"
+        @submit="run('night-action', () => service.submitNightAction($event))"
+      />
       <PlayerRoleCard :view="view" />
     </template>
   </PlayerShell>

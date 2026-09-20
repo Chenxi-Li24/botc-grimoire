@@ -48,3 +48,30 @@ export function makeLobbyPlayerView(overrides = {}) {
     ...overrides,
   })
 }
+
+export function makeNightPlayerView(stepId = 'step-1', overrides = {}) {
+  return makePlayerView({
+    phase: 'night',
+    night_no: 2,
+    night_workflow: {
+      night_no: 2,
+      prompt: {
+        id: stepId,
+        character_id: 'dreamer',
+        status: 'current',
+        required_fields: ['targets'],
+        values: {},
+        name: '筑梦师',
+        reminder: '选择一名玩家。',
+        target_seats: [2, 3],
+        player_count: 1,
+        character_candidates: [],
+        allow_self: false,
+        alive_only: false,
+      },
+      deliveries: [],
+      lunatic_choices: [],
+    },
+    ...overrides,
+  })
+}

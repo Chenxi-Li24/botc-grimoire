@@ -48,6 +48,23 @@ describe('night workflow state', () => {
     expect(workflow.characterDrafts.value.s1).toBe('chef')
   })
 
+  it('hydrates a storyteller draft from canonical values submitted by a player', async () => {
+    const view = shallowRef(workflowView())
+    const workflow = useNightWorkflow(view, {
+      service: {}, run: vi.fn((_key, operation) => operation()),
+    })
+
+    const submitted = {
+      id: 's1', actor_seat: 1, status: 'current',
+      values: { targets: [2], character: 'chef' },
+    }
+    view.value = workflowView({ steps: [submitted], current_task: submitted })
+    await nextTick()
+
+    expect(workflow.targetDrafts.value.s1).toEqual([2])
+    expect(workflow.characterDrafts.value.s1).toBe('chef')
+  })
+
   it('attaches the root event to an undo dependency preview', async () => {
     const view = shallowRef(workflowView())
     const service = { undoNightEvent: vi.fn().mockResolvedValue({ result: { event_ids: ['e1', 'e2'] } }) }
