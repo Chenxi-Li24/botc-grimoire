@@ -1,10 +1,12 @@
 <script setup>
 import { computed, ref } from 'vue'
 import PlayerBoard from '../components/player/PlayerBoard.vue'
+import PlayerDayAction from '../components/player/PlayerDayAction.vue'
 import PlayerLobby from '../components/player/PlayerLobby.vue'
 import PlayerNightAction from '../components/player/PlayerNightAction.vue'
 import PlayerRoleCard from '../components/player/PlayerRoleCard.vue'
 import PlayerShell from '../components/player/PlayerShell.vue'
+import PublicTimeline from '../components/player/PublicTimeline.vue'
 import { usePlayerActions } from '../composables/usePlayerActions.js'
 import { usePlayerView } from '../composables/usePlayerView.js'
 import { createPlayerService } from '../services/player.js'
@@ -52,6 +54,16 @@ const selectedParticipant = ref(null)
         :pending="pending"
         @submit="run('night-action', () => service.submitNightAction($event))"
       />
+      <PlayerDayAction
+        v-if="view.phase === 'day'"
+        :view="view"
+        :connected="connected"
+        :pending="pending"
+        :selected-participant="selectedParticipant"
+        @nominate="run('nominate', () => service.nominate($event))"
+        @vote="run('vote', () => service.vote())"
+      />
+      <PublicTimeline :view="view" />
       <PlayerRoleCard :view="view" />
     </template>
   </PlayerShell>

@@ -24,6 +24,19 @@ class NightApiContractTest(unittest.TestCase):
         self.assertNotIn("effect_snapshot", serialized)
         self.assertNotIn("undo_previews", serialized)
 
+    def test_player_projection_includes_only_their_own_dead_vote_state(self):
+        game, player_id = make_game(
+            {1: "chef", 2: "imp"}, claim_seat=1,
+        )
+        game.seat_state(1).alive = False
+        game.seat_state(1).public_alive = False
+        game.seat_state(1).dead_vote_used = True
+
+        view = game.player_view(player_id)
+
+        self.assertTrue(view["me"]["dead_vote_used"])
+        self.assertNotIn("dead_vote_used", view["seats"][0]["player"])
+
 
 if __name__ == "__main__":
     unittest.main()

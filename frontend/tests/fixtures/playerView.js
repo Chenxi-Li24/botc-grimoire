@@ -75,3 +75,14 @@ export function makeNightPlayerView(stepId = 'step-1', overrides = {}) {
     ...overrides,
   })
 }
+
+export function makeDayPlayerView(overrides = {}) {
+  return makePlayerView({
+    phase: 'day',
+    night_no: 1,
+    day_no: 1,
+    day_stage: 'nom',
+    deaths: [],
+    ...overrides,
+  })
+}

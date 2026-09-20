@@ -2262,6 +2262,7 @@ class GameManager:
                 view["me"]["role"] = TRAVELER_BY_ID[me_traveler["role_id"]]
         elif started:
             view["me"] = me.private(self.roles, fake_id)
+            view["me"]["dead_vote_used"] = me.dead_vote_used
             if me.seat is not None:
                 view["night_workflow"] = self._player_night_workflow(me.seat)
         # 结算:说书人宣布游戏结束 → 全场揭晓真实角色与获胜方
