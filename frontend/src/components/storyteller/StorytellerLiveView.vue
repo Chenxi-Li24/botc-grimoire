@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useManualAssignment } from '../../composables/useManualAssignment.js'
+import { useNightWorkflow } from '../../composables/useNightWorkflow.js'
 import { useStorytellerCommand } from '../../composables/useStorytellerCommand.js'
 import { useStorytellerView } from '../../composables/useStorytellerView.js'
 import { createStorytellerService } from '../../services/storyteller.js'
@@ -20,6 +21,8 @@ const connected = computed(() => connectionStatus.value === 'connected')
 const service = createStorytellerService(props.password)
 const { pending, error, run } = useStorytellerCommand({ connected })
 const manual = useManualAssignment(view)
+const nightWorkflow = useNightWorkflow(view, { service, run })
+const selectedSeat = nightWorkflow.selectedSeat
 const manualContext = computed(() => ({
   active: manual.active.value,
   assignments: manual.assignments.value,
@@ -32,7 +35,6 @@ const manualContext = computed(() => ({
 }))
 const leftOpen = ref(false)
 const rightOpen = ref(false)
-const selectedSeat = ref(null)
 
 function closeDrawers() {
   leftOpen.value = false

@@ -9,7 +9,11 @@ export async function api(path, init) {
     const detail = Array.isArray(body?.detail)
       ? body.detail.map((item) => `${(item.loc || []).join('.')}: ${item.msg}`).join('; ')
       : body?.detail
-    throw new Error(detail || `HTTP ${response.status}`)
+    const error = new Error(body?.message || detail || `HTTP ${response.status}`)
+    error.code = body?.code || null
+    error.details = body?.details || null
+    error.status = response.status
+    throw error
   }
 
   return response.json()

@@ -20,7 +20,14 @@ export function useStorytellerCommand({ connected }) {
     try {
       return await operation()
     } catch (cause) {
-      error.value = { key, message: cause?.message || '操作失败，请稍后重试' }
+      const nextError = {
+        key,
+        message: cause?.message || '操作失败，请稍后重试',
+      }
+      if (cause?.code) nextError.code = cause.code
+      if (cause?.details) nextError.details = cause.details
+      if (cause?.status) nextError.status = cause.status
+      error.value = nextError
       return null
     } finally {
       pending.value = pending.value.filter((item) => item !== key)

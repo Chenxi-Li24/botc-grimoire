@@ -17,5 +17,12 @@ export function createStorytellerService(password) {
     setSentinel: (value) => command('/api/sentinel', { value }),
     toggleFabled: (id, on) => command('/api/fabled', { id, on }),
     start: () => command('/api/start'),
+    navigate: (payload) => command('/api/night/step', payload),
+    selectNightTargets: (payload) => command('/api/night/select', payload),
+    resolveOutcome: (payload) => command('/api/night/outcome', payload),
+    deliverInformation: (payload) => command('/api/night/information', payload),
+    applyNightEffect: (payload) => command('/api/night/effect', payload),
+    confirmPitHag: (payload) => command('/api/night/pit-hag', payload),
+    undoNightEvent: (payload) => command('/api/night/undo', payload),
   }
 }
