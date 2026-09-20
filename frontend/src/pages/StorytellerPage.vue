@@ -8,7 +8,7 @@ const password = ref(getStorytellerPassword())
 </script>
 
 <template>
-  <div data-storyteller-preview>
+  <div data-storyteller-page>
     <StorytellerLiveView
       v-if="password"
       :key="password"

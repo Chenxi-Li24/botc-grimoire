@@ -1,7 +1,7 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import JoinPage from './pages/JoinPage.vue'
-import StorytellerPreviewPage from './pages/StorytellerPreviewPage.vue'
+import StorytellerPage from './pages/StorytellerPage.vue'
 import { api } from './services/api.js'
 import { goToLegacy, resolveEntry } from './services/navigation.js'
 import { clearPlayerId, getPlayerId } from './services/session.js'
@@ -26,6 +26,12 @@ async function routeCurrentEntry() {
 
   if (destination?.vuePage) {
     page.value = destination.vuePage
+    return
+  }
+
+  if (destination?.redirectHash) {
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${destination.redirectHash}`)
+    page.value = destination.vuePageAfterRedirect
     return
   }
 
@@ -55,7 +61,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div data-app-shell>
-    <StorytellerPreviewPage v-if="page === 'storyteller-preview'" />
+    <StorytellerPage v-if="page === 'storyteller'" />
     <JoinPage v-else-if="page === 'join'" @joined="onJoined" />
     <main v-else class="page center">
       <p>加载中…</p>

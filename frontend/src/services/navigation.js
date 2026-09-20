@@ -1,10 +1,10 @@
 export async function resolveEntry({ hash, playerId, validatePlayer }) {
   if (hash.startsWith('#/storyteller-preview')) {
-    return { vuePage: 'storyteller-preview' }
+    return { redirectHash: '#/storyteller', vuePageAfterRedirect: 'storyteller' }
   }
 
   if (hash.startsWith('#/storyteller')) {
-    return { legacyUrl: `/legacy/${hash}` }
+    return { vuePage: 'storyteller' }
   }
 
   if (!playerId) return 'join'

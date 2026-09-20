@@ -1466,6 +1466,15 @@ function renderStoryteller() {
 
     function renderNightPanel(detail) {
       const strip = selP ? selPDetailHtml(selSeat, selP) : (selSeat && selSeat.assigned_role ? emptySeatStrip(selSeat) : '')
+      detail.replaceChildren(h(`<div class="st-detail">
+        ${strip}
+        <div class="night-panel">
+          <h3>🌙 夜晚操作已迁移到 Vue 魔典</h3>
+          <p class="hint">旧版夜晚页只读，不再提供推进、刀人、角色变化、信息回复或状态标记，避免两套客户端同时修改夜晚状态。</p>
+          <div class="st-detail-actions"><a class="btn primary" href="/#/storyteller">打开新版夜晚工作台</a></div>
+        </div>
+      </div>`))
+      return
       const steps = night.steps
       const cur = steps[night.idx]
       let wake = []

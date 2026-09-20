@@ -23,7 +23,7 @@ const connectionLabel = computed(() => ({
     <span class="header-script">{{ scriptName }}</span>
     <span class="phase-badge">{{ phaseLabel }}</span>
     <span class="connection-badge" :data-status="connectionStatus">{{ connectionLabel }}</span>
-    <a class="btn primary header-primary" href="/legacy/#/storyteller">打开完整控制台</a>
+    <a class="btn header-primary" href="/legacy/#/storyteller">旧版白天与复盘工具</a>
     <button class="drawer-toggle drawer-toggle-right" type="button" @click="emit('open-right')">当前任务</button>
   </div>
 </template>
