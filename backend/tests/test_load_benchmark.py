@@ -1,10 +1,15 @@
 """Contracts for the opt-in guest/WebSocket load probe."""
 
+import asyncio
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from tools.load_benchmark import Client, percentile_ms, validate_target, websocket_url
+from tools.load_benchmark import (Client, benchmark, guest_name, percentile_ms, receive_room_code,
+                                  validate_active_game, validate_target, websocket_url)
 
 
 class LoadBenchmarkTests(unittest.TestCase):
@@ -68,6 +73,47 @@ class LoadBenchmarkTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join()
+
+    def test_active_game_requires_15_players_and_isolated_empty_lobby(self):
+        clean = {"status": "lobby", "players": [], "winner": None}
+        validate_active_game("http://127.0.0.1:8019", clean, 15)
+        for origin, state, count in (
+            ("http://127.0.0.1:8000", clean, 15),
+            ("https://join.example.test", clean, 15),
+            ("http://127.0.0.1:8019", clean, 14),
+            ("http://127.0.0.1:8019", {**clean, "players": [{"id": "other"}]}, 15),
+            ("http://127.0.0.1:8019", {**clean, "status": "playing"}, 15),
+            ("http://127.0.0.1:8019", {**clean, "winner": "good"}, 15),
+        ):
+            with self.subTest(origin=origin, state=state, count=count), self.assertRaises(ValueError):
+                validate_active_game(origin, state, count)
+
+    def test_broadcast_receiver_waits_for_new_room_code(self):
+        class Socket:
+            def __init__(self):
+                self.values = iter(['{"room_code":"0001"}', '{"room_code":"0002"}'])
+
+            async def recv(self):
+                return next(self.values)
+
+        client = Client("http://127.0.0.1:8019")
+        client.socket = Socket()
+        elapsed = asyncio.run(receive_room_code(client, "0002", time.perf_counter()))
+        self.assertGreaterEqual(elapsed, 0)
+
+    def test_generated_guest_names_fit_eight_character_join_limit(self):
+        names = [guest_name("load-abcdef", index) for index in range(1, 16)]
+        self.assertEqual(len(set(names)), 15)
+        self.assertTrue(all(1 <= len(name) <= 8 for name in names))
+
+    def test_active_game_rejects_port_8000_before_network_request(self):
+        args = SimpleNamespace(url="http://127.0.0.1:8000", allow_live=True,
+                               allow_remote=False, players=15, http_rounds=1,
+                               push_rounds=0, broadcast_rounds=1, active_game=True,
+                               password="test-secret")
+        with patch.object(Client, "request", side_effect=AssertionError("network request made")):
+            with self.assertRaisesRegex(ValueError, "non-8000"):
+                asyncio.run(benchmark(args))
 
 
 if __name__ == "__main__":
