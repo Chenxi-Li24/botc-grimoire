@@ -76,7 +76,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div v-if="active" class="stage-transition" :class="`stage-transition--${active}`"
-       :data-scene-transition="active" role="status" aria-live="polite">
+       :data-scene-transition="active" role="status" aria-live="polite" @click="nextScene">
     <div class="stage-transition-art" aria-hidden="true">
       <div class="stage-transition-halo" />
       <div class="stage-transition-clock"><i /><b /></div>
@@ -86,7 +86,7 @@ onBeforeUnmount(() => {
       <h2>{{ labels[active].title }}</h2>
       <p>{{ labels[active].caption }}</p>
     </div>
-    <button data-transition-skip type="button" @click="nextScene">跳过 →</button>
+    <button data-transition-skip type="button" @click.stop="nextScene">跳过 →</button>
   </div>
 </template>
 

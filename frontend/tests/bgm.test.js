@@ -67,10 +67,19 @@ it('introduces daylight after night without replaying an animation on initial co
   wrapper.unmount()
 })
 
+it('dismisses the scene on a tap without activating obscured storyteller controls', async () => {
+  const wrapper = mount(StageTransition, { props: { view: { phase: 'day', day_no: 1 } } })
+  await wrapper.setProps({ view: { phase: 'night', night_no: 2 } })
+  await wrapper.get('[data-scene-transition]').trigger('click')
+  expect(wrapper.find('[data-scene-transition]').exists()).toBe(false)
+  wrapper.unmount()
+})
+
 it('rings the daytime bell only when storyteller sound is enabled, then stops on mute', async () => {
   const starts = []
   class FakeAudioContext {
     currentTime = 0
+    state = 'running'
     destination = {}
     createOscillator() {
       return { type: '', frequency: { value: 0 }, connect: (target) => target,
@@ -116,6 +125,37 @@ it('does not duck music when the browser refuses bell audio activation', async (
     close() { closes += 1; return Promise.resolve() }
   }
   vi.stubGlobal('AudioContext', BlockedAudioContext)
+  try {
+    const wrapper = mount(StageTransition, { props: {
+      view: { phase: 'night', night_no: 2 }, soundEnabled: true,
+    } })
+    await wrapper.setProps({ view: { phase: 'day', day_no: 2 } })
+    await vi.waitFor(() => expect(closes).toBe(1))
+    expect(wrapper.emitted('sound-active') || []).not.toContainEqual([true])
+    wrapper.unmount()
+  } finally {
+    vi.unstubAllGlobals()
+  }
+})
+
+it('does not treat an interrupted audio context as an audible bell', async () => {
+  let closes = 0
+  class InterruptedAudioContext {
+    currentTime = 0
+    state = 'interrupted'
+    destination = {}
+    createOscillator() {
+      return { frequency: { value: 0 }, connect: (target) => target,
+        start: () => {}, stop: () => {} }
+    }
+    createGain() {
+      return { gain: { setValueAtTime: () => {}, exponentialRampToValueAtTime: () => {} },
+        connect: (target) => target }
+    }
+    resume() { return Promise.resolve() }
+    close() { closes += 1; return Promise.resolve() }
+  }
+  vi.stubGlobal('AudioContext', InterruptedAudioContext)
   try {
     const wrapper = mount(StageTransition, { props: {
       view: { phase: 'night', night_no: 2 }, soundEnabled: true,

@@ -22,8 +22,8 @@ export function playBell(scene, volume = 35) {
       }
     }
     const ready = context.resume
-      ? Promise.resolve(context.resume()).then(() => context.state !== 'suspended').catch(() => false)
-      : Promise.resolve(context.state !== 'suspended')
+      ? Promise.resolve(context.resume()).then(() => context.state === 'running').catch(() => false)
+      : Promise.resolve(context.state === 'running')
     return { ready, durationMs: strikes.length > 1 ? 2050 : 1550,
       stop: () => { void context.close().catch(() => {}) } }
   } catch {
