@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from .api import NightCommandError, create_night_router, night_error_response
-from .api import player, storyteller, chat, websocket, qr
+from .api import player, storyteller, chat, websocket, qr, identity
 from .api.dependencies import STORYTELLER_PASSWORD, require_storyteller
 from .application.runtime import game, hub
 from .application.realtime import Hub
@@ -14,6 +14,7 @@ app = FastAPI(title="BOTC Grimoire")
 app.add_exception_handler(NightCommandError, night_error_response)
 app.include_router(create_night_router(game, hub, require_storyteller))
 app.include_router(player.router)
+app.include_router(identity.router)
 app.include_router(storyteller.router)
 app.include_router(chat.router)
 app.include_router(websocket.router)

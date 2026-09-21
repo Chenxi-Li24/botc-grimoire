@@ -3,7 +3,7 @@
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from ..application.runtime import game, hub
-from .dependencies import require_storyteller
+from .dependencies import require_matching_player, require_storyteller
 from .schemas_legacy import *
 
 router = APIRouter()
@@ -20,7 +20,7 @@ def _player_who(player_id: str) -> int | str:
 
 
 
-@router.post("/api/chat/create")
+@router.post("/api/chat/create", dependencies=[Depends(require_matching_player)])
 async def chat_create(player_id: str, body: ChatCreateBody) -> dict[str, Any]:
     try:
         game.create_chat(_player_who(player_id), body.invitees)
@@ -31,7 +31,7 @@ async def chat_create(player_id: str, body: ChatCreateBody) -> dict[str, Any]:
 
 
 
-@router.post("/api/chat/{cid}/invite")
+@router.post("/api/chat/{cid}/invite", dependencies=[Depends(require_matching_player)])
 async def chat_invite(player_id: str, cid: int, body: ChatInviteBody) -> dict[str, Any]:
     try:
         game.respond_invite(_player_who(player_id), cid, body.accept)
@@ -42,7 +42,7 @@ async def chat_invite(player_id: str, cid: int, body: ChatInviteBody) -> dict[st
 
 
 
-@router.post("/api/chat/{cid}/request")
+@router.post("/api/chat/{cid}/request", dependencies=[Depends(require_matching_player)])
 async def chat_request(player_id: str, cid: int) -> dict[str, Any]:
     try:
         game.request_join(_player_who(player_id), cid)
@@ -53,7 +53,7 @@ async def chat_request(player_id: str, cid: int) -> dict[str, Any]:
 
 
 
-@router.post("/api/chat/{cid}/invite-more")
+@router.post("/api/chat/{cid}/invite-more", dependencies=[Depends(require_matching_player)])
 async def chat_invite_more(player_id: str, cid: int, body: ChatCreateBody) -> dict[str, Any]:
     """私聊进行中,发起者邀请更多玩家加入。"""
     try:
@@ -65,7 +65,7 @@ async def chat_invite_more(player_id: str, cid: int, body: ChatCreateBody) -> di
 
 
 
-@router.post("/api/chat/{cid}/approve")
+@router.post("/api/chat/{cid}/approve", dependencies=[Depends(require_matching_player)])
 async def chat_approve(player_id: str, cid: int, body: ChatApproveBody) -> dict[str, Any]:
     try:
         game.approve_request(_player_who(player_id), cid, body.who, body.approve)
@@ -76,7 +76,7 @@ async def chat_approve(player_id: str, cid: int, body: ChatApproveBody) -> dict[
 
 
 
-@router.post("/api/chat/{cid}/send")
+@router.post("/api/chat/{cid}/send", dependencies=[Depends(require_matching_player)])
 async def chat_send(player_id: str, cid: int, body: ChatSendBody) -> dict[str, Any]:
     try:
         game.send_message(_player_who(player_id), cid, body.text)
@@ -87,7 +87,7 @@ async def chat_send(player_id: str, cid: int, body: ChatSendBody) -> dict[str, A
 
 
 
-@router.post("/api/chat/{cid}/leave")
+@router.post("/api/chat/{cid}/leave", dependencies=[Depends(require_matching_player)])
 async def chat_leave(player_id: str, cid: int) -> dict[str, Any]:
     try:
         game.leave_chat(_player_who(player_id), cid)
@@ -98,7 +98,7 @@ async def chat_leave(player_id: str, cid: int) -> dict[str, Any]:
 
 
 
-@router.post("/api/chat/{cid}/close")
+@router.post("/api/chat/{cid}/close", dependencies=[Depends(require_matching_player)])
 async def chat_close(player_id: str, cid: int) -> dict[str, Any]:
     try:
         game.close_chat(_player_who(player_id), cid)
@@ -159,4 +159,3 @@ async def st_chat_recall() -> dict[str, Any]:
     game.recall_chats()
     await hub.push_all()
     return game.storyteller_view()
-

@@ -45,6 +45,8 @@ export function createStorytellerService(password) {
     toggleSeatAlive: (seat) => command(`/api/seat/${seat}/alive`),
     togglePlayerAlive: (playerId) => command(`/api/player/${playerId}/alive`),
     removePlayer: (playerId) => command(`/api/player/${playerId}/remove`),
+    issueRecoveryCode: (playerId) => command(`/api/st/players/${playerId}/recovery-code`),
+    revokeGuestSessions: (playerId) => command(`/api/st/players/${playerId}/revoke-guest-sessions`),
     loadSave: () => command('/api/load'),
     resetGame: () => command('/api/reset'),
     setWinner: (winner) => command('/api/end', { winner }),

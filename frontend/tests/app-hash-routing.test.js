@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../src/App.vue'
 import { goToLegacy, resolveEntry } from '../src/services/navigation.js'
+import { api } from '../src/services/api.js'
 
 vi.mock('../src/services/api.js', () => ({ api: vi.fn() }))
 vi.mock('../src/services/navigation.js', () => ({
@@ -9,8 +10,9 @@ vi.mock('../src/services/navigation.js', () => ({
   resolveEntry: vi.fn().mockResolvedValue('join'),
 }))
 vi.mock('../src/services/session.js', () => ({
-  clearPlayerId: vi.fn(),
-  getPlayerId: vi.fn().mockReturnValue(null),
+  clearCsrfToken: vi.fn(),
+  setCsrfToken: vi.fn(),
+  getCsrfToken: vi.fn(),
   getStorytellerPassword: vi.fn().mockReturnValue(null),
   setStorytellerPassword: vi.fn(),
   clearStorytellerPassword: vi.fn(),
@@ -19,7 +21,8 @@ vi.mock('../src/services/session.js', () => ({
 beforeEach(() => {
   vi.clearAllMocks()
   resolveEntry.mockResolvedValue('join')
-  window.location.hash = ''
+  api.mockResolvedValue({ account: null, player_id: null, csrf_token: 'csrf' })
+  window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
 })
 
 describe('App hash routing', () => {
