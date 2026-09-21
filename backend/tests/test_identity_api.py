@@ -113,6 +113,15 @@ class IdentityApiTests(unittest.TestCase):
         self.assertEqual(self.client.put("/api/account/avatar", content=b"x" * (2 * 1024 * 1024 + 1),
                                          headers={"X-CSRF-Token": csrf, "Content-Type": "image/png"}).status_code, 413)
 
+    def test_linked_player_without_uploaded_avatar_receives_default_image(self):
+        player_id = self.client.post("/api/join", json={"name": "甲", "room_code": self.game.room_code}).json()["player_id"]
+        csrf = self.client.get("/api/session").json()["csrf_token"]
+        self.client.post("/api/account/register", json={"username": "Alice", "password": "four"},
+                         headers={"X-CSRF-Token": csrf})
+        image = self.client.get(f"/api/avatar/{player_id}")
+        self.assertEqual(image.status_code, 200)
+        self.assertTrue(image.headers["content-type"].startswith("image/"))
+
     def test_account_login_restores_linked_guest_and_rejects_missing_csrf(self):
         room = self.game.room_code
         player_id = self.client.post("/api/join", json={"name": "甲", "room_code": room}).json()["player_id"]

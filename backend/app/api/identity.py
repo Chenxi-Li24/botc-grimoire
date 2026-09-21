@@ -5,6 +5,7 @@ from io import BytesIO
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -252,9 +253,11 @@ def own_avatar(request: Request) -> Response:
 @router.get("/api/avatar/{player_id}")
 def player_avatar(player_id: str) -> Response:
     player = runtime.game.players.get(player_id)
-    png = runtime.identity_store.avatar(player.account_id) if player and player.account_id else None
-    if png is None:
+    if not player or not player.account_id:
         raise HTTPException(status_code=404, detail="没有头像")
+    png = runtime.identity_store.avatar(player.account_id)
+    if png is None:
+        return RedirectResponse(url="/default-avatar.svg")
     return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
