@@ -1,0 +1,184 @@
+[
+  {
+    "id": "_meta",
+    "name": "开心快乐猴",
+    "author": "开心猴·祥东 & 开心猴·小赤"
+  },
+  {
+    "id": "investigator",
+    "name": "调查员",
+    "team": "townsfolk",
+    "ability": "在你的首个夜晚，你会得知两名玩家和一个爪牙角色：这两名玩家之一是该角色（或者你会得知没有爪牙在场）。",
+    "icon": "https://oss.gstonegames.com/data_file/clocktower/role_icon/investigator.png",
+    "firstNight": 6
+  },
+  {
+    "id": "chef",
+    "name": "厨师",
+    "team": "townsfolk",
+    "ability": "在你的首个夜晚，你会得知场上邻座的邪恶玩家有多少对。",
+    "icon": "https://oss.gstonegames.com/data_file/clocktower/role_icon/chef.png",
+    "firstNight": 7
+  },
+  {
+    "id": "daoke",
+    "name": "刀客",
+    "team": "townsfolk",
+    "ability": "在你的首个夜晚，你会得知一个在场的爪牙角色。每局游戏限一次，你可以在白天公开选择一名玩家：如果他是你得知的角色，他死亡。",
+    "icon": "https://oss.gstonegames.com/data_file/clocktower/web/icons/daoke.png",
+    "firstNight": 11
+  },
+  {
+    "id": "empath",
+    "name": "共情者",
+    "team": "townsfolk",
+    "ability": "每个夜晚，你会得知与你邻近的两名存活的玩家中邪恶玩家的数量。",
+    "icon": "https://oss.gstonegames.com/data_file/clocktower/role_icon/empath.png",
+    "firstNight": 9,
+    "otherNight": 4
+  },
+  {
+    "id": "sailor",
+    "name": "水手",
+    "team": "townsfolk",
+    "ability": "每个夜晚，你要选择一名存活的玩家：你或他之一会醉酒直到下个黄昏。你不会死亡。",
+    "icon": "https://oss.gstonegames.com/data_file/clocktower/role_icon/sailor.png",
+    "firstNight": 1,
+    "otherNight": 1
+  },
+  {
+    "id": "town_crier",
+    "name": "城镇公告员",
+    "team": "townsfolk",
+    "ability": "每个夜晚*，你会得知在今天白天时是否有爪牙发起过提名。",
+    "icon": "https://oss.gstonegames.com/data_file/clocktower/role_icon/town_crier.png",
+    "otherNight": 5
+  },
+  {
+    "id": "oracle",
+    "name": "神谕者",
+    "team": "townsfolk",
+    "ability": "每个夜晚*，你会得知有多少名死亡的玩家是邪恶的。",
+    "icon": "https://oss.gstonegames.com/data_file/clocktower/role_icon/oracle.png",
+    "otherNight": 6
+  },
+  {
+    "id": "jinyiwei",
+    "name": "锦衣卫",
+    "team": "townsfolk",
+    "ability": "每个夜晚*，你要选择一名玩家：如果他在下个黄昏前死亡，你代替他死亡。",
+    "icon": "https://oss.gstonegames.com/data_file/clocktower/web/icons/jinyiwei.png",
+    "otherNight": 2
+  },
+  {
+    "id": "seamstress",
+    "name": "女裁缝",
+    "team": "townsfolk",
+    "ability": "每局游戏限一次，在夜晚时，你可以选择除你以外的两名玩家：你会得知他们是否为同一阵营。",
+    "icon": "https://oss.gstonegames.com/data_file/clocktower/role_icon/seamstress.png",
+    "firstNight": 10,
+    "otherNight": 7
+  },
+  {
+    "id": "nightwatchman",
+    "name": "守夜人",
+    "team": "townsfolk",
+    "ability": "每局游戏限一次，在夜晚时，你可以选择一名玩家：他会得知你是守夜人。",
+    "icon": "https://oss.gstonegames.com/data_file/clocktower/role_icon/nightwatchman.png",
+    "firstNight": 12,
+    "otherNight": 10
+  },
+  {
+    "id": "savant",
+    "name": "博学者",
+    "team": "townsfolk",
+    "ability": "每个白天，你可以私下拜访说书人以得知两条信息：一个是正确的，一个是错误的。",
+    "icon": "https://oss.gstonegames.com/data_file/clocktower/role_icon/savant.png"
+  },
+  {
+    "id": "soldier",
+    "name": "士兵",
+    "team": "townsfolk",
+    "ability": "恶魔的负面能力对你无效。",
+    "icon": "https://oss.gstonegames.com/data_file/clocktower/role_icon/soldier.png"
+  },
+  {
+    "id": "c_9233465308961_9aa67828",
+    "name": "悟道者",
+    "team": "townsfolk",
+    "ability": "你以为你是一个外来者，但你实际上不是。如果有邪恶玩家的能力选择或影响了你，你会立即变成一个不在场的镇民角色。",
+    "icon": "https://oss.gstonegames.com/data_file/clocktower/upload/202310/c_9233465308961_9aa67828.jpg"
+  },
+  {
+    "id": "recluse",
+    "name": "陌客",
+    "team": "outsider",
+    "ability": "你可能会被当作邪恶阵营、爪牙角色或恶魔角色，即使你已死亡。",
+    "icon": "https://oss.gstonegames.com/data_file/clocktower/role_icon/recluse.png"
+  },
+  {
+    "id": "drunk",
+    "name": "酒鬼",
+    "team": "outsider",
+    "ability": "你不知道你是酒鬼。你以为你是一个镇民角色，但其实你不是。",
+    "icon": "https://oss.gstonegames.com/data_file/clocktower/role_icon/drunk.png"
+  },
+  {
+    "id": "golem",
+    "name": "魔像",
+    "team": "outsider",
+    "ability": "每局游戏你只能发起提名一次。当你发起提名时，如果被你提名的玩家不是恶魔，他死亡。",
+    "icon": "https://oss.gstonegames.com/data_file/clocktower/role_icon/golem.png"
+  },
+  {
+    "id": "snitch",
+    "name": "告密者",
+    "team": "outsider",
+    "ability": "爪牙会在其首个夜晚得知三个伪装。",
+    "icon": "https://oss.gstonegames.com/data_file/clocktower/role_icon/snitch.png",
+    "firstNight": 2
+  },
+  {
+    "id": "c_4331482099861_0db1bfaf",
+    "name": "鹰身女妖",
+    "team": "minion",
+    "ability": "每个夜晚，你要选择两名玩家:明天第一名玩家需要“疯狂”地证明第二名玩家是邪恶的，否则他们之中可能会有人死亡。",
+    "icon": "https://oss.gstonegames.com/data_file/clocktower/upload/202307/c_4331482099861_0db1bfaf.jpg",
+    "firstNight": 8,
+    "otherNight": 9
+  },
+  {
+    "id": "witch",
+    "name": "女巫",
+    "team": "minion",
+    "ability": "每个夜晚，你要选择一名玩家：如果他明天白天发起提名，他死亡。如果只有三名存活的玩家，你失去此能力。",
+    "icon": "https://oss.gstonegames.com/data_file/clocktower/role_icon/witch.png",
+    "firstNight": 3,
+    "otherNight": 3
+  },
+  {
+    "id": "c_7860002933371_9c39e151",
+    "name": "限",
+    "team": "minion",
+    "ability": "在等同于初始外来者数量的夜晚，所有镇民玩家中毒直到下个黄昏。[外来者数量任意]",
+    "icon": "https://oss.gstonegames.com/data_file/clocktower/upload/202411/c_7860002933371_9c39e151.jpg",
+    "firstNight": 4,
+    "otherNight": 8
+  },
+  {
+    "id": "widow",
+    "name": "寡妇",
+    "team": "minion",
+    "ability": "在你的首个夜晚，你能查看魔典并选择一名玩家：他中毒。随后，始终会有一名善良玩家知道寡妇在场。",
+    "icon": "https://oss.gstonegames.com/data_file/clocktower/role_icon/widow.png",
+    "firstNight": 5
+  },
+  {
+    "id": "68d0091d5b270",
+    "name": "开心猴",
+    "team": "demon",
+    "ability": "如果场上有爪牙存活，你不会死亡，所有玩家知道你是开心猴。每个白天限3次，你可以在提名开始前公开选择一名玩家与他猜拳，如果你获胜，他死亡。",
+    "icon": "https://free.picui.cn/free/2025/09/21/68d0091d5b270.png",
+    "firstNight": 13
+  }
+]

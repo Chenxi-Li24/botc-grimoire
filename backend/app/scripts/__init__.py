@@ -7,6 +7,7 @@
 from . import (bad_moon_rising, mantanghong, sects_and_violets,
                trouble_brewing, wafu_leiming)
 from ..catalog import compile_builtin_packs, pack_to_view
+from ..catalog.community import compile_community_packs
 from ..night_order import NIGHT_ORDER
 from .common import (COMPOSITION, DEMON, MINION, OUTSIDER,
                      ROLE_ADJUSTMENTS, TEAM_LABELS, TOWNSFOLK)
@@ -15,6 +16,7 @@ _MODULES = (trouble_brewing, bad_moon_rising, sects_and_violets,
             wafu_leiming, mantanghong)
 
 SCRIPT_PACKS = compile_builtin_packs(_MODULES, NIGHT_ORDER)
+SCRIPT_PACKS.update(compile_community_packs(SCRIPT_PACKS, NIGHT_ORDER))
 SCRIPTS = {script_id: pack_to_view(pack)
            for script_id, pack in SCRIPT_PACKS.items()}
 
