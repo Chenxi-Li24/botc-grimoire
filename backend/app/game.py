@@ -20,6 +20,7 @@ from .domain.legacy_night import LegacyNightMixin
 from .domain.nomination import NominationMixin
 from .domain.review import ReviewMixin
 from .domain.chat import ChatMixin
+from .domain.inference import InferenceMixin
 from .domain.seat_admin import SeatAdministrationMixin
 from .infrastructure.persistence import read_snapshot, write_snapshot
 from .night.effects import EffectLedger
@@ -85,7 +86,7 @@ class _SeatFieldMap(MutableMapping):
 
 
 class GameManager(LobbyMixin, LegacyNightMixin, NominationMixin, ReviewMixin,
-                  ChatMixin, SeatAdministrationMixin, ProjectionMixin):
+                  ChatMixin, SeatAdministrationMixin, InferenceMixin, ProjectionMixin):
     """一局游戏的全部状态;每次变更自动存档,重启自动恢复。"""
 
     def __init__(self) -> None:
@@ -126,6 +127,8 @@ class GameManager(LobbyMixin, LegacyNightMixin, NominationMixin, ReviewMixin,
         self.chat_seq: int = 0  # 消息自增序号(后加入者按 joined_seq 过滤历史)
         self.events: list[dict] = []  # 复盘事件日志:[{seq, phase, n, seat, type, data}] 追加式,只对新打的局有效
         self.event_seq: int = 0
+        self.inference_events: list[dict] = []  # 玩家私有推测，与真实游戏事件隔离
+        self.inference_seq: int = 0
         self.journal_events = []  # 新夜晚引擎:可撤销、带依赖的不可变事件
         self.effect_records = {}  # 新夜晚引擎:含来源、生命周期与完整历史的状态效果
         self.pending_outcomes = {}  # 选择与结果分离;等待说书人裁定或已裁定的夜晚结果
@@ -397,6 +400,7 @@ class GameManager(LobbyMixin, LegacyNightMixin, NominationMixin, ReviewMixin,
             "winner": self.winner, "fabled": self.fabled,
             "chats": self.chats, "chat_seq": self.chat_seq,
             "events": self.events, "event_seq": self.event_seq,
+            "inference_events": self.inference_events, "inference_seq": self.inference_seq,
             "night_queue_state": self.night.dump(),
         })
         return payload
@@ -445,6 +449,8 @@ class GameManager(LobbyMixin, LegacyNightMixin, NominationMixin, ReviewMixin,
             self.fabled = d.get("fabled", [])  # 旧存档没有传奇角色 → 空
             self.events = d.get("events", [])  # 旧存档没有复盘日志 → 空
             self.event_seq = d.get("event_seq", 0)
+            self.inference_events = d.get("inference_events", [])
+            self.inference_seq = d.get("inference_seq", 0)
             self.chat_seq = d.get("chat_seq", 0)
             def _norm(w):
                 return int(w) if isinstance(w, str) and w.isdigit() else w

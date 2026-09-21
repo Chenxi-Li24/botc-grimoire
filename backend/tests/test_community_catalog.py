@@ -1,7 +1,12 @@
 import unittest
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 
 from app.scripts import SCRIPTS, SCRIPT_PACKS
 from app.night_order import NIGHT_ORDER
+from app import game as game_module
+from app.game import GameManager
 
 
 class CommunityCatalogTests(unittest.TestCase):
@@ -35,6 +40,36 @@ class CommunityCatalogTests(unittest.TestCase):
                         for key in keys:
                             if key in roles and roles[key]["team"] == "demon":
                                 self.assertLess(keys.index("lunatic"), keys.index(key))
+
+    def test_small_script_rejects_oversized_table_and_inference_is_not_carried_into_new_game(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(game_module, "SAVE_PATH", Path(directory) / "game.json"):
+            game = GameManager()
+            game.configure("qieqiesiyu", 6)
+            with self.assertRaises(ValueError):
+                game.configure("qieqiesiyu", 7)
+            game.assign_roles()
+            self.assertEqual(game.status, "playing")
+            self.assertTrue(game.night_steps)
+            player = game.add_player("甲")
+            game.record_inference(player.id, 1, "role", "set", {"role": "savant"}, "note-1")
+            game.configure("trouble-brewing", 6)
+            self.assertEqual(game.inference_events, [])
+
+    def test_poppy_grower_never_auto_reveals_evil_team(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(game_module, "SAVE_PATH", Path(directory) / "game.json"):
+            game = GameManager()
+            game.configure("yebankuanghuan", 7)
+            minion = game.add_player("爪牙")
+            demon = game.add_player("恶魔")
+            game.sit(minion.id, 1)
+            game.sit(demon.id, 2)
+            game.seat_roles[1] = "poisoner"
+            game.seat_roles[2] = "vigormortis"
+            game.seat_roles[3] = "poppygrower"
+            game.status = "playing"
+            game.phase = "day"
+            self.assertNotIn("demon_seats", game.player_view(minion.id))
+            self.assertNotIn("minion_seats", game.player_view(demon.id))
 
 
 if __name__ == "__main__":

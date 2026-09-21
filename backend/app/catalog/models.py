@@ -50,6 +50,7 @@ class ScriptPack:
     adjust_roles: tuple[str, ...] = ()
     source: str = "builtin"
     version: int = 1
+    max_players: int = 15
 
     @property
     def character_by_id(self) -> dict[str, CharacterSpec]:

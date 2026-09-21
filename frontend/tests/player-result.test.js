@@ -36,3 +36,17 @@ it('shows a clear empty review state for legacy games', async () => {
   await wrapper.get('[data-result-tab="review"]').trigger('click')
   expect(wrapper.text()).toContain('本局没有可用的复盘记录')
 })
+
+it('compares own deductions after the result but does not guess unsupported status truth', async () => {
+  const wrapper = mount(PlayerResult, { props: { view: makeFinishedPlayerView({
+    inference_replay: [
+      { seq: 1, target: 2, category: 'role', operation: 'set', data: { role: 'chef' }, verdict: 'correct' },
+      { seq: 2, target: 2, category: 'status', operation: 'set', data: { status: 'poisoned' }, verdict: 'unverified' },
+    ],
+    script_roles: [{ id: 'chef', name: '厨师' }],
+  }) } })
+  await wrapper.get('[data-result-tab="review"]').trigger('click')
+  expect(wrapper.text()).toContain('我的推测对照')
+  expect(wrapper.text()).toContain('正确')
+  expect(wrapper.text()).toContain('无法核对')
+})

@@ -1,4 +1,4 @@
-"""Freeze the public HTTP schema while handlers move between modules."""
+"""Freeze the intentional HTTP schema, including private inference writes."""
 
 import hashlib
 import json
@@ -9,11 +9,11 @@ from app.api.websocket import router as websocket_router
 
 
 class ApiContractSnapshotTest(unittest.TestCase):
-    def test_openapi_shape_is_unchanged(self):
+    def test_openapi_shape_matches_expanded_contract(self):
         canonical = json.dumps(app.openapi(), sort_keys=True, ensure_ascii=False)
         self.assertEqual(
             hashlib.sha256(canonical.encode()).hexdigest(),
-            "2db94ad399ae59844f98b76de4575c9dcf6da1ac0aeae4f3faf73f99c94d1757",
+            "e0315e971aeb79d25b8df2335c4fb14c5d48dca2fea191def429a2c223ff6b1e",
         )
 
     def test_websocket_entry_is_unchanged(self):

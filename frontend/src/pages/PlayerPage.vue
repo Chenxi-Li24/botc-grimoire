@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import PlayerBoard from '../components/player/PlayerBoard.vue'
+import InferenceEditor from '../components/player/InferenceEditor.vue'
 import PlayerChat from '../components/player/PlayerChat.vue'
 import PlayerDayAction from '../components/player/PlayerDayAction.vue'
 import PlayerLobby from '../components/player/PlayerLobby.vue'
@@ -29,6 +30,7 @@ const connected = computed(() => connectionStatus.value === 'connected')
 const service = createPlayerService(props.playerId)
 const { pending, error, run } = usePlayerActions({ service, connected })
 const selectedParticipant = ref(null)
+const inferenceMode = ref(false)
 const playerChat = ref(null)
 
 async function handleChatCommand(command) {
@@ -48,6 +50,11 @@ async function handleChatCommand(command) {
   const response = await run(`chat:${command.type}:${cid}`, operation)
   if (response && command.type === 'send') playerChat.value?.markSent(command.text)
 }
+
+function saveInference(command) {
+  const clientId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return run('inference', () => service.recordInference({ ...command, client_id: clientId }))
+}
 </script>
 
 <template>
@@ -64,6 +71,15 @@ async function handleChatCommand(command) {
       </div>
     </template>
     <p v-if="error" class="error" role="alert">{{ error.message }}</p>
+    <div v-if="view.status === 'playing' || view.result" class="inference-mode-actions">
+      <button data-inference-toggle class="btn" :class="{ primary: inferenceMode }" type="button" @click="inferenceMode = !inferenceMode">{{ inferenceMode ? '返回对局' : '打开我的推理魔典' }}</button>
+    </div>
+    <template v-if="inferenceMode">
+      <PlayerBoard :view="view" inference-mode @select-participant="selectedParticipant = $event" />
+      <InferenceEditor v-if="selectedParticipant !== null" :view="view" :target="selectedParticipant" :connected="connected && !view.result" @submit="saveInference" />
+      <p v-else class="inline-note">点击任意座位记录推测，线下空座也可以标记。只有你和说书人能看到。</p>
+    </template>
+    <template v-else>
     <PlayerResult v-if="view.result" :view="view" />
     <PlayerLobby
       v-else-if="view.status === 'lobby' || (view.me?.seat == null && !view.traveler)"
@@ -106,5 +122,10 @@ async function handleChatCommand(command) {
       <PublicTimeline :view="view" />
       <PlayerRoleCard :view="view" />
     </template>
+    </template>
   </PlayerShell>
 </template>
+
+<style scoped>
+.inference-mode-actions { display: flex; justify-content: flex-end; }
+</style>

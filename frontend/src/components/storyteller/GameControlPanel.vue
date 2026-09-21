@@ -57,6 +57,7 @@ function navigateNight(direction) {
       <p class="panel-eyebrow">{{ scriptName }}</p>
       <h2>第 {{ night.workflow.night_no }} 夜</h2>
     </div>
+    <p v-if="view.poppy_warning" class="inline-note">⚠ 罂粟种植者在场：系统不会自动向爪牙或恶魔透露彼此身份。其死亡后的告知时机请说书人手动裁定。</p>
     <NightStepList
       :steps="night.orderedSteps"
       :inspected-step-id="night.inspectedStepId"

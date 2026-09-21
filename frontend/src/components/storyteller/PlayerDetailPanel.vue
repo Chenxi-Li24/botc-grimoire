@@ -27,6 +27,11 @@ const markers = computed(() => props.seat.markers || [])
 const fakeTeams = computed(() => props.view.fake_pools?.[role.value?.id] || [])
 const fakeCandidates = computed(() => (props.view.roles || []).filter((item) => fakeTeams.value.includes(item.team)))
 const goodRoles = computed(() => (props.view.roles || []).filter((item) => ['townsfolk', 'outsider'].includes(item.team)))
+const playerInferences = computed(() => (props.view.player_inferences || []).map((owner) => ({
+  ...owner,
+  events: (owner.events || []).filter((item) => item.target === props.seat.seat),
+  current: (owner.current || []).filter((item) => item.target === props.seat.seat),
+})).filter((owner) => owner.events.length))
 const picker = ref(null)
 const removeArmed = ref(false)
 let removeTimer = null
@@ -37,6 +42,14 @@ function effectState(effect) {
   if (effect.state === 'ended') return '已结束'
   if (effect.state === 'suspended') return '已暂停'
   return '持续中'
+}
+
+function inferenceLabel(item) {
+  const data = item.data || {}
+  if (item.category === 'role') return `角色：${props.view.roles?.find((role) => role.id === data.role)?.name || data.role || '已清除'}`
+  if (item.category === 'alignment') return `阵营：${({ good: '善良', evil: '邪恶', unknown: '未知' })[data.alignment] || '已清除'}`
+  if (item.category === 'status') return `状态：${markerLabels[data.status] || data.status}`
+  return `变化：${data.kind === 'role' ? '角色' : '阵营'} ${data.from || '未知'} → ${data.to || '未知'}`
 }
 
 function effectEndedAt(effect) {
@@ -148,6 +161,16 @@ onBeforeUnmount(clearRemoveArm)
       <button v-if="seat.player" data-seat-remove class="btn danger" type="button" :disabled="!connected" :aria-pressed="removeArmed" @click="removePlayer">{{ removeArmed ? `确认移除 ${seat.player.name}？` : '移除玩家' }}</button>
     </div>
     <p v-if="!seat.player" class="inline-note">该身份已分配给座位，线下玩家无需领取也会参与规则判定。</p>
+    <section data-storyteller-inferences class="seat-admin-section">
+      <h3>玩家推测 · 只读</h3>
+      <p class="inline-note">这里是玩家的主观笔记，与上方真实角色及状态分开；不会影响判定。</p>
+      <p v-if="!playerInferences.length" class="inline-note">暂无玩家推测本座。</p>
+      <details v-for="owner in playerInferences" :key="owner.player_id">
+        <summary>{{ owner.name }} · {{ owner.events.length }} 条记录</summary>
+        <p v-for="item in owner.current" :key="`current-${item.seq}`" class="inline-note">当前：{{ inferenceLabel(item) }}</p>
+        <p v-for="item in owner.events.slice().reverse()" :key="item.seq" class="inline-note">{{ new Date(item.recorded_at * 1000).toLocaleString() }} · {{ item.operation === 'set' ? '记录' : '结束/清除' }} {{ inferenceLabel(item) }}{{ item.data?.reason ? ` · ${item.data.reason}` : '' }}</p>
+      </details>
+    </section>
     <section class="seat-admin-section">
       <h3>状态标记</h3>
       <div class="admin-actions">

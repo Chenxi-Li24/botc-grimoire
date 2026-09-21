@@ -17,11 +17,11 @@ from .zh_cn import OFFICIAL_CHARACTER_NAMES
 
 SOURCE_DIR = Path(__file__).with_name("source_json")
 SOURCES = {
-    "qieqiesiyu": ("窃窃私语", "Laissez un Faire", 5),
-    "yebankuanghuan": ("夜半狂欢", "Midnight Oasis", 7),
-    "sunaomituan": ("宿脑谜团", "A Lleech of Distrust", 5),
-    "huyanluanyu": ("胡言乱语", "胡言乱语", 7),
-    "kaixinkuailehou": ("开心快乐猴", "开心快乐猴", 7),
+    "qieqiesiyu": ("窃窃私语", "Laissez un Faire", 5, 6),
+    "yebankuanghuan": ("夜半狂欢", "夜半狂欢", 7, 15),
+    "sunaomituan": ("宿脑谜团", "宿脑谜团", 5, 6),
+    "huyanluanyu": ("胡言乱语", "胡言乱语", 7, 15),
+    "kaixinkuailehou": ("开心快乐猴", "开心快乐猴", 7, 15),
 }
 
 # A community JSON may use an arbitrary icon key instead of a game character id.
@@ -143,14 +143,15 @@ def compile_community_packs(existing_packs, night_order):
     known_by_id, known_by_name = _known_roles(existing_packs)
     official_sheet = json.loads((Path(__file__).resolve().parents[2] / "tools" / "sources" / "nightsheet.json").read_text(encoding="utf-8"))
     packs = {}
-    for script_id, (name, english, min_players) in SOURCES.items():
+    for script_id, (name, english, min_players, max_players) in SOURCES.items():
         items = json.loads((SOURCE_DIR / f"{script_id}.json").read_text(encoding="utf-8"))
         roles = _source_roles(script_id, items, known_by_id, known_by_name)
         use_sheet = official_sheet if script_id == "qieqiesiyu" else None
         order = _night_order(roles, use_sheet)
         night_order[script_id] = order
         module = SimpleNamespace(SCRIPT_ID=script_id, NAME=name, EN=english,
-                                 MIN_PLAYERS=min_players, ADJUST_ROLES=(), ROLES=roles,
+                                 MIN_PLAYERS=min_players, MAX_PLAYERS=max_players,
+                                 ADJUST_ROLES=(), ROLES=roles,
                                  NIGHT_ACTIONS={})
         packs[script_id] = compile_script_pack(module, order)
     return packs

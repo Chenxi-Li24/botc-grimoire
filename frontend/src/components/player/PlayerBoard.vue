@@ -1,6 +1,20 @@
 <script setup>
-const props = defineProps({ view: { type: Object, required: true } })
+import { roleIconUrl } from '../../presentation/roleIcons.js'
+
+const props = defineProps({
+  view: { type: Object, required: true },
+  inferenceMode: { type: Boolean, default: false },
+})
 defineEmits(['select-participant'])
+
+function guessFor(target) {
+  const current = props.view.inference?.current || []
+  const role = current.find((item) => item.target === target && item.category === 'role')?.data?.role
+  const roleName = props.view.script_roles?.find((item) => item.id === role)?.name
+  const statuses = current.filter((item) => item.target === target && item.category === 'status')
+    .map((item) => ({ poisoned: '毒', drunk: '醉', mad: '疯' })[item.data.status] || '?')
+  return { role, roleName, statuses }
+}
 
 function seatPosition(index) {
   const count = props.view.seats?.length || 1
@@ -27,12 +41,17 @@ function seatPosition(index) {
         class="public-seat"
         :class="{ 'is-dead': slot.player?.alive === false, 'is-me': slot.is_me }"
         :style="seatPosition(index)"
-        :disabled="!slot.player"
+        :disabled="!slot.player && !inferenceMode"
         type="button"
         @click="$emit('select-participant', slot.seat)"
       >
         <strong>{{ slot.seat }}号</strong>
         <span>{{ slot.player?.name || '空座' }}</span>
+        <template v-if="inferenceMode && guessFor(slot.seat).roleName">
+          <img v-if="roleIconUrl(guessFor(slot.seat).role)" class="guess-icon" :src="roleIconUrl(guessFor(slot.seat).role)" alt="" />
+          <small class="guess-label">我的推测：{{ guessFor(slot.seat).roleName }}</small>
+        </template>
+        <small v-if="inferenceMode && guessFor(slot.seat).statuses.length" class="guess-label">推测状态：{{ guessFor(slot.seat).statuses.join('·') }}</small>
         <small v-if="slot.dead_vote_left">🗳 死票</small>
       </button>
     </div>
@@ -62,6 +81,8 @@ function seatPosition(index) {
 .public-seat strong { font-size: clamp(8px, 1.8vw, 10px); }
 .public-seat span { font-size: clamp(8px, 2.1vw, 12px); }
 .public-seat small { font-size: clamp(7px, 1.8vw, 9px); }
+.guess-icon { width: 18px; height: 18px; object-fit: contain; }
+.guess-label { color: #b6e6ff; }
 .public-seat span, .public-seat small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .public-seat small { color: #ffd479; }
 .public-seat:disabled { border-style: dashed; }

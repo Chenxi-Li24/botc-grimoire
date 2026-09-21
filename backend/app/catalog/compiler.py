@@ -167,6 +167,7 @@ def compile_script_pack(module, order: dict[str, list[dict]]) -> ScriptPack:
     return ScriptPack(
         id=module.SCRIPT_ID,
         min_players=module.MIN_PLAYERS,
+        max_players=getattr(module, "MAX_PLAYERS", 15),
         characters=tuple(characters),
         locale=locale,
         english_name=module.EN,
@@ -207,6 +208,7 @@ def pack_to_view(pack: ScriptPack) -> dict:
         "name": pack.locale[f"script.{pack.id}.name"],
         "en": pack.english_name,
         "min_players": pack.min_players,
+        "max_players": pack.max_players,
         "roles": roles,
         "runtime_version": pack.version,
         "source": pack.source,

@@ -360,6 +360,8 @@ async def end_game(body: EndBody) -> dict[str, Any]:
     """说书人宣布游戏结束并判定获胜方(good/evil);winner=None 撤销结算。"""
     try:
         game.end_game(body.winner)
+        if body.winner is not None:
+            archive_game(game, runtime.identity_store)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await hub.push_all()

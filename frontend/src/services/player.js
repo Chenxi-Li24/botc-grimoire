@@ -18,6 +18,7 @@ export function createPlayerService(playerId) {
     nominate: (nominee) => post(withId('/nominate'), { nominee }),
     vote: () => post(withId('/vote')),
     submitNightAction: (payload) => post(withId('/night-action'), payload),
+    recordInference: (payload) => post(withId('/inference'), payload),
     createChat: (invitees) => post(`/api/chat/create?player_id=${encodeURIComponent(playerId)}`, { invitees }),
     respondInvite: (cid, accept) => post(chat(cid, '/invite'), { accept }),
     requestChat: (cid) => post(chat(cid, '/request')),

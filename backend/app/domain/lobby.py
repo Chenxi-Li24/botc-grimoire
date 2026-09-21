@@ -19,8 +19,9 @@ class LobbyMixin:
         if script_id not in SCRIPTS:
             raise ValueError("未知脚本")
         min_players = SCRIPTS[script_id].get("min_players", 5)
-        if not min_players <= player_count <= 15:
-            raise ValueError(f"人数需在 {min_players}~15 之间")
+        max_players = SCRIPTS[script_id].get("max_players", 15)
+        if not min_players <= player_count <= max_players:
+            raise ValueError(f"人数需在 {min_players}~{max_players} 之间")
         if self.status == "playing" or self.winner is not None:
             self.game_id = secrets.token_hex(16)
             self.players.clear()
@@ -63,6 +64,8 @@ class LobbyMixin:
         self.winner = None  # 结算状态随配置清空
         self.events = []  # 复盘日志随配置清空(换板子=新局)
         self.event_seq = 0
+        self.inference_events = []  # 新局必须清掉上一局所有玩家的私有推测
+        self.inference_seq = 0
         self.chats = []  # 私聊清空(换板子=新局)
         self.chat_seq = 0
         self.status = "lobby"

@@ -57,3 +57,17 @@ it('places seats clockwise around the town square', () => {
     expect(seat.element.style.getPropertyValue('--seat-y')).toBe(`${y}%`)
   })
 })
+
+it('allows an unclaimed offline seat in private inference mode and labels guesses as personal', async () => {
+  const wrapper = mount(PlayerBoard, {
+    props: { view: makePlayerView({
+      seats: [{ seat: 1, player: null }, { seat: 2, player: { name: '乙', alive: true } }],
+      inference: { current: [{ target: 1, category: 'role', data: { role: 'chef' } }] },
+      script_roles: [{ id: 'chef', name: '厨师' }],
+    }), inferenceMode: true },
+  })
+  expect(wrapper.get('[data-seat="1"]').attributes('disabled')).toBeUndefined()
+  expect(wrapper.get('[data-seat="1"]').text()).toContain('我的推测：厨师')
+  await wrapper.get('[data-seat="1"]').trigger('click')
+  expect(wrapper.emitted('select-participant')).toEqual([[1]])
+})

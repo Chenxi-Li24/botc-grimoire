@@ -16,6 +16,7 @@ const selectedScript = computed(() => (
   props.view.scripts?.find((item) => item.id === script.value) || props.view.scripts?.[0]
 ))
 const minPlayers = computed(() => selectedScript.value?.min || 5)
+const maxPlayers = computed(() => selectedScript.value?.max || 15)
 const changed = computed(() => (
   script.value !== props.view.script || playerCount.value !== props.view.player_count
 ))
@@ -24,7 +25,7 @@ const summary = computed(() => (
 ))
 
 function clampCount(value) {
-  return Math.max(minPlayers.value, Math.min(15, Number(value) || minPlayers.value))
+  return Math.max(minPlayers.value, Math.min(maxPlayers.value, Number(value) || minPlayers.value))
 }
 
 function updateScript() {
@@ -62,7 +63,7 @@ watch(() => [props.view.script, props.view.player_count], ([nextScript, nextCoun
       <div class="stepper">
         <button type="button" :disabled="!connected || pending.includes('configure') || playerCount <= minPlayers" @click="changeCount(-1)">−</button>
         <strong>{{ playerCount }}</strong>
-        <button type="button" :disabled="!connected || pending.includes('configure') || playerCount >= 15" @click="changeCount(1)">＋</button>
+        <button type="button" :disabled="!connected || pending.includes('configure') || playerCount >= maxPlayers" @click="changeCount(1)">＋</button>
       </div>
     </div>
     <ConfirmAction

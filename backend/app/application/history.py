@@ -36,9 +36,7 @@ def project_own_history(game: GameManager, player_id: str) -> dict[str, Any]:
         "script_id": game.script_id,
         "seat": seat,
         "roles": roles,
-        # The private inference event log is a separate planned subsystem; never infer
-        # guesses from chat or from storyteller-only adjudication data.
-        "guesses": [],
+        "guesses": game.inference_replay(player_id) if game.winner else game.inference_view(player_id)["events"],
         "winner": game.winner,
         "finished": game.winner is not None,
     }

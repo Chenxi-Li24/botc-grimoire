@@ -20,6 +20,13 @@ const won = computed(() => (
   normalizedTeam.value ? normalizedTeam.value === props.view.result.winner : null
 ))
 const winnerLabel = computed(() => teamLabel(props.view.result.winner))
+function guessLabel(item) {
+  if (item.category === 'role') return `角色：${props.view.script_roles?.find((role) => role.id === item.data.role)?.name || item.data.role}`
+  if (item.category === 'alignment') return `阵营：${teamLabel(item.data.alignment)}`
+  if (item.category === 'status') return `状态：${({ poisoned: '中毒', drunk: '醉酒', mad: '疯狂' })[item.data.status] || item.data.status}`
+  return '角色/阵营变化'
+}
+function verdictLabel(verdict) { return ({ correct: '正确', incorrect: '错误', unverified: '无法核对' })[verdict] || '无法核对' }
 </script>
 
 <template>
@@ -49,6 +56,11 @@ const winnerLabel = computed(() => teamLabel(props.view.result.winner))
     </template>
 
     <section v-else class="review-list">
+      <div v-if="view.inference_replay?.length" data-inference-replay class="review-group">
+        <h2>我的推测对照</h2>
+        <p v-for="item in view.inference_replay" :key="item.seq">{{ item.target }}号 · {{ guessLabel(item) }} · {{ verdictLabel(item.verdict) }}</p>
+        <p class="hint">只对可靠的最终角色或阵营作对照；缺少真实历史的状态标为“无法核对”。</p>
+      </div>
       <template v-if="view.review?.has_data">
         <div v-for="group in view.review.groups" :key="`${group.phase}:${group.n}`" class="review-group">
           <h2>{{ group.label }}</h2>

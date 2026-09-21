@@ -107,6 +107,10 @@ class NightQueue:
     def _special_allowed(self, key: str) -> bool:
         if key in {"dusk", "dawn"}:
             return True
+        if key in {"minioninfo", "demoninfo"} and any(
+            seat.character_id == "poppygrower" for seat in self.state.seats.values()
+        ):
+            return False
         if self.night_no != 1:
             return False
         teams = {

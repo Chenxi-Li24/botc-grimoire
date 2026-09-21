@@ -110,6 +110,10 @@ class ProjectionMixin:
 
     def _step_reached(self, key: str) -> bool:
         """夜晚是否已推进到 key 步骤(信息一旦给出不可收回,之后一直可见)。"""
+        if key in {"minioninfo", "demoninfo"} and self._role_seats("poppygrower"):
+            # This script needs storyteller adjudication on Poppy Grower's death;
+            # never infer that evil team information may be sent automatically.
+            return False
         if self.status != "playing":
             return False
         if self.night_no > 1 or self.phase == "day":
@@ -213,6 +217,9 @@ class ProjectionMixin:
                                  for t in self.travelers],
             "room_code": self.room_code,  # 玩家卡显示当前房间号
             "seats": self._seat_slots(st_view=False, my_id=player_id),
+            "script_roles": [{"id": role["id"], "name": role["name"], "team": role["team"]}
+                             for role in SCRIPTS[self.script_id]["roles"]],
+            "inference": self.inference_view(player_id),
         }
         if me_traveler is not None:
             # 旅行者条目(不含 player_id)+ 已指派角色 + 阵营(官方:旅行者本人知道自己的阵营)
@@ -239,6 +246,7 @@ class ProjectionMixin:
                               for t in self.travelers],
             }
             view["review"] = self.build_review()  # 复盘时间线(结算页可切到独立复盘页)
+            view["inference_replay"] = self.inference_replay(player_id)
         if not started:
             return view
         # 座位玩家是否公开死亡统一由 SeatState.public_alive 决定。
@@ -395,7 +403,7 @@ class ProjectionMixin:
             "script": self.script_id,
             "player_count": self.player_count,
             "scripts": [{"id": sid, "name": s["name"], "en": s["en"],
-                         "min": s.get("min_players", 5)}
+                         "min": s.get("min_players", 5), "max": s.get("max_players", 15)}
                         for sid, s in SCRIPTS.items()],
             # 手动发身份用:当前板子的角色表 + 基础配比 + 调整角色
             "roles": SCRIPTS[self.script_id]["roles"],
@@ -449,4 +457,6 @@ class ProjectionMixin:
             # 已加入的玩家(含未入座):许愿仅说书人可见,配板/手动发身份时参考
             "players": [{"id": p.id, "name": p.name, "seat": p.seat, "alive": p.alive,
                          "wish": p.wish} for p in self.players.values()],
+            "player_inferences": self.storyteller_inferences(),
+            "poppy_warning": bool(self._role_seats("poppygrower")),
         }
