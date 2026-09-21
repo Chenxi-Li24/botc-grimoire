@@ -4,6 +4,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from ..application.runtime import game, hub
 from ..application import runtime
+from ..application.history import archive_game
 from .dependencies import STORYTELLER_PASSWORD, require_storyteller, validate_origin
 from .schemas_legacy import *
 
@@ -166,6 +167,8 @@ def login(body: PasswordBody) -> dict[str, bool]:
 @router.post("/api/config", dependencies=[Depends(require_storyteller)])
 async def config(body: ConfigBody) -> dict[str, Any]:
     try:
+        if game.status == "playing" or game.winner is not None:
+            archive_game(game, runtime.identity_store)
         game.configure(body.script, body.player_count)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -416,6 +419,9 @@ async def remove_player(player_id: str) -> dict[str, Any]:
 
 @router.post("/api/reset", dependencies=[Depends(require_storyteller)])
 async def reset() -> dict[str, Any]:
+    if game.status == "playing" or game.winner is not None:
+        archive_game(game, runtime.identity_store)
     game.reset()
+    game.save()
     await hub.push_all()
     return game.storyteller_view()

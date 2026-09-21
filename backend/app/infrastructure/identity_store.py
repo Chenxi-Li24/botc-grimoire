@@ -3,6 +3,7 @@
 import secrets
 import sqlite3
 import time
+import json
 from pathlib import Path
 
 from argon2 import PasswordHasher
@@ -282,3 +283,20 @@ class IdentityStore:
                 "INSERT INTO recovery_attempts(client_key, attempted_at) VALUES (?, ?)",
                 (client_key, now),
             )
+
+    def upsert_archive(self, game_id: str, account_id: str, record: dict) -> None:
+        payload = json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+        with self._connect() as db:
+            db.execute(
+                "INSERT INTO archives(game_id, account_id, record_json) VALUES (?, ?, ?) "
+                "ON CONFLICT(game_id, account_id) DO UPDATE SET record_json = excluded.record_json",
+                (game_id, account_id, payload),
+            )
+
+    def list_archives(self, account_id: str) -> list[dict]:
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT record_json FROM archives WHERE account_id = ? ORDER BY rowid DESC",
+                (account_id,),
+            ).fetchall()
+        return [json.loads(row["record_json"]) for row in rows]

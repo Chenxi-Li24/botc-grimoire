@@ -203,3 +203,11 @@ def recover_participant(body: ParticipantRecovery, request: Request, response: R
         runtime.identity_store.revoke_session(old_token)
     set_session_cookie(response, token)
     return {"player_id": player_id}
+
+
+@router.get("/api/account/history")
+def account_history(request: Request) -> list[dict[str, Any]]:
+    session = require_session(request)
+    if session.account_id is None:
+        raise HTTPException(status_code=403, detail="需要账户")
+    return runtime.identity_store.list_archives(session.account_id)
