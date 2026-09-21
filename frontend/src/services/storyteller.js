@@ -38,5 +38,14 @@ export function createStorytellerService(password) {
     leaveStorytellerChat: (id) => command(`/api/chat-st/${id}/leave`),
     closeStorytellerChat: (id) => command(`/api/chat-st/${id}/close`),
     recallChats: () => command('/api/chat-st/recall'),
+    setRoom: (code) => command('/api/room', { code }),
+    setFake: (payload) => command('/api/fake', payload),
+    setMarker: (payload) => command('/api/marker', payload),
+    setRedHerring: (seat) => command('/api/fortuneteller/red', { seat }),
+    toggleSeatAlive: (seat) => command(`/api/seat/${seat}/alive`),
+    togglePlayerAlive: (playerId) => command(`/api/player/${playerId}/alive`),
+    removePlayer: (playerId) => command(`/api/player/${playerId}/remove`),
+    loadSave: () => command('/api/load'),
+    resetGame: () => command('/api/reset'),
   }
 }

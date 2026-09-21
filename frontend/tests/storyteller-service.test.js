@@ -103,3 +103,26 @@ it('sends storyteller chat commands to the existing REST endpoints', async () =>
   expect(JSON.parse(api.mock.calls[1][1].body)).toEqual({ text: '晚上见' })
   expect(api.mock.calls.slice(2).every(([, options]) => !('body' in options))).toBe(true)
 })
+
+it('keeps seat and session administration payloads compatible', async () => {
+  const service = createStorytellerService('secret')
+  await service.setRoom('1024')
+  await service.setFake({ seat: 5, role: 'chef' })
+  await service.setMarker({ seat: 5, marker: 'poisoned', on: true })
+  await service.setRedHerring(5)
+  await service.toggleSeatAlive(5)
+  await service.togglePlayerAlive('p1')
+  await service.removePlayer('p1')
+  await service.loadSave()
+  await service.resetGame()
+
+  expect(api.mock.calls.map(([path]) => path)).toEqual([
+    '/api/room', '/api/fake', '/api/marker', '/api/fortuneteller/red',
+    '/api/seat/5/alive', '/api/player/p1/alive', '/api/player/p1/remove', '/api/load', '/api/reset',
+  ])
+  expect(api.mock.calls.slice(0, 4).map(([, options]) => JSON.parse(options.body))).toEqual([
+    { code: '1024' }, { seat: 5, role: 'chef' },
+    { seat: 5, marker: 'poisoned', on: true }, { seat: 5 },
+  ])
+  expect(api.mock.calls.slice(4).every(([, options]) => !('body' in options))).toBe(true)
+})

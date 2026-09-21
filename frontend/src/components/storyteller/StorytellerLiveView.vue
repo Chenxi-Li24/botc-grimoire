@@ -76,14 +76,14 @@ function closeDrawers() {
 }
 
 function selectSeat(seat) {
-  adminTab.value = null
+  if (adminTab.value !== 'seats') adminTab.value = null
   selectedSeat.value = seat
   rightOpen.value = true
   leftOpen.value = false
 }
 
 function openAdmin(tab) {
-  selectedSeat.value = null
+  if (tab !== 'seats') selectedSeat.value = null
   adminTab.value = tab
   rightOpen.value = true
   leftOpen.value = false
@@ -130,6 +130,15 @@ const sendStorytellerChat = ({ id, text }) => run(`chat-st:send:${id}`, () => se
 const leaveStorytellerChat = (id) => run(`chat-st:leave:${id}`, () => service.leaveStorytellerChat(id))
 const closeStorytellerChat = (id) => run(`chat-st:close:${id}`, () => service.closeStorytellerChat(id))
 const recallChats = () => run('chat-st:recall', () => service.recallChats())
+const setRoom = (code) => run('room', () => service.setRoom(code))
+const setFake = (payload) => run(`seat:fake:${payload.seat}`, () => service.setFake(payload))
+const setMarker = (payload) => run(`seat:marker:${payload.seat}`, () => service.setMarker(payload))
+const setRedHerring = (seat) => run('seat:red', () => service.setRedHerring(seat))
+const toggleSeatAlive = (seat) => run(`seat:alive:${seat}`, () => service.toggleSeatAlive(seat))
+const togglePlayerAlive = (playerId) => run(`seat:alive:${playerId}`, () => service.togglePlayerAlive(playerId))
+const removePlayer = (playerId) => run(`seat:remove:${playerId}`, () => service.removePlayer(playerId))
+const loadSave = () => run('load', () => service.loadSave())
+const resetGame = () => run('reset', () => service.resetGame())
 
 async function assignRandom() {
   const result = await run('assign-random', () => service.assignRandom())
@@ -173,6 +182,8 @@ watch(() => view.value?.seats, (nextSeats) => {
         @open-right="adminTab = null; rightOpen = true; leftOpen = false"
         @open-travelers="openAdmin('travelers')"
         @open-chats="openAdmin('chats')"
+        @open-session="openAdmin('session')"
+        @open-seats="openAdmin('seats')"
       />
     </template>
     <template #controls>
@@ -238,6 +249,15 @@ watch(() => view.value?.seats, (nextSeats) => {
         @leave-storyteller-chat="leaveStorytellerChat"
         @close-storyteller-chat="closeStorytellerChat"
         @recall-chats="recallChats"
+        @set-room="setRoom"
+        @load-save="loadSave"
+        @reset-game="resetGame"
+        @toggle-seat-alive="toggleSeatAlive"
+        @toggle-player-alive="togglePlayerAlive"
+        @remove-player="removePlayer"
+        @set-marker="setMarker"
+        @set-seat-fake="setFake"
+        @set-red-herring="setRedHerring"
       />
     </template>
   </StorytellerShell>

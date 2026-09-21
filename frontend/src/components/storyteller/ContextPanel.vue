@@ -6,6 +6,7 @@ import PlayerDetailPanel from './PlayerDetailPanel.vue'
 import NightTaskPanel from './night/NightTaskPanel.vue'
 import TravelerPanel from './TravelerPanel.vue'
 import StorytellerChatPanel from './StorytellerChatPanel.vue'
+import SessionPanel from './SessionPanel.vue'
 
 const props = defineProps({
   view: { type: Object, required: true },
@@ -23,6 +24,9 @@ defineEmits([
   'cancel-manual', 'confirm-manual',
   'add-traveler', 'assign-traveler', 'set-traveler-exile', 'toggle-traveler-alive',
   'answer-chat-invite', 'send-storyteller-chat', 'leave-storyteller-chat', 'close-storyteller-chat', 'recall-chats',
+  'set-room', 'load-save', 'reset-game', 'toggle-seat-alive', 'toggle-player-alive',
+  'remove-player', 'set-marker', 'set-red-herring',
+  'set-seat-fake',
 ])
 
 const selected = computed(() => props.view.seats?.find((seat) => (
@@ -31,8 +35,18 @@ const selected = computed(() => props.view.seats?.find((seat) => (
 </script>
 
 <template>
+  <SessionPanel
+    v-if="adminTab === 'session'"
+    :view="view"
+    :connected="connected"
+    :pending="pending"
+    :error="error"
+    @set-room="$emit('set-room', $event)"
+    @load-save="$emit('load-save')"
+    @reset-game="$emit('reset-game')"
+  />
   <StorytellerChatPanel
-    v-if="adminTab === 'chats' && view.status === 'playing'"
+    v-else-if="adminTab === 'chats' && view.status === 'playing'"
     :view="view"
     :connected="connected"
     :pending="pending"
@@ -77,18 +91,29 @@ const selected = computed(() => props.view.seats?.find((seat) => (
     @cancel="$emit('cancel-manual')"
     @confirm="$emit('confirm-manual')"
   />
+  <PlayerDetailPanel
+    v-else-if="selected && (selected.player || selected.assigned_role) && (adminTab === 'seats' || view.phase !== 'night')"
+    :seat="selected"
+    :view="view"
+    :connected="connected"
+    :pending="pending"
+    :error="error"
+    @close="$emit('clear-selection')"
+    @toggle-seat-alive="$emit('toggle-seat-alive', $event)"
+    @toggle-player-alive="$emit('toggle-player-alive', $event)"
+    @remove-player="$emit('remove-player', $event)"
+    @set-marker="$emit('set-marker', $event)"
+    @set-fake="$emit('set-seat-fake', $event)"
+    @set-red-herring="$emit('set-red-herring', $event)"
+  />
   <NightTaskPanel
-    v-else-if="view.status === 'playing' && view.phase === 'night' && night"
+    v-else-if="view.status === 'playing' && view.phase === 'night' && night && adminTab !== 'seats'"
     :view="view"
     :night="night"
     :connected="connected"
     :pending="pending"
     :error="error"
   />
-  <PlayerDetailPanel
-    v-else-if="selected?.player"
-    :seat="selected"
-    @close="$emit('clear-selection')"
-  />
+  <div v-else-if="adminTab === 'seats'" class="panel-content"><h2>座位管理</h2><p class="inline-note">点击魔典上的座位，查看和调整身份、状态与生死。</p></div>
   <JoinPanel v-else :view="view" />
 </template>

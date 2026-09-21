@@ -219,6 +219,11 @@ body:has(.storyteller-shell) { overflow: hidden; }
 .storyteller-chat-row, .chat-archives { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 11px; }
 .storyteller-chat-messages { display: grid; gap: 7px; max-height: 230px; overflow: auto; padding: 10px; border-radius: 9px; background: rgb(0 0 0 / 18%); font-size: 12px; }
 .chat-archives h3 { font-size: 15px; }
+.seat-admin-section, .session-danger-zone { display: grid; gap: 9px; padding-top: 12px; border-top: 1px solid var(--line); }
+.seat-admin-section h3, .session-danger-zone h3 { font-size: 14px; }
+.session-danger-zone .btn { width: 100%; }
+.effect-history-row { display: grid; gap: 3px; padding: 9px; border: 1px solid var(--line); border-radius: 9px; font-size: 11px; }
+.effect-history-row span { color: var(--dim); }
 .manual-assignment-panel { gap: 14px; }
 .manual-summary { display: grid; gap: 7px; padding: 10px; border: 1px solid var(--line); border-radius: 11px; }
 .composition-row { display: flex; flex-wrap: wrap; gap: 5px; }
