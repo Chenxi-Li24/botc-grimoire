@@ -4,8 +4,8 @@
 
 ## 架构
 
-- **后端** `backend/`:Python + FastAPI + WebSocket(游戏状态、实时推送、二维码生成)
-- **前端** `frontend/`:Vue 3 + Vite 玩家页与说书人魔典；旧版仅作迁移回退资产
+- **后端** `backend/`:Python + FastAPI + WebSocket；API、规则域、视图投影和存档读写分别维护
+- **前端** `frontend/`:Vue 3 + Vite 玩家页与说书人魔典
 - 单端口部署:所有设备访问同一个局域网地址
 
 生产构建产物由 FastAPI 同端口托管；运行时仍不需要公网或 Node.js。
@@ -18,7 +18,7 @@ python -m venv backend/.venv
 backend/.venv/Scripts/python.exe -m pip install -r backend/requirements.txt
 #    (网络不通时:no_proxy='*' NO_PROXY='*' ... -i http://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com)
 
-# 2. 启动(无需任何构建)
+# 2. 启动(仓库已包含 frontend/dist，无需在运行现场构建)
 cd backend
 .venv\Scripts\python run.py
 ```
@@ -50,7 +50,7 @@ cd backend
 
 Node.js 只在开发和构建前端时需要。仓库会提交 `frontend/dist/`，因此生产环境
 只需 Python 和已经构建好的静态文件，启动和游戏过程都不需要 Node.js 或互联网。
-玩家页与说书人魔典都由 Vue 提供。旧版文件只在完成后端拆分与最终回归前保留作回退。
+玩家页与说书人魔典都由 Vue 提供；旧前端与 `/legacy` 入口已经移除。
 
 说书人电脑端正式入口为 `http://localhost:8000/#/storyteller`。Vue 页面提供实时三栏魔典、
 开局配置、夜晚工作台、白天提名投票、旅行者与座位管理、私聊监管和结算复盘。
@@ -91,4 +91,4 @@ Node.js 只在开发和构建前端时需要。仓库会提交 `frontend/dist/`�
 
 - 角色文案均为初版速写,校对只改 `backend/app/roles.py`(瓦釜雷鸣与官方角色命名已对齐钟楼剧本博物馆社区通用名)
 - 存档是整局快照(单文件),每局互相覆盖;多局并行 / 多桌暂不支持
-- 旅行者(Travellers)未收录(瓦釜雷鸣的学徒/咖啡师/乞丐/集骨者/流莺也暂缺);迟到玩家通过继承空座预发身份入场,暂不提供旅行者机制
+- 旅行者可由玩家手机加入或说书人代管；单局仍只有一个房间，多桌并行暂不支持

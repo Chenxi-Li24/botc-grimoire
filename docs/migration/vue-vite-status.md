@@ -9,11 +9,12 @@
 - [x] Player page migrated
 - [x] Storyteller daytime nomination/voting workflow migrated
 - [x] Storyteller traveler/chat/end-game/review administration migrated
-- [ ] Legacy frontend removed
-- [ ] Backend routers and domains modularized
+- [x] Legacy frontend removed
+- [x] Backend routers and domains modularized
 
-`/legacy/` 暂时保留为迁移回退资产；Vue 页面已无旧版操作入口。
-后端拆分和最终回归完成后删除静态兼容路由及 `frontend/legacy/`。
+生产只托管 `frontend/dist/`。`main.py` 装配 API Router、WebSocket 和静态文件；
+`domain/` 承担规则，`application/projections.py` 生成隔离的玩家/说书人视图，
+`infrastructure/persistence.py` 原子读写 JSON 存档。
 
 ## 说书人 Vue 正式入口
 
@@ -33,7 +34,7 @@
 - `/`：加入房间、选座和旅行者加入均在 Vue 中完成，已有身份会直接恢复玩家页。
 - 已迁移大厅、身份卡、公开座位盘、统一夜间行动、提名投票、死票确认、私聊、结算与复盘。
 - 玩家夜间操作写入与说书人一致的 `night_workflow`，不会再通过旧版 `kill` / `choice` 状态推进。
-- 正常玩家流程不再进入 `/legacy/`；身份失效时会清理本地会话并返回加入页。
+- 身份失效时会清理本地会话并返回加入页。
 
 ## 数据与恢复
 
@@ -43,4 +44,5 @@
   `pit-hag` 和 `undo`，WebSocket 投影中的 `night_workflow` 是界面权威状态。
 - 官方三版角色名称和夜序中文来自规范化 `zh-CN` locale；英文角色 ID 保持稳定，方便导入 JSON 剧本。
 - 恢复时先停止服务，备份 `backend/data/game.json`；可替换为迁移前备份后重启，加载器会再次执行兼容迁移。
-- 第 12 阶段自动化回归按用户要求跳过，本轮由说书人端手动验收。
+- 迁移完成后运行前端单测/构建、后端单测和隔离端口的完整跨端冒烟；
+  现场 8000 服务及真实存档不参与自动化验证。
