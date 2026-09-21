@@ -65,6 +65,32 @@ describe('night workflow state', () => {
     expect(workflow.characterDrafts.value.s1).toBe('chef')
   })
 
+  it('follows the newly current step instead of leaving a previously inspected step open', async () => {
+    const first = { id: 's1', actor_seat: 1, status: 'current' }
+    const second = { id: 's2', actor_seat: 2, status: 'upcoming' }
+    const third = { id: 's3', actor_seat: 3, status: 'upcoming' }
+    const view = shallowRef(workflowView({
+      steps: [first, second, third], current_task: first,
+      seat_context: [{ seat: 1 }, { seat: 2 }, { seat: 3 }],
+    }))
+    const workflow = useNightWorkflow(view, {
+      service: {}, run: vi.fn((_key, operation) => operation()),
+    })
+    workflow.setInspectedStep('s3')
+    workflow.setSelectedSeat(3)
+
+    view.value = workflowView({
+      current_step_id: 's2',
+      steps: [{ ...first, status: 'completed' }, { ...second, status: 'current' }, third],
+      current_task: { ...second, status: 'current' },
+      seat_context: [{ seat: 1 }, { seat: 2 }, { seat: 3 }],
+    })
+    await nextTick()
+
+    expect(workflow.inspectedStep.value.id).toBe('s2')
+    expect(workflow.selectedSeat.value).toBeNull()
+  })
+
   it('attaches the root event to an undo dependency preview', async () => {
     const view = shallowRef(workflowView())
     const service = { undoNightEvent: vi.fn().mockResolvedValue({ result: { event_ids: ['e1', 'e2'] } }) }

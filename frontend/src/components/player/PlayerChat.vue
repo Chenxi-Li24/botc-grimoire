@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps({
   chat: { type: Object, required: true },
@@ -7,6 +7,7 @@ const props = defineProps({
   travelers: { type: Array, default: () => [] },
   connected: { type: Boolean, default: false },
   pending: { type: Array, default: () => [] },
+  dayStage: { type: String, default: 'talk' },
 })
 const emit = defineEmits(['command'])
 
@@ -15,6 +16,7 @@ const pickerMode = ref(null)
 const invitees = ref([])
 
 const busy = computed(() => props.pending.some((key) => key.startsWith('chat:')))
+const paused = computed(() => props.dayStage !== 'talk')
 const memberIds = computed(() => new Set((props.chat.my_chat?.members || []).map((item) => String(item.who))))
 const candidates = computed(() => {
   const values = [
@@ -36,6 +38,7 @@ function participantName(member) {
 }
 
 function beginPicker(mode) {
+  if (paused.value) return
   pickerMode.value = mode
   invitees.value = []
 }
@@ -47,7 +50,7 @@ function toggleInvitee(id) {
 }
 
 function submitPicker() {
-  if (!invitees.value.length) return
+  if (paused.value || !invitees.value.length) return
   const command = pickerMode.value === 'invite'
     ? { type: 'invite-more', cid: props.chat.my_chat.id, invitees: [...invitees.value] }
     : { type: 'create', invitees: [...invitees.value] }
@@ -58,13 +61,20 @@ function submitPicker() {
 
 function send() {
   const text = messageDraft.value.trim()
-  if (!text || !props.chat.my_chat) return
+  if (paused.value || !text || !props.chat.my_chat) return
   emit('command', { type: 'send', cid: props.chat.my_chat.id, text })
 }
 
 function markSent(sentText = null) {
   if (sentText === null || messageDraft.value.trim() === sentText) messageDraft.value = ''
 }
+
+watch(paused, (isPaused) => {
+  if (isPaused) {
+    pickerMode.value = null
+    invitees.value = []
+  }
+})
 
 defineExpose({ markSent })
 </script>
@@ -75,15 +85,16 @@ defineExpose({ markSent })
       <div><p class="eyebrow">白天功能</p><h2>💬 私聊</h2></div>
       <span v-if="chat.my_chat" class="chat-dot" :style="{ background: chat.my_chat.color }" />
     </header>
+    <p v-if="paused" class="hint" role="status">提名阶段暂停私聊；已有消息保留，返回公聊阶段后可继续。</p>
 
     <template v-if="chat.my_chat">
       <div class="chat-members">
         <span v-for="member in chat.my_chat.members" :key="member.who">{{ participantName(member) }}</span>
       </div>
       <div class="chat-toolbar">
-        <button v-if="chat.my_chat.is_owner" data-chat-invite-more class="btn" type="button" @click="beginPicker('invite')">➕ 邀请</button>
-        <button data-chat-leave class="btn" :disabled="!connected || busy" type="button" @click="emit('command', { type: 'leave', cid: chat.my_chat.id })">退出</button>
-        <button v-if="chat.my_chat.is_owner" data-chat-close class="btn" :disabled="!connected || busy" type="button" @click="emit('command', { type: 'close', cid: chat.my_chat.id })">关闭群聊</button>
+        <button v-if="chat.my_chat.is_owner" data-chat-invite-more class="btn" :disabled="paused || !connected || busy" type="button" @click="beginPicker('invite')">➕ 邀请</button>
+        <button data-chat-leave class="btn" :disabled="paused || !connected || busy" type="button" @click="emit('command', { type: 'leave', cid: chat.my_chat.id })">退出</button>
+        <button v-if="chat.my_chat.is_owner" data-chat-close class="btn" :disabled="paused || !connected || busy" type="button" @click="emit('command', { type: 'close', cid: chat.my_chat.id })">关闭群聊</button>
       </div>
 
       <div class="chat-messages" aria-live="polite">
@@ -96,25 +107,25 @@ defineExpose({ markSent })
       <div v-if="chat.my_chat.is_owner && chat.my_chat.requests.length" class="chat-requests">
         <p v-for="request in chat.my_chat.requests" :key="request.who">
           {{ request.name }} 申请加入
-          <button :data-approve="request.who" class="btn" type="button" @click="emit('command', { type: 'approve', cid: chat.my_chat.id, who: request.who, approve: true })">同意</button>
-          <button :data-reject="request.who" class="btn" type="button" @click="emit('command', { type: 'approve', cid: chat.my_chat.id, who: request.who, approve: false })">拒绝</button>
+          <button :data-approve="request.who" class="btn" :disabled="paused || !connected || busy" type="button" @click="emit('command', { type: 'approve', cid: chat.my_chat.id, who: request.who, approve: true })">同意</button>
+          <button :data-reject="request.who" class="btn" :disabled="paused || !connected || busy" type="button" @click="emit('command', { type: 'approve', cid: chat.my_chat.id, who: request.who, approve: false })">拒绝</button>
         </p>
       </div>
 
       <div class="chat-compose">
-        <input v-model="messageDraft" data-chat-draft class="input" maxlength="500" placeholder="输入消息（仅本群可见）" @keydown.enter.prevent="send">
-        <button data-chat-send class="btn primary" :disabled="!connected || busy || !messageDraft.trim()" type="button" @click="send">发送</button>
+        <input v-model="messageDraft" data-chat-draft class="input" maxlength="500" placeholder="输入消息（仅本群可见）" :disabled="paused || !connected || busy" @keydown.enter.prevent="send">
+        <button data-chat-send class="btn primary" :disabled="paused || !connected || busy || !messageDraft.trim()" type="button" @click="send">发送</button>
       </div>
     </template>
 
     <template v-else>
-      <button data-chat-new class="btn primary" :disabled="!connected || busy" type="button" @click="beginPicker('create')">🙋 发起私聊</button>
+      <button data-chat-new class="btn primary" :disabled="paused || !connected || busy" type="button" @click="beginPicker('create')">🙋 发起私聊</button>
 
       <div v-if="chat.invites.length" class="chat-invites">
         <p v-for="invite in chat.invites" :key="invite.id">
           <span class="chat-dot" :style="{ background: invite.color }" />{{ invite.owner_name }} 邀请你私聊
-          <button :data-invite-accept="invite.id" class="btn" type="button" @click="emit('command', { type: 'respond-invite', cid: invite.id, accept: true })">接受</button>
-          <button :data-invite-reject="invite.id" class="btn" type="button" @click="emit('command', { type: 'respond-invite', cid: invite.id, accept: false })">拒绝</button>
+          <button :data-invite-accept="invite.id" class="btn" :disabled="paused || !connected || busy" type="button" @click="emit('command', { type: 'respond-invite', cid: invite.id, accept: true })">接受</button>
+          <button :data-invite-reject="invite.id" class="btn" :disabled="paused || !connected || busy" type="button" @click="emit('command', { type: 'respond-invite', cid: invite.id, accept: false })">拒绝</button>
         </p>
       </div>
 
@@ -124,12 +135,12 @@ defineExpose({ markSent })
           <span class="chat-dot" :style="{ background: item.color }" />
           <span>{{ item.members.map(participantName).join('、') }}</span>
           <span v-if="item.requested" class="hint">已申请</span>
-          <button v-else :data-chat-request="item.id" class="btn" type="button" @click="emit('command', { type: 'request', cid: item.id })">申请加入</button>
+          <button v-else :data-chat-request="item.id" class="btn" :disabled="paused || !connected || busy" type="button" @click="emit('command', { type: 'request', cid: item.id })">申请加入</button>
         </div>
       </div>
     </template>
 
-    <section v-if="pickerMode" class="chat-picker">
+    <section v-if="pickerMode && !paused" class="chat-picker">
       <p>{{ pickerMode === 'invite' ? '邀请更多玩家' : '选择私聊对象' }}</p>
       <div class="picker-grid">
         <button

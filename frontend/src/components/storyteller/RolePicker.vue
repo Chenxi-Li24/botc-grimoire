@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { TEAM_ORDER } from '../../presentation/manualAssignment.js'
+import { roleIconUrl } from '../../presentation/roleIcons.js'
 
 const props = defineProps({
   roles: { type: Array, required: true },
@@ -29,6 +30,7 @@ const usedBy = computed(() => Object.fromEntries(
           :title="role.ability"
           @click="emit('toggle-role', role.id)"
         >
+          <img v-if="roleIconUrl(role.id)" class="role-choice-icon" :src="roleIconUrl(role.id)" alt="" width="24" height="24" loading="lazy" />
           {{ role.name }}
           <small v-if="usedBy[role.id] && usedBy[role.id] !== selectedSeat">{{ usedBy[role.id] }}号</small>
         </button>

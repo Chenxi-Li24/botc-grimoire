@@ -3,7 +3,6 @@ import { computed } from 'vue'
 import { nightErrorMessage, nightStepSummary } from '../../../presentation/nightWorkflow.js'
 import EffectHistory from './EffectHistory.vue'
 import InformationEditor from './InformationEditor.vue'
-import NightNavigation from './NightNavigation.vue'
 import OutcomeAdjudicator from './OutcomeAdjudicator.vue'
 import PitHagCard from './PitHagCard.vue'
 import SeatTargetPicker from './SeatTargetPicker.vue'
@@ -57,11 +56,14 @@ const stepInformationHandled = computed(() => Boolean(
   role.value?.information_resolver
   && Object.prototype.hasOwnProperty.call(step.value?.values || {}, 'targets')
 ))
+const recordedTargets = computed(() => step.value?.values?.targets || [])
+const recordedCharacter = computed(() => step.value?.values?.character || null)
+const recordedCharacterName = computed(() => props.view.roles?.find((item) => item.id === recordedCharacter.value)?.name || recordedCharacter.value)
+const stepSelectionRecorded = computed(() => Object.prototype.hasOwnProperty.call(step.value?.values || {}, 'targets'))
 const stepOutcomeHandled = computed(() => Boolean(
   Object.prototype.hasOwnProperty.call(step.value?.values || {}, 'targets')
   && (role.value?.team === 'demon' || actorRoleId.value === 'lunatic')
 ))
-const forceToken = computed(() => props.night.forceTokens?.[current.value?.id] || null)
 const omissions = computed(() => props.night.forceOmissions?.[current.value?.id] || [])
 const actionBusy = computed(() => props.pending.some((key) => key.startsWith('night:')))
 
@@ -140,14 +142,6 @@ function actionLabel() {
   if (roleCanCreateOutcome()) return '记录选择并进入裁定'
   return step.value?.required_fields?.length ? '确认本步操作' : '标记已处理'
 }
-function navigate(direction) {
-  if (!current.value) return
-  props.night.navigate({
-    direction,
-    step_id: current.value.id,
-    ...(direction === 'next' && forceToken.value ? { force_token: forceToken.value } : {}),
-  })
-}
 function previewUndo(eventId) {
   props.night.undoNightEvent({ event_id: eventId, confirm: false })
 }
@@ -184,13 +178,19 @@ function confirmUndo(eventId) {
           <p v-if="!isCurrent" class="inline-note">当前为只读查看；点击“回到当前”后才能执行操作。</p>
         </section>
 
+        <section v-if="recordedTargets.length || recordedCharacter" class="night-card" data-night-recorded-choice>
+          <div class="night-card-heading"><h4>已记录选择</h4><span>来自当前夜晚记录</span></div>
+          <p v-if="recordedTargets.length">玩家：{{ recordedTargets.map((seat) => `${seat}号`).join('、') }}</p>
+          <p v-if="recordedCharacter">角色：{{ recordedCharacterName }}</p>
+        </section>
+
         <section v-if="workflow.context?.lunatic_choices?.length && role?.team === 'demon'" class="night-card lunatic-context">
           <div class="night-card-heading"><h4>疯子的选择</h4><span>恶魔可据此决定</span></div>
           <p v-for="choice in workflow.context.lunatic_choices" :key="choice.outcome_id">{{ choice.lunatic_seat }}号疯子选择了 {{ choice.target_seats.map((seat) => `${seat}号`).join('、') }}</p>
         </section>
 
         <SeatTargetPicker
-          v-if="isCurrent && selection?.players && !stepOutcomeHandled && !stepInformationHandled"
+          v-if="isCurrent && selection?.players && !stepSelectionRecorded && !stepOutcomeHandled && !stepInformationHandled"
           :seats="view.seats"
           :roles="view.roles"
           :selected="night.selectedTargets"
@@ -226,7 +226,7 @@ function confirmUndo(eventId) {
         </label>
 
         <button
-          v-if="isCurrent && step.actor_seat && actorRoleId !== 'pithag' && !stepOutcomes.length && !stepDrafts.length && !stepInformationHandled && !stepOutcomeHandled"
+          v-if="isCurrent && step.actor_seat && actorRoleId !== 'pithag' && !stepOutcomes.length && !stepDrafts.length && !stepSelectionRecorded && !stepInformationHandled && !stepOutcomeHandled"
           class="btn primary task-submit"
           type="button"
           :disabled="!connected || actionBusy || (selection?.players && night.selectedTargets.length !== selection.players) || (selection?.characters && !night.selectedCharacter)"
@@ -276,14 +276,5 @@ function confirmUndo(eventId) {
       <span v-if="omissions.length">还有 {{ omissions.length }} 项未完成：{{ omissions.map(omissionLabel).join('；') }}</span>
       <span v-else-if="error">{{ nightErrorMessage(error) }}</span>
     </div>
-    <NightNavigation
-      :steps="night.orderedSteps"
-      :current-step="current"
-      :force-armed="Boolean(forceToken)"
-      :connected="connected"
-      :pending="pending"
-      @previous="navigate('previous')"
-      @next="navigate('next')"
-    />
   </div>
 </template>

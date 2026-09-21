@@ -43,6 +43,8 @@ class ChatMixin:
             raise ValueError("白天才能私聊")
         if self.winner:
             raise ValueError("本局已结束")
+        if self.day_stage != "talk":
+            raise ValueError("提名阶段暂停私聊")
 
 
     def create_chat(self, owner, invitees: list) -> dict:

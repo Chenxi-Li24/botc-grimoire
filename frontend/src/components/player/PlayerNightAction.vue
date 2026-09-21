@@ -135,14 +135,14 @@ function resultText(result) {
 </template>
 
 <style scoped>
-.night-action { padding: 16px; display: grid; gap: 14px; border: 1px solid #58457d; border-radius: 18px; background: color-mix(in srgb, var(--panel) 88%, #251d39); }
+.night-action { padding: 16px; display: grid; gap: 14px; border: 1px solid #8e3640; border-radius: 18px; background: color-mix(in srgb, var(--panel) 82%, #341015); }
 .night-action header { display: grid; gap: 7px; }
 .night-action h2 { font-size: 21px; }
 .night-action h3 { font-size: 15px; }
 .eyebrow, .hint { color: var(--dim); font-size: 12px; }
 .target-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .target { min-height: 44px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); }
-.target.on { border-color: #c39cff; background: #4a3765; }
+.target.on { border-color: #cf5961; background: #4b2026; }
 .character-field { display: grid; gap: 7px; color: var(--dim); font-size: 13px; }
 .character-field select { padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); }
 .night-note, .widow-grimoire, .madness-note { padding: 12px; display: grid; gap: 6px; border: 1px solid var(--line); border-radius: 12px; line-height: 1.5; }

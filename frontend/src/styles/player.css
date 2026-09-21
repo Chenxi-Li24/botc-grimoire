@@ -6,6 +6,30 @@ body:has(.player-shell) {
     var(--bg);
 }
 
+body:has(.player-shell[data-phase='day']) {
+  background:
+    radial-gradient(circle at 50% -20%, rgb(255 175 84 / 22%), transparent 42%),
+    var(--bg);
+}
+
+.player-shell[data-phase='day'] .day-action,
+.player-shell[data-phase='day'] .player-chat {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--panel) 88%, var(--surface-tint));
+}
+
+.player-shell[data-phase='day'] .nominee.on,
+.player-shell[data-phase='day'] .picker-person.on {
+  border-color: var(--accent);
+  background: #ffecd2;
+  color: #733907;
+}
+
+.player-shell[data-phase='day'] .warning { color: #985014; }
+.player-shell[data-phase='day'] .chat-members span { background: #fff0df; }
+.player-shell[data-phase='day'] .chat-messages { background: #fff5e8; }
+.player-shell[data-phase='day'] .chat-messages .mine { color: #145d81; }
+
 .player-shell,
 .player-shell * {
   min-width: 0;

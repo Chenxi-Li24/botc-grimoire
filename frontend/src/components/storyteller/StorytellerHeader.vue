@@ -22,7 +22,7 @@ function openAdmin(event) {
 
 <template>
   <div class="storyteller-header-inner">
-    <button class="drawer-toggle drawer-toggle-left" type="button" @click="emit('open-left')">设置</button>
+    <button class="drawer-toggle drawer-toggle-left" type="button" @click="emit('open-left')">{{ view.status === 'playing' && view.phase === 'night' ? '夜序' : '设置' }}</button>
     <strong class="storyteller-title">🕯 魔典</strong>
     <span class="header-chip">房间 {{ view.room_code }}</span>
     <span class="header-script">{{ scriptName }}</span>

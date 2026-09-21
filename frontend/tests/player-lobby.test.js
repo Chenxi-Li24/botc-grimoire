@@ -14,6 +14,20 @@ it('keeps identity hidden before start and emits an empty seat choice', async ()
   expect(wrapper.emitted('sit')).toEqual([[2]])
 })
 
+it('arranges lobby seat choices clockwise around the circle', () => {
+  const seats = [1, 2, 3, 4].map((seat) => ({ seat, player: null }))
+  const wrapper = mount(PlayerLobby, {
+    props: { view: makeLobbyPlayerView({ seats }), connected: true, pending: [] },
+  })
+
+  const positions = [[50, 14], [86, 50], [50, 86], [14, 50]]
+  positions.forEach(([x, y], index) => {
+    const seat = wrapper.get(`[data-seat="${index + 1}"]`)
+    expect(seat.element.style.getPropertyValue('--seat-x')).toBe(`${x}%`)
+    expect(seat.element.style.getPropertyValue('--seat-y')).toBe(`${y}%`)
+  })
+})
+
 it('emits preset, custom, clear-wish and late traveler commands', async () => {
   const wrapper = mount(PlayerLobby, {
     props: {

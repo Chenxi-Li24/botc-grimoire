@@ -7,6 +7,21 @@
   --accent: #c0392b;
   --on-accent: #fff5f2;
   --danger: #ff8a80;
+  --surface-tint: #09090b;
   --space-page: 16px;
   --radius-control: 10px;
+}
+
+body:has(.storyteller-shell[data-phase='day']),
+body:has(.player-shell[data-phase='day']) {
+  --bg: #fff9f1;
+  --panel: #fffefd;
+  --line: #e4cbb0;
+  --text: #30251c;
+  --dim: #6d5c4e;
+  --accent: #dc7418;
+  --on-accent: #fff;
+  --danger: #ba3934;
+  --surface-tint: #fff0dc;
+  color-scheme: light;
 }

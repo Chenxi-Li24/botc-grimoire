@@ -1,5 +1,6 @@
 <script setup>
 defineProps({
+  phase: { type: String, default: 'lobby' },
   leftOpen: { type: Boolean, default: false },
   rightOpen: { type: Boolean, default: false },
 })
@@ -8,7 +9,7 @@ const emit = defineEmits(['close-drawer'])
 </script>
 
 <template>
-  <div class="storyteller-shell">
+  <div class="storyteller-shell" :data-phase="phase">
     <header data-shell-header class="storyteller-header">
       <slot name="header" />
     </header>

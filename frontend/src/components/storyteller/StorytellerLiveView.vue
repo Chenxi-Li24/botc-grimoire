@@ -91,6 +91,29 @@ function openAdmin(tab) {
   leftOpen.value = false
 }
 
+function inspectNightStep(stepId) {
+  adminTab.value = null
+  selectedSeat.value = null
+  nightWorkflow.setInspectedStep(stepId)
+  rightOpen.value = true
+  leftOpen.value = false
+}
+
+function openCurrentTask() {
+  adminTab.value = null
+  selectedSeat.value = null
+  nightWorkflow.inspectCurrentTask()
+  rightOpen.value = true
+  leftOpen.value = false
+}
+
+watch(() => nightWorkflow.workflow.value?.current_step_id, (stepId, previousStepId) => {
+  if (!stepId || stepId === previousStepId) return
+  adminTab.value = null
+  rightOpen.value = true
+  leftOpen.value = false
+})
+
 function beginManual() {
   manual.begin(view.value)
   selectedSeat.value = Array.from({ length: view.value.player_count }, (_, index) => index + 1)
@@ -177,6 +200,7 @@ watch(() => view.value?.seats, (nextSeats) => {
   <StorytellerShell
     v-if="view"
     data-storyteller-live
+    :phase="view.phase || 'lobby'"
     :left-open="leftOpen"
     :right-open="rightOpen"
     @close-drawer="closeDrawers"
@@ -186,7 +210,7 @@ watch(() => view.value?.seats, (nextSeats) => {
         :view="view"
         :connection-status="connectionStatus"
         @open-left="leftOpen = true; rightOpen = false"
-        @open-right="adminTab = null; rightOpen = true; leftOpen = false"
+        @open-right="openCurrentTask"
         @open-travelers="openAdmin('travelers')"
         @open-chats="openAdmin('chats')"
         @open-session="openAdmin('session')"
@@ -210,7 +234,8 @@ watch(() => view.value?.seats, (nextSeats) => {
         @begin-manual="beginManual"
         @assign-random="assignRandom"
         @start="startGame"
-        @inspect-step="nightWorkflow.setInspectedStep($event); rightOpen = true"
+        @inspect-step="inspectNightStep"
+        @navigate-night="nightWorkflow.navigate($event)"
         @set-day-stage="setDayStage"
         @start-nomination="startNomination"
         @toggle-vote="toggleVote"

@@ -75,3 +75,27 @@ it('shows official composition, Sentinel uncertainty and public fabled roles', (
   expect(wrapper.text()).toContain('可能比官方配比 +1 或 −1')
   expect(wrapper.text()).toContain('末日预言者')
 })
+
+it('shows a known role icon and conceals it together with the identity', async () => {
+  const wrapper = mount(PlayerRoleCard, { props: { view: makePlayerView() } })
+  expect(wrapper.get('[data-role-card] img').attributes('src')).toBe('/role-icons/chef.webp')
+  expect(wrapper.get('[data-role-card]').attributes('data-team')).toBe('townsfolk')
+
+  await wrapper.get('[data-role-card]').trigger('click')
+  expect(wrapper.find('img').exists()).toBe(false)
+  expect(wrapper.get('[data-role-cover]').text()).toContain('身份已隐藏')
+})
+
+it('uses the changed evil alignment and icon without showing a broken image for unknown roles', async () => {
+  const wrapper = mount(PlayerRoleCard, {
+    props: { view: makePlayerView({ team_changed: 'evil' }) },
+  })
+  expect(wrapper.get('[data-role-card]').attributes('data-team')).toBe('evil')
+
+  await wrapper.setProps({ view: makePlayerView({
+    me: { id: 'p1', name: '阿青', seat: 1, alive: true, role: {
+      id: 'custom-role', name: '定制角色', team: 'townsfolk', ability: '自定义能力',
+    } },
+  }) })
+  expect(wrapper.find('[data-role-card] img').exists()).toBe(false)
+})

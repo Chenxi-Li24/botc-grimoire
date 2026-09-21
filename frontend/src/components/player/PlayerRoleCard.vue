@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { teamLabel } from '../../presentation/player.js'
+import { roleIconUrl } from '../../presentation/roleIcons.js'
 
 const props = defineProps({ view: { type: Object, required: true } })
 const hidden = ref(false)
@@ -8,6 +9,7 @@ const hidden = ref(false)
 const traveler = computed(() => props.view.traveler || null)
 const role = computed(() => traveler.value?.role || props.view.role_changed || props.view.me?.role || null)
 const team = computed(() => traveler.value?.align || props.view.team_changed || props.view.me?.role?.team || null)
+const roleIcon = computed(() => roleIconUrl(role.value?.id))
 const joinedLabel = computed(() => {
   if (!traveler.value) return ''
   const phase = traveler.value.joined_phase === 'day' ? '天' : '夜'
@@ -33,6 +35,7 @@ const meetingLine = (items) => (items || []).map((item) => `${item.seat}号${ite
     <template v-else>
       <button data-role-card class="role-card" :data-team="team" type="button" @click="hidden = true">
         <span class="role-team">{{ traveler ? `旅行者 · ${teamLabel(team)}` : teamLabel(team) }}</span>
+        <img v-if="roleIcon" class="role-icon" :src="roleIcon" alt="" width="96" height="96" />
         <span v-if="role.en" class="role-en">{{ role.en }}</span>
         <strong>{{ role.name }}</strong>
         <span class="role-ability">{{ role.ability }}</span>
@@ -65,9 +68,15 @@ const meetingLine = (items) => (items || []).map((item) => `${item.seat}号${ite
 <style scoped>
 .identity-section { display: grid; gap: 12px; }
 .identity-waiting, .public-facts, .private-facts, .madness-note { padding: 13px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
-.role-card, .role-cover { width: 100%; min-height: 220px; padding: 20px; display: grid; place-items: center; gap: 10px; border: 2px solid var(--accent); border-radius: 20px; background: color-mix(in srgb, var(--panel) 88%, black); color: var(--text); text-align: center; }
+.role-card, .role-cover { width: 100%; min-height: 220px; padding: 20px; display: grid; place-items: center; gap: 10px; border: 2px solid var(--line); border-radius: 20px; background: color-mix(in srgb, var(--panel) 88%, var(--surface-tint)); color: var(--text); text-align: center; }
+.role-card { --team-color: var(--line); border-color: var(--team-color); }
+.role-card[data-team='townsfolk'], .role-card[data-team='outsider'], .role-card[data-team='good'] { --team-color: #3685c5; }
+.role-card[data-team='minion'], .role-card[data-team='demon'], .role-card[data-team='evil'] { --team-color: #cf4149; }
+.role-card .role-team { color: var(--team-color); }
+.role-cover { border-color: #999da5; border-style: dashed; color: var(--dim); }
 .role-card strong { font-size: 30px; }
-.role-team { color: #ffd479; font-weight: 700; }
+.role-icon { width: 96px; height: 96px; object-fit: contain; }
+.role-team { font-weight: 700; }
 .role-en, .role-card small, .role-ability, .public-facts { color: var(--dim); }
 .role-ability { line-height: 1.65; }
 .role-cover span { font-size: 42px; }

@@ -39,3 +39,25 @@ it('keeps the loading state inside the Vue player route', () => {
   const wrapper = mount(PlayerPage, { props: { playerId: 'p1' } })
   expect(wrapper.get('[data-player-page]').text()).toContain('正在连接房间')
 })
+
+it('switches the player shell phase when the server moves from night to day', async () => {
+  currentView.value = makeNightPlayerView()
+  const wrapper = mount(PlayerPage, { props: { playerId: 'p1' } })
+  expect(wrapper.get('.player-shell').attributes('data-phase')).toBe('night')
+
+  currentView.value = makeDayPlayerView()
+  await wrapper.vm.$nextTick()
+  expect(wrapper.get('.player-shell').attributes('data-phase')).toBe('day')
+})
+
+it('passes the nomination stage through to the player chat pause state', () => {
+  currentView.value = makeDayPlayerView({
+    chat: {
+      who: '1', my_chat: null, invites: [], chats_public: [],
+    },
+  })
+  const wrapper = mount(PlayerPage, { props: { playerId: 'p1' } })
+
+  expect(wrapper.text()).toContain('提名阶段暂停私聊')
+  expect(wrapper.get('[data-chat-new]').attributes('disabled')).toBeDefined()
+})

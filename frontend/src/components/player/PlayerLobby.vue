@@ -17,6 +17,16 @@ function saveCustomWish() {
   emit('wish', wish)
   customWish.value = ''
 }
+
+function seatPosition(index) {
+  const count = props.view.seats?.length || 1
+  const angle = (2 * Math.PI * index) / count - Math.PI / 2
+  const percent = (value) => `${Number(value.toFixed(3))}%`
+  return {
+    '--seat-x': percent(50 + 36 * Math.cos(angle)),
+    '--seat-y': percent(50 + 36 * Math.sin(angle)),
+  }
+}
 </script>
 
 <template>
@@ -27,13 +37,18 @@ function saveCustomWish() {
       <p class="sub">{{ view.status === 'playing' ? '选择空座继承该座身份，或以旅行者加入。' : '身份会在说书人开始游戏后揭晓。' }}</p>
     </div>
 
-    <div class="seat-grid" aria-label="座位选择">
+    <div
+      class="seat-ring"
+      aria-label="座位选择"
+      :style="{ '--seat-size-percent': `${220 / (view.seats?.length || 1)}%` }"
+    >
       <button
-        v-for="slot in view.seats || []"
+        v-for="(slot, index) in view.seats || []"
         :key="slot.seat"
         class="seat-choice"
         :class="{ occupied: !!slot.player, mine: slot.is_me }"
         :data-seat="slot.seat"
+        :style="seatPosition(index)"
         :disabled="!!slot.player || blocked('sit')"
         type="button"
         @click="emit('sit', slot.seat)"
@@ -85,16 +100,16 @@ function saveCustomWish() {
 .lobby-card, .wish-card { display: grid; gap: 14px; }
 .lobby-card { padding: 18px; border: 1px solid var(--line); border-radius: 18px; background: var(--panel); }
 .eyebrow { color: var(--dim); font-size: 12px; letter-spacing: .08em; }
-.seat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.seat-choice { min-height: 66px; padding: 8px; display: grid; gap: 4px; border: 1px dashed var(--line); border-radius: 12px; background: color-mix(in srgb, var(--panel) 80%, black); color: var(--text); }
-.seat-choice span { overflow: hidden; color: var(--dim); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.seat-ring { position: relative; width: min(100%, 560px); aspect-ratio: 1; margin: 4px auto; border: 1px solid var(--line); border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--panel) 86%, #493923), var(--panel) 72%); }
+.seat-choice { position: absolute; left: var(--seat-x); top: var(--seat-y); width: min(72px, 22%, var(--seat-size-percent)); min-height: 0; aspect-ratio: 1; padding: 3px; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; border: 1px dashed var(--line); border-radius: 50%; background: color-mix(in srgb, var(--panel) 80%, black); color: var(--text); line-height: 1.1; cursor: pointer; }
+.seat-choice strong { font-size: clamp(8px, 1.8vw, 10px); }
+.seat-choice span { max-width: 100%; overflow: hidden; color: var(--dim); font-size: clamp(8px, 2.1vw, 12px); text-overflow: ellipsis; white-space: nowrap; }
 .seat-choice.occupied { border-style: solid; opacity: .62; }
-.seat-choice.mine { border-color: var(--accent); }
+.seat-choice.mine { border: 2px solid var(--accent); }
 .wish-card { padding-top: 14px; border-top: 1px solid var(--line); }
 .wish-card h2 { font-size: 17px; }
 .wish-presets, .custom-wish { display: flex; gap: 8px; }
 .wish-presets .btn { flex: 1; }
 .wish-presets .selected { border-color: var(--accent); }
 .custom-wish .input { min-width: 0; flex: 1; }
-@media (max-width: 380px) { .seat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

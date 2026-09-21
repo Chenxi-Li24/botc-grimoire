@@ -18,6 +18,8 @@ it('renders public participants without exposing another seat private role', () 
   expect(wrapper.text()).not.toContain('小恶魔')
   expect(wrapper.get('[data-seat="2"]').classes()).toContain('is-dead')
   expect(wrapper.get('[data-seat="2"]').text()).toContain('死票')
+  expect(wrapper.find('img[src^="/role-icons/"]').exists()).toBe(false)
+  expect(wrapper.get('[data-seat="2"]').classes().some((name) => name.startsWith('team-'))).toBe(false)
 })
 
 it('emits numeric seat and traveler ids as distinct participant values', async () => {
@@ -32,4 +34,26 @@ it('emits numeric seat and traveler ids as distinct participant values', async (
   await wrapper.get('[data-seat="2"]').trigger('click')
   await wrapper.get('[data-traveler="t2"]').trigger('click')
   expect(wrapper.emitted('select-participant')).toEqual([[2], ['t2']])
+})
+
+it('places seats clockwise around the town square', () => {
+  const view = makePlayerView({
+    seats: [1, 2, 3, 4].map((seat) => ({
+      seat,
+      player: { id: `p${seat}`, name: `玩家${seat}`, alive: true },
+    })),
+  })
+  const wrapper = mount(PlayerBoard, { props: { view } })
+  const positions = [
+    [50, 14],
+    [86, 50],
+    [50, 86],
+    [14, 50],
+  ]
+
+  positions.forEach(([x, y], index) => {
+    const seat = wrapper.get(`[data-seat="${index + 1}"]`)
+    expect(seat.element.style.getPropertyValue('--seat-x')).toBe(`${x}%`)
+    expect(seat.element.style.getPropertyValue('--seat-y')).toBe(`${y}%`)
+  })
 })

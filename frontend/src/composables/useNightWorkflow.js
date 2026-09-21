@@ -136,6 +136,12 @@ export function useNightWorkflow(viewRef, { service, run }) {
     if (!response) autoPreparedSteps.delete(step.id)
   }, { immediate: true })
 
+  watch(() => workflow.value?.current_step_id, (stepId, previousStepId) => {
+    if (!stepId || stepId === previousStepId) return
+    inspectedStepId.value = stepId
+    selectedSeat.value = null
+  })
+
   watch(workflow, (next) => {
     if (!next) return
     const steps = next.steps || []

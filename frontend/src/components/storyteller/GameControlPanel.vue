@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { getScriptName } from '../../presentation/storyteller.js'
 import DayControlPanel from './day/DayControlPanel.vue'
 import LobbySetupPanel from './LobbySetupPanel.vue'
+import NightNavigation from './night/NightNavigation.vue'
 import NightStepList from './night/NightStepList.vue'
 
 const props = defineProps({
@@ -13,12 +14,23 @@ const props = defineProps({
   manualActive: { type: Boolean, default: false },
   night: { type: Object, default: null },
 })
-defineEmits([
+const emit = defineEmits([
   'configure', 'set-sentinel', 'toggle-fabled', 'begin-manual', 'assign-random', 'start', 'inspect-step',
-  'set-day-stage', 'start-nomination', 'toggle-vote', 'resolve-nomination', 'end-day',
+  'navigate-night', 'set-day-stage', 'start-nomination', 'toggle-vote', 'resolve-nomination', 'end-day',
 ])
 const scriptName = computed(() => getScriptName(props.view))
 const seatedCount = computed(() => props.view.seats?.filter((seat) => seat.player).length || 0)
+
+function navigateNight(direction) {
+  const current = props.night?.currentTask
+  if (!current) return
+  const forceToken = props.night.forceTokens?.[current.id]
+  emit('navigate-night', {
+    direction,
+    step_id: current.id,
+    ...(direction === 'next' && forceToken ? { force_token: forceToken } : {}),
+  })
+}
 </script>
 
 <template>
@@ -50,6 +62,15 @@ const seatedCount = computed(() => props.view.seats?.filter((seat) => seat.playe
       :inspected-step-id="night.inspectedStepId"
       :current-step-id="night.workflow.current_step_id"
       @inspect="$emit('inspect-step', $event)"
+    />
+    <NightNavigation
+      :steps="night.orderedSteps"
+      :current-step="night.currentTask"
+      :force-armed="Boolean(night.forceTokens?.[night.currentTask?.id])"
+      :connected="connected"
+      :pending="pending"
+      @previous="navigateNight('previous')"
+      @next="navigateNight('next')"
     />
   </div>
   <DayControlPanel

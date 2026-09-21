@@ -17,7 +17,9 @@ let armTimer = null
 const active = computed(() => (props.view.chats || []).filter((chat) => !chat.closed))
 const archives = computed(() => (props.view.chats || []).filter((chat) => chat.closed))
 const busy = computed(() => props.pending.some((key) => key.startsWith('chat-st:')))
-const canWrite = computed(() => props.connected && !busy.value)
+const canManage = computed(() => props.connected && !busy.value)
+const canChat = computed(() => canManage.value && props.view.phase === 'day' && props.view.day_stage === 'talk' && !props.view.winner)
+const paused = computed(() => props.view.phase === 'day' && props.view.day_stage !== 'talk')
 
 function isMember(chat) {
   return (chat.members || []).some((member) => String(member.who) === 'st')
@@ -31,7 +33,7 @@ function clearArm() {
 }
 
 function arm(kind, id = null) {
-  if (!canWrite.value) return
+  if (!canManage.value) return
   const armed = kind === 'recall' ? armedRecall.value : armedClose.value === id
   if (armed) {
     clearArm()
@@ -52,7 +54,7 @@ function toggleOpen(id) {
 
 function send(id) {
   const text = draft.value.trim()
-  if (!text || !canWrite.value) return
+  if (!text || !canChat.value) return
   emit('send', { id, text })
   draft.value = ''
 }
@@ -67,8 +69,9 @@ onBeforeUnmount(clearArm)
       <p class="panel-eyebrow">说书人监管</p>
       <h2>💬 私聊</h2>
       <p class="inline-note">可查看全部私聊；加入后才能以说书人身份发言。关闭的私聊保留档案。</p>
+      <p v-if="paused" class="inline-note" role="status">提名阶段暂停私聊；聊天记录保留，返回公聊阶段后恢复。</p>
     </div>
-    <button data-chat-admin-recall class="btn danger" type="button" :disabled="!canWrite || !active.length" :aria-pressed="armedRecall" @click="arm('recall')">{{ armedRecall ? '确认召回全部？' : '召回全部私聊' }}</button>
+    <button data-chat-admin-recall class="btn danger" type="button" :disabled="!canManage || !active.length" :aria-pressed="armedRecall" @click="arm('recall')">{{ armedRecall ? '确认召回全部？' : '召回全部私聊' }}</button>
     <p v-if="error?.key?.startsWith('chat-st:')" class="inline-error">{{ error.message }}</p>
     <p v-if="!active.length" class="inline-note">目前没有进行中的私聊。</p>
     <section v-for="chat in active" :key="chat.id" class="storyteller-chat-row">
@@ -76,20 +79,20 @@ onBeforeUnmount(clearArm)
       <p v-if="isMember(chat)" class="inline-note">你在群里</p>
       <div v-for="invite in (chat.invites || []).filter((item) => String(item.who) === 'st')" :key="invite.who" class="admin-actions">
         <span>邀请说书人加入</span>
-        <button :data-chat-admin-accept="chat.id" class="btn" type="button" :disabled="!canWrite" @click="emit('answer-invite', { id: chat.id, accept: true })">接受</button>
-        <button :data-chat-admin-reject="chat.id" class="btn" type="button" :disabled="!canWrite" @click="emit('answer-invite', { id: chat.id, accept: false })">拒绝</button>
+        <button :data-chat-admin-accept="chat.id" class="btn" type="button" :disabled="!canChat" @click="emit('answer-invite', { id: chat.id, accept: true })">接受</button>
+        <button :data-chat-admin-reject="chat.id" class="btn" type="button" :disabled="!canChat" @click="emit('answer-invite', { id: chat.id, accept: false })">拒绝</button>
       </div>
       <div class="admin-actions">
         <button :data-chat-admin-open="chat.id" class="btn" type="button" @click="toggleOpen(chat.id)">{{ openId === chat.id ? '收起' : '查看' }}</button>
-        <button v-if="isMember(chat)" :data-chat-admin-leave="chat.id" class="btn" type="button" :disabled="!canWrite" @click="emit('leave', chat.id)">退出</button>
-        <button :data-chat-admin-close="chat.id" class="btn danger" type="button" :disabled="!canWrite" :aria-pressed="armedClose === chat.id" @click="arm('close', chat.id)">{{ armedClose === chat.id ? '确认关闭？' : '关闭' }}</button>
+        <button v-if="isMember(chat)" :data-chat-admin-leave="chat.id" class="btn" type="button" :disabled="!canManage" @click="emit('leave', chat.id)">退出</button>
+        <button :data-chat-admin-close="chat.id" class="btn danger" type="button" :disabled="!canManage" :aria-pressed="armedClose === chat.id" @click="arm('close', chat.id)">{{ armedClose === chat.id ? '确认关闭？' : '关闭' }}</button>
       </div>
       <div v-if="openId === chat.id" class="storyteller-chat-messages">
         <p v-if="!chat.messages?.length" class="inline-note">暂无消息</p>
         <p v-for="message in chat.messages || []" :key="message.seq"><strong>{{ message.name }}</strong>：{{ message.text }}</p>
         <div v-if="isMember(chat)" class="admin-inline-form">
-          <input v-model="draft" :data-chat-admin-draft="chat.id" class="input" maxlength="500" placeholder="以说书人身份发言" :disabled="!canWrite" @keydown.enter.prevent="send(chat.id)">
-          <button :data-chat-admin-send="chat.id" class="btn" type="button" :disabled="!canWrite || !draft.trim()" @click="send(chat.id)">发送</button>
+          <input v-model="draft" :data-chat-admin-draft="chat.id" class="input" maxlength="500" placeholder="以说书人身份发言" :disabled="!canChat" @keydown.enter.prevent="send(chat.id)">
+          <button :data-chat-admin-send="chat.id" class="btn" type="button" :disabled="!canChat || !draft.trim()" @click="send(chat.id)">发送</button>
         </div>
       </div>
     </section>

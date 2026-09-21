@@ -26,6 +26,14 @@ it('renders the four stable desktop shell regions', () => {
   expect(wrapper.get('[data-shell-context]').text()).toBe('context')
 })
 
+it('exposes the active day or night phase to the storyteller theme', async () => {
+  const wrapper = mount(StorytellerShell, { props: { phase: 'night' } })
+  expect(wrapper.attributes('data-phase')).toBe('night')
+
+  await wrapper.setProps({ phase: 'day' })
+  expect(wrapper.attributes('data-phase')).toBe('day')
+})
+
 it('shows global state and native session administration', () => {
   const wrapper = mount(StorytellerHeader, {
     props: { view: lobbyView, connectionStatus: 'connected' },
@@ -36,6 +44,17 @@ it('shows global state and native session administration', () => {
   expect(wrapper.text()).toContain('已连接')
   expect(wrapper.find('a[href^="/legacy"]').exists()).toBe(false)
   expect(wrapper.get('[data-open-session]').text()).toContain('房间')
+})
+
+it('names the left drawer 夜序 during the night', () => {
+  const wrapper = mount(StorytellerHeader, {
+    props: {
+      view: { ...lobbyView, status: 'playing', phase: 'night', night_no: 1 },
+      connectionStatus: 'connected',
+    },
+  })
+
+  expect(wrapper.get('.drawer-toggle-left').text()).toBe('夜序')
 })
 
 it('exposes focused lobby setup controls in the Vue preview', () => {

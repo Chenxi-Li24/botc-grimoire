@@ -9,7 +9,7 @@
   position: relative;
   z-index: 70;
   border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--panel) 92%, black);
+  background: color-mix(in srgb, var(--panel) 92%, var(--surface-tint));
 }
 
 .storyteller-header-inner {
@@ -74,7 +74,7 @@
   padding: 9px 10px;
   border: 1px solid var(--line);
   border-radius: 9px;
-  background: color-mix(in srgb, var(--panel) 82%, black);
+  background: color-mix(in srgb, var(--panel) 82%, var(--surface-tint));
   color: var(--text);
 }
 .stepper { display: grid; grid-template-columns: 36px 1fr 36px; align-items: center; gap: 8px; }
@@ -84,7 +84,7 @@
 .choice-chip {
   border: 1px solid var(--line);
   border-radius: 9px;
-  background: color-mix(in srgb, var(--panel) 84%, black);
+  background: color-mix(in srgb, var(--panel) 84%, var(--surface-tint));
   color: var(--text);
   cursor: pointer;
 }
@@ -143,26 +143,25 @@ body:has(.storyteller-shell) { overflow: hidden; }
   gap: 2px;
   border: 2px solid var(--team-color);
   border-radius: 14px;
-  background: color-mix(in srgb, var(--panel) 88%, black);
+  background: color-mix(in srgb, var(--panel) 88%, var(--surface-tint));
   color: var(--text);
   cursor: pointer;
 }
-.grimoire-seat.team-townsfolk { --team-color: #57a8d9; }
-.grimoire-seat.team-outsider { --team-color: #4f78c8; }
-.grimoire-seat.team-minion { --team-color: #c45a62; }
-.grimoire-seat.team-demon { --team-color: #e23d3d; }
+.grimoire-seat.team-townsfolk, .grimoire-seat.team-outsider, .grimoire-seat.team-good { --team-color: #3685c5; }
+.grimoire-seat.team-minion, .grimoire-seat.team-demon, .grimoire-seat.team-evil { --team-color: #cf4149; }
 .grimoire-seat.team-traveler { --team-color: #d6ad55; }
+.seat-role-icon { width: 40px; height: 40px; object-fit: contain; flex: none; }
 .grimoire-seat.is-empty { opacity: .42; border-style: dashed; }
 .grimoire-seat.is-unclaimed { border-style: dashed; }
 .grimoire-seat.is-dead { filter: grayscale(.75); opacity: .62; }
 .grimoire-seat.is-secret-dead { filter: grayscale(.25); opacity: 1; box-shadow: inset 0 0 0 2px #9f4850; }
-.grimoire-seat.is-selected { outline: 3px solid #f0c66b; outline-offset: 3px; }
+.grimoire-seat.is-selected { outline: 3px solid var(--accent); outline-offset: 3px; }
 .grimoire-seat.is-contextual { box-shadow: 0 0 0 4px rgb(192 57 43 / 35%); }
 .grimoire-seat.is-draft { background: color-mix(in srgb, #57442a 32%, var(--panel)); }
 .grimoire-seat.is-acting { animation: acting-seat 1.5s ease-in-out infinite; }
 .grimoire-seat.is-target-draft { outline: 3px solid #d85d72; outline-offset: 3px; }
 .grimoire-seat.has-effects::after { content: ''; position: absolute; right: 5px; top: 5px; width: 7px; height: 7px; border-radius: 50%; background: #b782db; box-shadow: 0 0 8px #b782db; }
-@keyframes acting-seat { 50% { box-shadow: 0 0 0 5px rgb(214 173 85 / 38%); } }
+@keyframes acting-seat { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 38%, transparent); } }
 .seat-number, .seat-role, .seat-life, .seat-marker, .seat-draft, .seat-effect { font-size: 10px; }
 .seat-number, .seat-role { color: var(--dim); }
 .seat-player { max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
@@ -254,6 +253,7 @@ body:has(.storyteller-shell) { overflow: hidden; }
 .role-picker-group { display: grid; gap: 7px; }
 .role-picker-group h4, .manual-subsection h4 { font-size: 12px; color: var(--dim); }
 .role-choice { display: inline-flex; align-items: center; gap: 4px; }
+.role-choice-icon { width: 24px; height: 24px; object-fit: contain; flex: none; }
 .role-choice small { color: var(--dim); }
 .role-choice.used { opacity: .45; }
 .choice-chip.team-townsfolk { border-color: #407ba1; }
@@ -267,25 +267,26 @@ body:has(.storyteller-shell) { overflow: hidden; }
 
 .storyteller-context:has(.night-task-panel) { overflow: hidden; }
 .night-control-panel { height: 100%; min-height: 0; overflow: hidden; }
+.night-control-panel .night-navigation { flex: none; margin: 0 -18px -18px; }
 .night-step-list { min-height: 0; display: flex; flex: 1; flex-direction: column; gap: 7px; overflow: auto; padding-right: 3px; }
 .night-step-list-heading, .night-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .night-step-list-heading span, .night-card-heading > span { color: var(--dim); font-size: 11px; }
-.night-step { width: 100%; padding: 9px; display: grid; grid-template-columns: auto 1fr; gap: 2px 7px; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--panel) 84%, black); color: var(--text); text-align: left; cursor: pointer; }
+.night-step { width: 100%; padding: 9px; display: grid; grid-template-columns: auto 1fr; gap: 2px 7px; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--panel) 84%, var(--surface-tint)); color: var(--text); text-align: left; cursor: pointer; }
 .night-step strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .night-step small { grid-column: 2; color: var(--dim); font-size: 10px; }
 .night-step-status { grid-row: 1 / span 2; min-width: 38px; align-self: center; padding: 3px 5px; border-radius: 999px; background: rgb(255 255 255 / 6%); color: var(--dim); font-size: 9px; text-align: center; }
-.night-step.is-current { border-color: #d6ad55; background: rgb(87 68 42 / 36%); }
-.night-step.is-inspected { box-shadow: inset 3px 0 #f0c66b; }
+.night-step.is-current { border-color: var(--accent); background: #36171b; }
+.night-step.is-inspected { box-shadow: inset 3px 0 var(--accent); }
 .night-step.status-completed { opacity: .65; }
 .night-step.status-skipped, .night-step.status-undone { opacity: .5; }
 .night-step-skip { color: #d2a4a8 !important; }
 
-.night-task-panel { height: 100%; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) 44px 64px; }
+.night-task-panel { height: 100%; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) 44px; }
 .night-task-header { padding: 16px 16px 12px; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--line); }
 .night-task-header h3 { margin-top: 4px; font-size: 15px; line-height: 1.35; }
 .night-task-body { min-height: 0; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .night-task-warning { min-height: 44px; max-height: 44px; overflow: auto; padding: 7px 14px; border-top: 1px solid var(--line); color: #ffd479; font-size: 11px; line-height: 1.45; }
-.night-navigation { height: 64px; display: grid; grid-template-columns: 112px minmax(0, 1fr) 112px; align-items: center; gap: 8px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 94%, black); }
+.night-navigation { height: 64px; display: grid; grid-template-columns: minmax(0, 1fr) 48px minmax(0, 1fr); align-items: center; gap: 8px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 94%, var(--surface-tint)); }
 .night-navigation .btn { width: 100%; min-width: 0; padding-inline: 6px; }
 .night-navigation-progress { min-width: 0; display: flex; flex-direction: column; align-items: center; color: var(--dim); font-size: 10px; }
 .night-navigation-progress strong { color: var(--text); font-size: 13px; }
@@ -298,12 +299,12 @@ body:has(.storyteller-shell) { overflow: hidden; }
 .chip-button { padding: 4px 7px; }
 .icon-button { width: 28px; height: 28px; }
 .target-picker-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
-.target-seat { min-width: 0; padding: 8px; display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--line); border-radius: 9px; background: color-mix(in srgb, var(--panel) 82%, black); color: var(--text); text-align: left; cursor: pointer; }
+.target-seat { min-width: 0; padding: 8px; display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--line); border-radius: 9px; background: color-mix(in srgb, var(--panel) 82%, var(--surface-tint)); color: var(--text); text-align: left; cursor: pointer; }
 .target-seat strong, .target-seat small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .target-seat strong { font-size: 11px; }.target-seat small, .target-seat span { color: var(--dim); font-size: 9px; }
-.target-seat.active { border-color: #d6ad55; background: #57442a; }
+.target-seat.active { border-color: var(--accent); background: #4b2026; }
 .target-seat.unavailable { opacity: .35; }
-.night-card textarea, .night-card input, .night-card select { width: 100%; min-width: 0; padding: 8px 9px; border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--panel) 82%, black); color: var(--text); font: inherit; }
+.night-card textarea, .night-card input, .night-card select { width: 100%; min-width: 0; padding: 8px 9px; border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--panel) 82%, var(--surface-tint)); color: var(--text); font: inherit; }
 .night-card textarea { resize: vertical; }
 .night-hints, .undo-event-list, .effect-record ol { padding-left: 18px; color: var(--dim); }
 .state-alert { padding: 7px 9px; border-radius: 8px; background: rgb(183 130 219 / 15%); color: #dfbdf5; }
@@ -332,7 +333,7 @@ body:has(.storyteller-shell) { overflow: hidden; }
   padding: 7px 8px;
   border: 1px solid var(--line);
   border-radius: 9px;
-  background: color-mix(in srgb, var(--panel) 84%, black);
+  background: color-mix(in srgb, var(--panel) 84%, var(--surface-tint));
   color: var(--text);
   cursor: pointer;
   font-size: 11px;
@@ -356,7 +357,7 @@ body:has(.storyteller-shell) { overflow: hidden; }
   gap: 2px;
   border: 1px solid var(--line);
   border-radius: 9px;
-  background: color-mix(in srgb, var(--panel) 84%, black);
+  background: color-mix(in srgb, var(--panel) 84%, var(--surface-tint));
   color: var(--text);
   cursor: pointer;
   text-align: left;
@@ -378,12 +379,46 @@ body:has(.storyteller-shell) { overflow: hidden; }
   display: grid;
   gap: 8px;
   border-top: 1px solid var(--line);
-  background: color-mix(in srgb, var(--panel) 96%, black);
+  background: color-mix(in srgb, var(--panel) 96%, var(--surface-tint));
   box-shadow: 0 -12px 20px rgb(0 0 0 / 16%);
 }
 .resolution-actions, .execution-standing { display: grid; gap: 8px; }
 .resolution-actions p, .execution-standing p { font-size: 11px; line-height: 1.45; }
 .day-resolution .confirm-action .btn { min-height: 44px; }
+
+.storyteller-shell[data-phase='night'] .phase-badge {
+  border-color: #a53f49;
+  background: #31151a;
+  color: #ffd7db;
+  font-weight: 700;
+}
+.storyteller-shell[data-phase='day'] .phase-badge {
+  border-color: var(--accent);
+  background: #fff0dc;
+  color: #8c430b;
+  font-weight: 700;
+}
+.storyteller-shell[data-phase='day'] .day-card { background: #fffaf4; }
+.storyteller-shell[data-phase='day'] .day-stage-switch button.active,
+.storyteller-shell[data-phase='day'] .participant-choice.selected,
+.storyteller-shell[data-phase='day'] .participant-choice.on,
+.storyteller-shell[data-phase='day'] .segmented-control button.active,
+.storyteller-shell[data-phase='day'] .choice-chip.active {
+  border-color: var(--accent);
+  background: #ffecd2;
+  color: #733907;
+}
+.storyteller-shell[data-phase='day'] .vote-summary.reached { color: #28673d; }
+.storyteller-shell[data-phase='day'] .vote-summary.below,
+.storyteller-shell[data-phase='day'] .inline-warning,
+.storyteller-shell[data-phase='day'] .join-code-heading span,
+.storyteller-shell[data-phase='day'] .seat-draft { color: #985014; }
+.storyteller-shell[data-phase='day'] .end-winner { color: #985014; }
+.storyteller-shell[data-phase='day'] .seat-marker,
+.storyteller-shell[data-phase='day'] .detail-markers span { background: #ffecd2; color: #733907; }
+.storyteller-shell[data-phase='day'] .storyteller-chat-messages { background: #fff5e8; }
+.storyteller-shell[data-phase='day'] .join-link { color: #176087; }
+.storyteller-shell[data-phase='day'] .review-screen-item.wrong { color: #b2353d; }
 
 @media (max-width: 1179px) {
   .storyteller-grid { grid-template-columns: minmax(0, 1fr); }

@@ -7,6 +7,7 @@ import StorytellerLiveView from '../src/components/storyteller/StorytellerLiveVi
 import { makeStorytellerDayView } from './fixtures/storytellerView.js'
 
 const view = makeStorytellerDayView({
+  day_stage: 'talk',
   chats: [
     {
       id: 1, owner: 1, color: '#aabbcc', closed: false,
@@ -98,4 +99,17 @@ it('sends storyteller chat through the live command boundary', async () => {
   await wrapper.get('[data-chat-admin-draft="1"]').setValue('  晚上见  ')
   await wrapper.get('[data-chat-admin-send="1"]').trigger('click')
   await vi.waitFor(() => expect(liveService.sendStorytellerChat).toHaveBeenCalledWith(1, '晚上见'))
+})
+
+it('keeps chat records and recall available while nomination pauses storyteller messaging', async () => {
+  const wrapper = mount(ContextPanel, {
+    props: { view: { ...view, day_stage: 'nom' }, selectedSeat: null, adminTab: 'chats', connected: true },
+  })
+  await wrapper.get('[data-chat-admin-open="1"]').trigger('click')
+
+  expect(wrapper.text()).toContain('旧消息')
+  expect(wrapper.text()).toContain('提名阶段暂停私聊')
+  expect(wrapper.get('[data-chat-admin-send="1"]').attributes('disabled')).toBeDefined()
+  expect(wrapper.get('[data-chat-admin-accept="2"]').attributes('disabled')).toBeDefined()
+  expect(wrapper.get('[data-chat-admin-recall]').attributes('disabled')).toBeUndefined()
 })

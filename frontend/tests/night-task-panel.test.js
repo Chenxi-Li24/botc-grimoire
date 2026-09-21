@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
-import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
+import GameControlPanel from '../src/components/storyteller/GameControlPanel.vue'
 import NightNavigation from '../src/components/storyteller/night/NightNavigation.vue'
 import NightTaskPanel from '../src/components/storyteller/night/NightTaskPanel.vue'
 import SeatTargetPicker from '../src/components/storyteller/night/SeatTargetPicker.vue'
@@ -9,6 +9,7 @@ const roles = [
   { id: 'imp', name: '小恶魔', team: 'demon', selection: { players: 1, allow_self: true } },
   { id: 'chef', name: '厨师', team: 'townsfolk', information_resolver: 'chef' },
   { id: 'lunatic', name: '疯子', team: 'outsider', selection: { players: 1, allow_self: true } },
+  { id: 'snakecharmer', name: '舞蛇人', team: 'townsfolk', selection: { players: 1, alive_only: true } },
 ]
 const step = {
   id: 's1', actor_seat: 1, character_id: 'imp', name: '小恶魔',
@@ -46,11 +47,24 @@ const view = {
 }
 
 describe('fixed night workspace', () => {
-  it('keeps the four fixed grid rows and 112px navigation slots in CSS', () => {
-    const css = readFileSync(`${process.cwd()}/src/styles/storyteller.css`, 'utf8')
-    expect(css).toMatch(/\.night-task-panel\s*\{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\) 44px 64px/s)
-    expect(css).toMatch(/\.night-navigation\s*\{[^}]*grid-template-columns:\s*112px minmax\(0, 1fr\) 112px/s)
-    expect(css).toMatch(/\.night-task-body\s*\{[^}]*overflow:\s*auto/s)
+  it('keeps night navigation below the left step list and emits the existing navigation payload', async () => {
+    const state = night({ forceTokens: { s1: 'force-1' } })
+    const controls = mount(GameControlPanel, {
+      props: {
+        view: { ...view, status: 'playing', phase: 'night', script: '暗流涌动' },
+        night: state, connected: true, pending: [],
+      },
+    })
+    const task = mount(NightTaskPanel, {
+      props: { view, night: state, connected: true, pending: [] },
+    })
+
+    expect(controls.find('[data-night-navigation]').exists()).toBe(true)
+    expect(task.find('[data-night-navigation]').exists()).toBe(false)
+    await controls.get('[data-night-next]').trigger('click')
+    expect(controls.emitted('navigate-night')).toEqual([[
+      { direction: 'next', step_id: 's1', force_token: 'force-1' },
+    ]])
   })
 
   it('keeps previous and next in stable slots and changes next to dawn', () => {
@@ -70,9 +84,15 @@ describe('fixed night workspace', () => {
     const wrapper = mount(NightTaskPanel, {
       props: { view, night: state, connected: true, pending: [] },
     })
+    const controls = mount(GameControlPanel, {
+      props: {
+        view: { ...view, status: 'playing', phase: 'night', script: '暗流涌动' },
+        night: state, connected: true, pending: [],
+      },
+    })
     expect(wrapper.text()).toContain('尚未选择玩家')
-    expect(wrapper.get('[data-night-next]').text()).toContain('仍然继续')
-    expect(wrapper.get('[data-night-previous]').text()).toContain('上一步')
+    expect(controls.get('[data-night-next]').text()).toContain('仍然继续')
+    expect(controls.get('[data-night-previous]').text()).toContain('上一步')
   })
 
   it('lets the storyteller select an assigned but unclaimed seat', async () => {
@@ -159,5 +179,49 @@ describe('fixed night workspace', () => {
 
     expect(wrapper.find('.task-submit').exists()).toBe(false)
     expect(wrapper.find('.target-picker').exists()).toBe(false)
+  })
+
+  it('shows the recorded choice on the current snake charmer operation page', () => {
+    const snakeStep = {
+      ...step, character_id: 'snakecharmer', name: '舞蛇人',
+      source: { ability_character: 'snakecharmer', claimed_by: 'player-1' },
+      values: { targets: [2] },
+    }
+    const state = night({
+      workflow: {
+        ...night().workflow,
+        steps: [snakeStep], current_task: snakeStep,
+      },
+      orderedSteps: [snakeStep], currentTask: snakeStep, inspectedStep: snakeStep,
+      selectedTargets: [2],
+    })
+    const wrapper = mount(NightTaskPanel, {
+      props: { view, night: state, connected: true, pending: [] },
+    })
+
+    expect(wrapper.get('[data-night-recorded-choice]').text()).toContain('2号')
+    expect(wrapper.find('.task-submit').exists()).toBe(false)
+    expect(wrapper.find('.target-picker').exists()).toBe(false)
+  })
+
+  it('lets the storyteller submit the current snake charmer choice when none is recorded', async () => {
+    const snakeStep = {
+      ...step, character_id: 'snakecharmer', name: '舞蛇人',
+      source: { ability_character: 'snakecharmer', claimed_by: null },
+    }
+    const state = night({
+      workflow: { ...night().workflow, steps: [snakeStep], current_task: snakeStep },
+      orderedSteps: [snakeStep], currentTask: snakeStep, inspectedStep: snakeStep,
+      selectedTargets: [2],
+    })
+    const wrapper = mount(NightTaskPanel, {
+      props: { view, night: state, connected: true, pending: [] },
+    })
+
+    expect(wrapper.find('.target-picker').exists()).toBe(true)
+    await wrapper.get('.task-submit').trigger('click')
+    expect(state.selectNightTargets).toHaveBeenCalledWith(expect.objectContaining({
+      step_id: snakeStep.id, selected_seats: [2],
+    }))
   })
 })

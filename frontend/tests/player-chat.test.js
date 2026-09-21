@@ -115,3 +115,29 @@ it('supports owner approvals, invite-more, leave and close', async () => {
     { type: 'close', cid: 1 },
   ])
 })
+
+it('keeps the existing conversation readable but pauses chat controls during nominations', async () => {
+  const wrapper = mountChat(activeChatView(), { dayStage: 'nom' })
+
+  expect(wrapper.text()).toContain('在吗')
+  expect(wrapper.text()).toContain('提名阶段暂停私聊')
+  expect(wrapper.get('[data-chat-draft]').attributes('disabled')).toBeDefined()
+  expect(wrapper.get('[data-chat-send]').attributes('disabled')).toBeDefined()
+  expect(wrapper.get('[data-chat-invite-more]').attributes('disabled')).toBeDefined()
+  expect(wrapper.get('[data-chat-leave]').attributes('disabled')).toBeDefined()
+
+  await wrapper.setProps({ dayStage: 'talk' })
+  expect(wrapper.get('[data-chat-draft]').attributes('disabled')).toBeUndefined()
+  expect(wrapper.get('[data-chat-invite-more]').attributes('disabled')).toBeUndefined()
+})
+
+it('closes an unfinished invitation picker when nominations begin', async () => {
+  const wrapper = mountChat({ who: '1', my_chat: null, invites: [], chats_public: [] })
+  await wrapper.get('[data-chat-new]').trigger('click')
+  expect(wrapper.find('.chat-picker').exists()).toBe(true)
+
+  await wrapper.setProps({ dayStage: 'nom' })
+
+  expect(wrapper.find('.chat-picker').exists()).toBe(false)
+  expect(wrapper.get('[data-chat-new]').attributes('disabled')).toBeDefined()
+})

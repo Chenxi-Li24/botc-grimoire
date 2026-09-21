@@ -91,6 +91,7 @@ async function handleChatCommand(command) {
         :chat="view.chat"
         :seats="view.seats"
         :travelers="view.travelers_public"
+        :day-stage="view.day_stage"
         :connected="connected"
         :pending="pending"
         @command="handleChatCommand"
