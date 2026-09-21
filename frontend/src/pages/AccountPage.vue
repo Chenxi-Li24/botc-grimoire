@@ -7,6 +7,7 @@ const mode = ref('login')
 const username = ref('')
 const password = ref('')
 const recoveryCode = ref('')
+const recoveryInput = ref('')
 const error = ref('')
 const busy = ref(false)
 
@@ -15,11 +16,15 @@ async function submit() {
   busy.value = true
   error.value = ''
   try {
-    const result = await api(`/api/account/${mode.value}`, {
-      method: 'POST', body: JSON.stringify({ username: username.value.trim(), password: password.value }),
+    const payload = mode.value === 'reset'
+      ? { username: username.value.trim(), recovery_code: recoveryInput.value.trim(), new_password: password.value }
+      : { username: username.value.trim(), password: password.value }
+    const result = await api(`/api/account/${mode.value === 'reset' ? 'reset-password' : mode.value}`, {
+      method: 'POST', body: JSON.stringify(payload),
     })
     password.value = ''
-    if (mode.value === 'register') recoveryCode.value = result.recovery_code
+    recoveryInput.value = ''
+    if (mode.value !== 'login') recoveryCode.value = result.recovery_code
     else emit('authenticated')
   } catch (cause) {
     error.value = cause.message || '操作失败'
@@ -48,11 +53,13 @@ function done() {
       <div class="admin-actions">
         <button data-mode-login class="btn" type="button" @click="mode = 'login'">登录</button>
         <button data-mode-register class="btn" type="button" @click="mode = 'register'">注册</button>
+        <button data-mode-reset class="btn" type="button" @click="mode = 'reset'">忘记密码</button>
       </div>
       <form class="join-form" @submit.prevent="submit">
         <input v-model="username" data-username class="input" autocomplete="username" placeholder="用户名" maxlength="64">
-        <input v-model="password" data-password class="input" type="password" :autocomplete="mode === 'register' ? 'new-password' : 'current-password'" placeholder="密码（至少 8 位）">
-        <button data-account-submit class="btn primary" type="submit" :disabled="busy">{{ mode === 'register' ? '注册' : '登录' }}</button>
+        <input v-if="mode === 'reset'" v-model="recoveryInput" data-account-recovery-input class="input" autocomplete="off" placeholder="账户恢复码">
+        <input v-model="password" data-password class="input" type="password" :autocomplete="mode === 'login' ? 'current-password' : 'new-password'" placeholder="密码（至少 8 位）">
+        <button data-account-submit class="btn primary" type="submit" :disabled="busy">{{ mode === 'register' ? '注册' : mode === 'reset' ? '重设密码' : '登录' }}</button>
       </form>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
       <button class="btn" type="button" @click="emit('back')">返回游客加入</button>

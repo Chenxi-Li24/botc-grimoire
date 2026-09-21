@@ -19,6 +19,7 @@ defineProps({
           {{ connectionStatus === 'connected' ? '已连接' : '连接中' }}
         </span>
       </slot>
+      <slot name="header-actions" />
     </header>
     <main class="player-content"><slot /></main>
     <footer v-if="$slots.actions" class="player-actions"><slot name="actions" /></footer>

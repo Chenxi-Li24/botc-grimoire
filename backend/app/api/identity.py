@@ -139,19 +139,21 @@ def login(body: Credentials, request: Request, response: Response) -> dict[str, 
 
 
 @router.post("/api/account/logout")
-def logout(request: Request, response: Response) -> dict[str, bool]:
+async def logout(request: Request, response: Response) -> dict[str, bool]:
     require_session(request)
     runtime.identity_store.revoke_session(request.cookies["botc_session"])
+    await runtime.hub.push_all()
     response.delete_cookie("botc_session", path="/")
     return {"ok": True}
 
 
 @router.post("/api/account/logout-all")
-def logout_all(request: Request, response: Response) -> dict[str, bool]:
+async def logout_all(request: Request, response: Response) -> dict[str, bool]:
     session = require_session(request)
     if not session.account_id:
         raise HTTPException(status_code=403, detail="需要账户")
     runtime.identity_store.revoke_account_sessions(session.account_id)
+    await runtime.hub.push_all()
     response.delete_cookie("botc_session", path="/")
     return {"ok": True}
 
@@ -167,12 +169,16 @@ def change_password(body: PasswordChange, request: Request) -> dict[str, bool]:
 
 
 @router.post("/api/account/reset-password")
-def reset_password(body: PasswordReset, request: Request, response: Response) -> dict[str, Any]:
+async def reset_password(body: PasswordReset, request: Request, response: Response) -> dict[str, Any]:
     _check_write(request)
     recovered = runtime.identity_store.reset_password(body.username, body.recovery_code, body.new_password)
     if not recovered:
         raise HTTPException(status_code=401, detail="账户或恢复码错误")
     account_id, recovery_code = recovered
+    old_token = request.cookies.get("botc_session")
+    if old_token:
+        runtime.identity_store.revoke_session(old_token)
+    await runtime.hub.push_all()
     token, _ = runtime.identity_store.issue_session(account_id=account_id)
     set_session_cookie(response, token)
     return {"ok": True, "recovery_code": recovery_code}

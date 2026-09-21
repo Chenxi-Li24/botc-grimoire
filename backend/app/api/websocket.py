@@ -31,7 +31,7 @@ async def websocket_endpoint(ws: WebSocket, who: str = "", pw: str = "") -> None
         if verified is None:
             await ws.close(code=4001, reason="身份无效")
             return
-    await hub.connect(verified, ws)
+    await hub.connect(verified, ws, session_token=None if verified == "storyteller" else token)
     try:
         while True:
             await ws.receive_text()  # 心跳/预留指令通道

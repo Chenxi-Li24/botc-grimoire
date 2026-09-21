@@ -23,10 +23,11 @@ def issue_recovery_code(player_id: str) -> dict[str, str]:
 
 
 @router.post("/api/st/players/{player_id}/revoke-guest-sessions", dependencies=[Depends(require_storyteller), Depends(validate_origin)])
-def revoke_guest_sessions(player_id: str) -> dict[str, bool]:
+async def revoke_guest_sessions(player_id: str) -> dict[str, bool]:
     if player_id not in runtime.game.players:
         raise HTTPException(status_code=404, detail="玩家不存在")
     runtime.identity_store.revoke_guest_sessions(runtime.game.game_id, player_id)
+    await runtime.hub.push_all()
     return {"ok": True}
 
 def deprecated_storyteller_view(replacement: str) -> dict[str, Any]:

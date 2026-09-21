@@ -53,3 +53,20 @@ it('registers an optional account and shows its recovery code once', async () =>
   expect(wrapper.find('[data-account-recovery-code]').exists()).toBe(false)
   expect(wrapper.emitted('authenticated')).toEqual([[]])
 })
+
+it('resets a password using an account recovery code and rotates that code', async () => {
+  api.mockResolvedValue({ ok: true, recovery_code: 'fresh-code' })
+  const wrapper = mount(AccountPage)
+  await wrapper.get('[data-mode-reset]').trigger('click')
+  await wrapper.get('[data-username]').setValue('Alice')
+  await wrapper.get('[data-account-recovery-input]').setValue('old-code')
+  await wrapper.get('[data-password]').setValue('new-password-123')
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  expect(api).toHaveBeenCalledWith('/api/account/reset-password', {
+    method: 'POST', body: JSON.stringify({
+      username: 'Alice', recovery_code: 'old-code', new_password: 'new-password-123',
+    }),
+  })
+  expect(wrapper.get('[data-account-recovery-code]').text()).toBe('fresh-code')
+})

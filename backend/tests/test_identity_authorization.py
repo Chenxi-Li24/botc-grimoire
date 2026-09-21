@@ -1,3 +1,4 @@
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
@@ -82,6 +83,25 @@ class IdentityAuthorizationTests(unittest.TestCase):
         with self.assertRaises(WebSocketDisconnect):
             with self.bob.websocket_connect("/ws", headers={"Origin": "https://evil.example"}) as ws:
                 ws.receive_json()
+
+    def test_logout_closes_existing_player_websocket(self):
+        token = self.alice.cookies.get("botc_session")
+        class Socket:
+            def __init__(self):
+                self.closed = []
+
+            async def close(self, code, reason):
+                self.closed.append((code, reason))
+
+            async def send_json(self, value):
+                pass
+
+        socket = Socket()
+        self.hub.players[self.alice_id] = {socket}
+        self.hub.session_tokens[socket] = token
+        self.store.revoke_session(token)
+        asyncio.run(self.hub.push_all())
+        self.assertEqual(socket.closed, [(4001, "身份失效")])
 
 
 if __name__ == "__main__":
