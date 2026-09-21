@@ -74,6 +74,7 @@ it('turns lobby mutations into a read-only summary after play begins', () => {
     props: { view: { ...lobbyView, status: 'playing', phase: 'night', night_no: 1 } },
   })
   expect(wrapper.text()).toContain('大厅配置已锁定')
-  expect(wrapper.text()).toContain('旧版白天与复盘工具')
+  expect(wrapper.text()).toContain('等待服务器视图同步')
+  expect(wrapper.find('a[href^="/legacy"]').exists()).toBe(false)
   expect(wrapper.text()).not.toContain('随机分配角色')
 })

@@ -26,7 +26,7 @@ it('renders the four stable desktop shell regions', () => {
   expect(wrapper.get('[data-shell-context]').text()).toBe('context')
 })
 
-it('shows global state and preserves the complete console escape hatch', () => {
+it('shows global state and native session administration', () => {
   const wrapper = mount(StorytellerHeader, {
     props: { view: lobbyView, connectionStatus: 'connected' },
   })
@@ -34,7 +34,8 @@ it('shows global state and preserves the complete console escape hatch', () => {
   expect(wrapper.text()).toContain('暗流涌动')
   expect(wrapper.text()).toContain('等待开局')
   expect(wrapper.text()).toContain('已连接')
-  expect(wrapper.get('a').attributes('href')).toBe('/legacy/#/storyteller')
+  expect(wrapper.find('a[href^="/legacy"]').exists()).toBe(false)
+  expect(wrapper.get('[data-open-session]').text()).toContain('房间')
 })
 
 it('exposes focused lobby setup controls in the Vue preview', () => {

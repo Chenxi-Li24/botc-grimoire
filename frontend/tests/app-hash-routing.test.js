@@ -24,7 +24,7 @@ beforeEach(() => {
 
 describe('App hash routing', () => {
   it('rechecks the entry route when the hash changes', async () => {
-    mount(App)
+    const wrapper = mount(App)
     await flushPromises()
     resolveEntry.mockClear()
 
@@ -35,24 +35,40 @@ describe('App hash routing', () => {
     expect(resolveEntry).toHaveBeenCalledWith(expect.objectContaining({
       hash: '#/storyteller',
     }))
+    wrapper.unmount()
   })
 
   it('ignores an older route result that resolves after a hash change', async () => {
     let resolveFirstRoute
-    resolveEntry
-      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirstRoute = resolve }))
-      .mockResolvedValueOnce({ legacyUrl: '/legacy/#/storyteller' })
+    let calls = 0
+    resolveEntry.mockImplementation(() => {
+      calls += 1
+      return calls === 1
+        ? new Promise((resolve) => { resolveFirstRoute = resolve })
+        : Promise.resolve({ vuePage: 'storyteller' })
+    })
 
-    mount(App)
+    const wrapper = mount(App)
     await vi.waitFor(() => expect(resolveEntry).toHaveBeenCalledTimes(1))
 
     window.location.hash = '#/storyteller'
     window.dispatchEvent(new HashChangeEvent('hashchange'))
-    await vi.waitFor(() => expect(goToLegacy).toHaveBeenCalledWith('/legacy/#/storyteller'))
+    await vi.waitFor(() => expect(wrapper.find('[data-storyteller-page]').exists()).toBe(true))
 
-    resolveFirstRoute({ legacyUrl: '/legacy/' })
+    resolveFirstRoute({ vuePage: 'player' })
     await flushPromises()
 
-    expect(goToLegacy).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-storyteller-page]').exists()).toBe(true)
+    expect(goToLegacy).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('does not redirect an obsolete legacy destination', async () => {
+    resolveEntry.mockResolvedValue({ legacyUrl: '/legacy/' })
+    const wrapper = mount(App)
+    await flushPromises()
+    expect(goToLegacy).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-submit]').exists()).toBe(true)
+    wrapper.unmount()
   })
 })

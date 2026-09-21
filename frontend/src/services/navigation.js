@@ -16,7 +16,3 @@ export async function resolveEntry({ hash, playerId, validatePlayer }) {
     return 'join'
   }
 }
-
-export function goToLegacy(url) {
-  window.location.replace(url)
-}

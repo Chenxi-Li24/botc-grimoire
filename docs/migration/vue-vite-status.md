@@ -8,12 +8,12 @@
 - [x] Storyteller night workflow
 - [x] Player page migrated
 - [x] Storyteller daytime nomination/voting workflow migrated
-- [ ] Storyteller traveler/chat/end-game/review administration migrated
+- [x] Storyteller traveler/chat/end-game/review administration migrated
 - [ ] Legacy frontend removed
 - [ ] Backend routers and domains modularized
 
-`/legacy/` 是迁移期间的临时同源入口，仅用于尚未迁移的说书人白天/复盘工具。
-各页面完成 Vue 迁移并通过完整回归验证后，才能删除该入口及 `frontend/legacy/`。
+`/legacy/` 暂时保留为迁移回退资产；Vue 页面已无旧版操作入口。
+后端拆分和最终回归完成后删除静态兼容路由及 `frontend/legacy/`。
 
 ## 说书人 Vue 正式入口
 
@@ -25,8 +25,8 @@
   麻脸巫婆角色变化、限时异常状态、依赖撤销及天亮公开死亡。
 - 已迁移的白天操作：公聊/提名阶段切换、混合座位与旅行者提名、实时举手与死亡票、
   结票、处决领先/平票提示、提名历史和结束白天。
-- 旅行者加入与阵营管理、说书人私聊监管、胜负宣布和复盘编辑暂时通过页头旧版工具进入。
-- 旧版夜晚操作已改为只读跳转页，不能再推进或修改夜晚状态。
+- 已迁移旅行者加入/阵营/流放管理、说书人私聊监管、座位与房间存档管理、胜负宣布和复盘标注。
+- 页头可打开相应原生管理面板；夜间座位管理单独开启，不干扰夜晚目标点选。
 
 ## 玩家 Vue 正式入口
 

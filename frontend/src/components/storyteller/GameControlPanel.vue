@@ -74,7 +74,6 @@ const seatedCount = computed(() => props.view.seats?.filter((seat) => seat.playe
       <div><dt>入座</dt><dd>已入座 {{ seatedCount }}/{{ view.player_count }}</dd></div>
       <div><dt>房间</dt><dd>{{ view.room_code }}</dd></div>
     </dl>
-    <p class="inline-note">游戏已经开始，大厅配置已锁定。白天与复盘功能暂时保留在旧版工具中。</p>
-    <a class="btn" href="/legacy/#/storyteller">旧版白天与复盘工具</a>
+    <p class="inline-note">游戏已经开始，大厅配置已锁定。若夜晚流程未显示，请等待服务器视图同步。</p>
   </div>
 </template>

@@ -4,7 +4,7 @@ import JoinPage from './pages/JoinPage.vue'
 import PlayerPage from './pages/PlayerPage.vue'
 import StorytellerPage from './pages/StorytellerPage.vue'
 import { api } from './services/api.js'
-import { goToLegacy, resolveEntry } from './services/navigation.js'
+import { resolveEntry } from './services/navigation.js'
 import { clearPlayerId, getPlayerId } from './services/session.js'
 
 const page = ref('loading')
@@ -43,11 +43,6 @@ async function routeCurrentEntry() {
   if (destination?.redirectHash) {
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${destination.redirectHash}`)
     page.value = destination.vuePageAfterRedirect
-    return
-  }
-
-  if (destination !== 'join') {
-    goToLegacy(destination.legacyUrl)
     return
   }
 

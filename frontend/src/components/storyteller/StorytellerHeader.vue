@@ -23,8 +23,7 @@ const connectionLabel = computed(() => ({
     <span class="header-script">{{ scriptName }}</span>
     <span class="phase-badge">{{ phaseLabel }}</span>
     <span class="connection-badge" :data-status="connectionStatus">{{ connectionLabel }}</span>
-    <a class="btn header-primary" href="/legacy/#/storyteller">旧版白天与复盘工具</a>
-    <button data-open-session class="btn" type="button" @click="emit('open-session')">⚙ 房间</button>
+    <button data-open-session class="btn header-primary" type="button" @click="emit('open-session')">⚙ 房间</button>
     <button v-if="view.status === 'playing'" data-open-seats class="btn" type="button" @click="emit('open-seats')">座位</button>
     <button v-if="view.status === 'playing'" data-open-travelers class="btn" type="button" @click="emit('open-travelers')">🎒 旅行者</button>
     <button v-if="view.status === 'playing'" data-open-chats class="btn" type="button" @click="emit('open-chats')">💬 私聊</button>
