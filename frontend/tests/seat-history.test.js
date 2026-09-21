@@ -57,7 +57,7 @@ it('shows current effects before subjective notes and filters three audit catego
     effects: [{ id: 'effect-1', type: 'poisoned', state: 'active', started_at: 'night:2',
       source_seat: 2, source_character: 'poisoner', expected_end: 'next_dusk' }],
     audit: { complete: false, events: [
-      { id: 'a1', category: 'status', kind: 'poisoned', phase: 'night', number: 2, state: 'active', source_event: 'ev-1' },
+      { id: 'effect-1', category: 'status', kind: 'poisoned', phase: 'night', number: 2, state: 'active', source_event: 'ev-1' },
       { id: 'a2', category: 'information', kind: 'delivery', phase: 'night', number: 2,
         state: 'withdrawn', delivered_result: '4号是恶魔', claims: [{ label: '判断', truthful: false }],
         registrations: [{ seat: 4, as: 'demon' }], effect_snapshot: ['poisoned'],
@@ -72,6 +72,7 @@ it('shows current effects before subjective notes and filters three audit catego
   const wrapper = mount(PlayerDetailPanel, { props: { seat, view } })
   expect(wrapper.get('[data-current-status]').text()).toContain('中毒')
   expect(wrapper.get('[data-current-status]').text()).toContain('2号')
+  expect(wrapper.get('[data-current-status]').text()).toContain('第 2 夜')
   expect(wrapper.text()).toContain('🎯 宿敌')
   expect(wrapper.find('[data-current-status]').element.compareDocumentPosition(wrapper.find('[data-storyteller-inferences]').element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(wrapper.get('[data-audit-category="information"]').text()).toContain('4号是恶魔')

@@ -50,11 +50,15 @@ const auditGroups = computed(() => [
   { id: 'action', label: '能力与目标' },
 ].map((group) => ({ ...group, events: visibleAudit.value.filter((item) => item.category === group.id) })))
 const currentStatus = computed(() => [
-  ...(props.seat.effects || []).map((item) => ({
-    id: item.id, label: markerLabels[item.type] || item.type, state: effectState(item),
-    started_at: item.started_at, source_seat: item.source_seat,
-    source_character: item.source_character, expected_end: item.expected_end,
-  })),
+  ...(props.seat.effects || []).map((item) => {
+    const recorded = auditEvents.value.find((event) => event.id === item.id)
+    return {
+      id: item.id, label: markerLabels[item.type] || item.type, state: effectState(item),
+      started_at: recorded?.number != null ? roundLabel(recorded) : recorded?.at || item.started_at,
+      source_seat: item.source_seat, source_character: item.source_character,
+      expected_end: item.expected_end,
+    }
+  }),
   ...(props.seat.markers || []).filter((marker) =>
     !['role-change', 'team-change'].includes(marker)
     && !(props.seat.effects || []).some((effect) => effect.type === marker))
