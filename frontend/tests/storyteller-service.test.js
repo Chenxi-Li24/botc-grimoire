@@ -70,3 +70,19 @@ it('maps every daytime command and preserves traveler participant ids', async ()
   expect(JSON.parse(api.mock.calls[3][1].body)).toEqual({ passed: true })
   expect(api.mock.calls[4][1]).not.toHaveProperty('body')
 })
+
+it('sends traveler administration with the existing REST payloads', async () => {
+  const service = createStorytellerService('secret')
+  await service.addTraveler('迟到玩家')
+  await service.assignTraveler('t1', 'apprentice', 'evil')
+  await service.toggleTravelerAlive('t1')
+  await service.setTravelerExile('t1', true)
+
+  expect(api.mock.calls.map(([path]) => path)).toEqual([
+    '/api/traveler/add', '/api/traveler/assign', '/api/traveler/alive', '/api/traveler/exile',
+  ])
+  expect(api.mock.calls.map(([, options]) => JSON.parse(options.body))).toEqual([
+    { name: '迟到玩家' }, { id: 't1', role: 'apprentice', align: 'evil' },
+    { id: 't1' }, { id: 't1', exiled: true },
+  ])
+})

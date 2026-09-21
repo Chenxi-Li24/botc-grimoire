@@ -29,5 +29,9 @@ export function createStorytellerService(password) {
     toggleVote: (seat) => command('/api/nomination/vote', { seat }),
     resolveNomination: (passed) => command('/api/nomination/resolve', { passed }),
     endDay: () => command('/api/day/end'),
+    addTraveler: (name) => command('/api/traveler/add', { name }),
+    assignTraveler: (id, role, align) => command('/api/traveler/assign', { id, role, align }),
+    setTravelerExile: (id, exiled) => command('/api/traveler/exile', { id, exiled }),
+    toggleTravelerAlive: (id) => command('/api/traveler/alive', { id }),
   }
 }

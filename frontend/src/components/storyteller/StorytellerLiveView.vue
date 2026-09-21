@@ -68,6 +68,7 @@ const manualContext = computed(() => ({
 }))
 const leftOpen = ref(false)
 const rightOpen = ref(false)
+const adminTab = ref(null)
 
 function closeDrawers() {
   leftOpen.value = false
@@ -75,7 +76,15 @@ function closeDrawers() {
 }
 
 function selectSeat(seat) {
+  adminTab.value = null
   selectedSeat.value = seat
+  rightOpen.value = true
+  leftOpen.value = false
+}
+
+function openTravelers() {
+  selectedSeat.value = null
+  adminTab.value = 'travelers'
   rightOpen.value = true
   leftOpen.value = false
 }
@@ -112,6 +121,10 @@ const resolveNomination = (passed) => run(
   () => service.resolveNomination(passed),
 )
 const endDay = () => run('day:end', () => service.endDay())
+const addTraveler = (name) => run('traveler:add', () => service.addTraveler(name))
+const assignTraveler = ({ id, role, align }) => run(`traveler:assign:${id}`, () => service.assignTraveler(id, role, align))
+const setTravelerExile = ({ id, exiled }) => run(`traveler:exile:${id}`, () => service.setTravelerExile(id, exiled))
+const toggleTravelerAlive = (id) => run(`traveler:alive:${id}`, () => service.toggleTravelerAlive(id))
 
 async function assignRandom() {
   const result = await run('assign-random', () => service.assignRandom())
@@ -152,7 +165,8 @@ watch(() => view.value?.seats, (nextSeats) => {
         :view="view"
         :connection-status="connectionStatus"
         @open-left="leftOpen = true; rightOpen = false"
-        @open-right="rightOpen = true; leftOpen = false"
+        @open-right="adminTab = null; rightOpen = true; leftOpen = false"
+        @open-travelers="openTravelers"
       />
     </template>
     <template #controls>
@@ -199,6 +213,7 @@ watch(() => view.value?.seats, (nextSeats) => {
         :pending="pending"
         :error="error"
         :night="nightContext"
+        :admin-tab="adminTab"
         @clear-selection="selectedSeat = null"
         @toggle-role="manual.toggleRole(selectedSeat, $event)"
         @toggle-bluff="manual.setBluff"
@@ -208,6 +223,10 @@ watch(() => view.value?.seats, (nextSeats) => {
         @set-godfather="manual.setGodfatherAdjustment"
         @cancel-manual="manual.cancel(); selectedSeat = null"
         @confirm-manual="confirmManual"
+        @add-traveler="addTraveler"
+        @assign-traveler="assignTraveler"
+        @set-traveler-exile="setTravelerExile"
+        @toggle-traveler-alive="toggleTravelerAlive"
       />
     </template>
   </StorytellerShell>

@@ -4,6 +4,7 @@ import JoinPanel from './JoinPanel.vue'
 import ManualAssignmentPanel from './ManualAssignmentPanel.vue'
 import PlayerDetailPanel from './PlayerDetailPanel.vue'
 import NightTaskPanel from './night/NightTaskPanel.vue'
+import TravelerPanel from './TravelerPanel.vue'
 
 const props = defineProps({
   view: { type: Object, required: true },
@@ -13,11 +14,13 @@ const props = defineProps({
   pending: { type: Array, default: () => [] },
   error: { type: Object, default: null },
   night: { type: Object, default: null },
+  adminTab: { type: String, default: null },
 })
 defineEmits([
   'clear-selection', 'toggle-role', 'toggle-bluff', 'set-fake',
   'toggle-lunatic-minion', 'toggle-lunatic-bluff', 'set-godfather',
   'cancel-manual', 'confirm-manual',
+  'add-traveler', 'assign-traveler', 'set-traveler-exile', 'toggle-traveler-alive',
 ])
 
 const selected = computed(() => props.view.seats?.find((seat) => (
@@ -26,8 +29,19 @@ const selected = computed(() => props.view.seats?.find((seat) => (
 </script>
 
 <template>
+  <TravelerPanel
+    v-if="adminTab === 'travelers' && view.status === 'playing'"
+    :view="view"
+    :connected="connected"
+    :pending="pending"
+    :error="error"
+    @add="$emit('add-traveler', $event)"
+    @assign="$emit('assign-traveler', $event)"
+    @set-exile="$emit('set-traveler-exile', $event)"
+    @toggle-alive="$emit('toggle-traveler-alive', $event)"
+  />
   <ManualAssignmentPanel
-    v-if="manual?.active"
+    v-else-if="manual?.active"
     :view="view"
     :selected-seat="selectedSeat"
     :assignments="manual.assignments"
