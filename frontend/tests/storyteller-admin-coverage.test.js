@@ -1,7 +1,9 @@
-import { mount } from '@vue/test-utils'
+import { mount, shallowMount } from '@vue/test-utils'
 import { expect, it } from 'vitest'
 import StorytellerHeader from '../src/components/storyteller/StorytellerHeader.vue'
 import GameControlPanel from '../src/components/storyteller/GameControlPanel.vue'
+import ContextPanel from '../src/components/storyteller/ContextPanel.vue'
+import JoinPanel from '../src/components/storyteller/JoinPanel.vue'
 import { lobbyView, makeStorytellerDayView } from './fixtures/storytellerView.js'
 
 it('offers native administration in lobby, day, night, and ended states', () => {
@@ -18,6 +20,7 @@ it('offers native administration in lobby, day, night, and ended states', () => 
     expect(header.find('a[href^="/legacy"]').exists()).toBe(false)
     expect(controls.find('a[href^="/legacy"]').exists()).toBe(false)
     expect(header.find('[data-open-session]').exists()).toBe(true)
+    expect(header.find('[data-open-join]').exists()).toBe(true)
     if (view.status === 'playing') {
       expect(header.find('[data-open-seats]').exists()).toBe(true)
       expect(header.find('[data-open-travelers]').exists()).toBe(true)
@@ -26,6 +29,18 @@ it('offers native administration in lobby, day, night, and ended states', () => 
     }
     if (view.winner) expect(header.find('[data-open-review]').exists()).toBe(true)
   }
+})
+
+it('opens the join codes during a running night instead of the night task', async () => {
+  const view = { ...makeStorytellerDayView(), phase: 'night' }
+  const header = mount(StorytellerHeader, { props: { view, connectionStatus: 'connected' } })
+  await header.get('[data-open-join]').trigger('click')
+  expect(header.emitted('open-join')).toEqual([[]])
+
+  const context = shallowMount(ContextPanel, {
+    props: { view, night: { workflow: {} }, adminTab: 'join' },
+  })
+  expect(context.findComponent(JoinPanel).exists()).toBe(true)
 })
 
 it('exposes a compact administration menu for narrow screens', async () => {

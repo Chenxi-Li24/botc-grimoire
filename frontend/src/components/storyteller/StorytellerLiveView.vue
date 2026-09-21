@@ -190,6 +190,7 @@ watch(() => view.value?.seats, (nextSeats) => {
         @open-travelers="openAdmin('travelers')"
         @open-chats="openAdmin('chats')"
         @open-session="openAdmin('session')"
+        @open-join="openAdmin('join')"
         @open-seats="openAdmin('seats')"
         @open-end="openAdmin('end')"
         @open-review="reviewOpen = true"

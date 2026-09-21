@@ -56,6 +56,7 @@ const selected = computed(() => props.view.seats?.find((seat) => (
     @load-save="$emit('load-save')"
     @reset-game="$emit('reset-game')"
   />
+  <JoinPanel v-else-if="adminTab === 'join'" :view="view" />
   <StorytellerChatPanel
     v-else-if="adminTab === 'chats' && view.status === 'playing'"
     :view="view"

@@ -6,7 +6,7 @@ const props = defineProps({
   view: { type: Object, required: true },
   connectionStatus: { type: String, required: true },
 })
-const emit = defineEmits(['open-left', 'open-right', 'open-travelers', 'open-chats', 'open-session', 'open-seats', 'open-end', 'open-review'])
+const emit = defineEmits(['open-left', 'open-right', 'open-join', 'open-travelers', 'open-chats', 'open-session', 'open-seats', 'open-end', 'open-review'])
 
 const scriptName = computed(() => getScriptName(props.view))
 const phaseLabel = computed(() => getPhaseLabel(props.view))
@@ -31,6 +31,7 @@ function openAdmin(event) {
     <button data-open-admin-menu class="btn header-admin-toggle" type="button" :aria-expanded="menuOpen" aria-controls="storyteller-admin-actions" @click="menuOpen = !menuOpen">管理</button>
     <nav id="storyteller-admin-actions" data-admin-actions class="header-admin-actions" :class="{ 'is-open': menuOpen }" aria-label="说书人管理">
       <button data-open-session class="btn header-primary" type="button" @click="openAdmin('open-session')">⚙ 房间</button>
+      <button data-open-join class="btn" type="button" @click="openAdmin('open-join')">📱 玩家加入</button>
       <button v-if="view.status === 'playing'" data-open-seats class="btn" type="button" @click="openAdmin('open-seats')">座位</button>
       <button v-if="view.status === 'playing'" data-open-travelers class="btn" type="button" @click="openAdmin('open-travelers')">🎒 旅行者</button>
       <button v-if="view.status === 'playing'" data-open-chats class="btn" type="button" @click="openAdmin('open-chats')">💬 私聊</button>
