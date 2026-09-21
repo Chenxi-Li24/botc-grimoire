@@ -22,8 +22,12 @@ const seatedCount = computed(() => props.view.seats?.filter((seat) => seat.playe
 </script>
 
 <template>
+  <div v-if="view.winner" class="panel-content">
+    <div><p class="panel-eyebrow">本局已结束</p><h2>{{ view.winner === 'good' ? '善良' : '邪恶' }}阵营获胜</h2></div>
+    <p class="inline-note">可通过页头“复盘”查看时间线，或从“结算”撤销结果。</p>
+  </div>
   <LobbySetupPanel
-    v-if="view.status === 'lobby'"
+    v-else-if="view.status === 'lobby'"
     :view="view"
     :connected="connected"
     :pending="pending"

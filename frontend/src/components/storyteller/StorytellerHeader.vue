@@ -6,7 +6,7 @@ const props = defineProps({
   view: { type: Object, required: true },
   connectionStatus: { type: String, required: true },
 })
-const emit = defineEmits(['open-left', 'open-right', 'open-travelers', 'open-chats', 'open-session', 'open-seats'])
+const emit = defineEmits(['open-left', 'open-right', 'open-travelers', 'open-chats', 'open-session', 'open-seats', 'open-end', 'open-review'])
 
 const scriptName = computed(() => getScriptName(props.view))
 const phaseLabel = computed(() => getPhaseLabel(props.view))
@@ -28,6 +28,8 @@ const connectionLabel = computed(() => ({
     <button v-if="view.status === 'playing'" data-open-seats class="btn" type="button" @click="emit('open-seats')">座位</button>
     <button v-if="view.status === 'playing'" data-open-travelers class="btn" type="button" @click="emit('open-travelers')">🎒 旅行者</button>
     <button v-if="view.status === 'playing'" data-open-chats class="btn" type="button" @click="emit('open-chats')">💬 私聊</button>
+    <button v-if="view.status === 'playing'" data-open-end class="btn" type="button" @click="emit('open-end')">🏁 结算</button>
+    <button v-if="view.winner" data-open-review class="btn" type="button" @click="emit('open-review')">📜 复盘</button>
     <button class="drawer-toggle drawer-toggle-right" type="button" @click="emit('open-right')">当前任务</button>
   </div>
 </template>

@@ -7,6 +7,7 @@ import NightTaskPanel from './night/NightTaskPanel.vue'
 import TravelerPanel from './TravelerPanel.vue'
 import StorytellerChatPanel from './StorytellerChatPanel.vue'
 import SessionPanel from './SessionPanel.vue'
+import EndGamePanel from './EndGamePanel.vue'
 
 const props = defineProps({
   view: { type: Object, required: true },
@@ -27,6 +28,7 @@ defineEmits([
   'set-room', 'load-save', 'reset-game', 'toggle-seat-alive', 'toggle-player-alive',
   'remove-player', 'set-marker', 'set-red-herring',
   'set-seat-fake',
+  'set-winner', 'open-review',
 ])
 
 const selected = computed(() => props.view.seats?.find((seat) => (
@@ -35,8 +37,17 @@ const selected = computed(() => props.view.seats?.find((seat) => (
 </script>
 
 <template>
+  <EndGamePanel
+    v-if="adminTab === 'end' && view.status === 'playing'"
+    :view="view"
+    :connected="connected"
+    :pending="pending"
+    :error="error"
+    @set-winner="$emit('set-winner', $event)"
+    @open-review="$emit('open-review')"
+  />
   <SessionPanel
-    v-if="adminTab === 'session'"
+    v-else-if="adminTab === 'session'"
     :view="view"
     :connected="connected"
     :pending="pending"

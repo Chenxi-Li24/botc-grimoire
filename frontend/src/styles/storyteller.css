@@ -224,6 +224,13 @@ body:has(.storyteller-shell) { overflow: hidden; }
 .session-danger-zone .btn { width: 100%; }
 .effect-history-row { display: grid; gap: 3px; padding: 9px; border: 1px solid var(--line); border-radius: 9px; font-size: 11px; }
 .effect-history-row span { color: var(--dim); }
+.end-winner { padding: 12px; border: 1px solid #a68040; border-radius: 10px; color: #f4d394; }
+.review-screen { position: fixed; inset: 0; z-index: 100; padding: 24px max(24px, calc((100vw - 960px) / 2)); overflow: auto; background: var(--bg); color: var(--text); display: grid; align-content: start; gap: 16px; }
+.review-screen-header, .review-screen-item { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.review-screen-group { display: grid; gap: 10px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+.review-screen-group h2 { font-size: 18px; }
+.review-screen-item { padding: 10px; border-top: 1px solid var(--line); font-size: 13px; }
+.review-screen-item.wrong { color: #ffb1b7; }
 .manual-assignment-panel { gap: 14px; }
 .manual-summary { display: grid; gap: 7px; padding: 10px; border: 1px solid var(--line); border-radius: 11px; }
 .composition-row { display: flex; flex-wrap: wrap; gap: 5px; }

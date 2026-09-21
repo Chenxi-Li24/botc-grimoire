@@ -126,3 +126,15 @@ it('keeps seat and session administration payloads compatible', async () => {
   ])
   expect(api.mock.calls.slice(4).every(([, options]) => !('body' in options))).toBe(true)
 })
+
+it('announces winner and marks review replies using the existing contract', async () => {
+  const service = createStorytellerService('secret')
+  await service.setWinner('good')
+  await service.setWinner(null)
+  await service.markReview(1, 2, true)
+
+  expect(api.mock.calls.map(([path]) => path)).toEqual(['/api/end', '/api/end', '/api/review/mark'])
+  expect(api.mock.calls.map(([, options]) => JSON.parse(options.body))).toEqual([
+    { winner: 'good' }, { winner: null }, { seat: 1, night: 2, wrong: true },
+  ])
+})

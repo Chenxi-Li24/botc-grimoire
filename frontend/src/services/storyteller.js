@@ -47,5 +47,7 @@ export function createStorytellerService(password) {
     removePlayer: (playerId) => command(`/api/player/${playerId}/remove`),
     loadSave: () => command('/api/load'),
     resetGame: () => command('/api/reset'),
+    setWinner: (winner) => command('/api/end', { winner }),
+    markReview: (seat, night, wrong) => command('/api/review/mark', { seat, night, wrong }),
   }
 }

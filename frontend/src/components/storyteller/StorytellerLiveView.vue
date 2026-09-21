@@ -8,6 +8,7 @@ import { createStorytellerService } from '../../services/storyteller.js'
 import ContextPanel from './ContextPanel.vue'
 import GameControlPanel from './GameControlPanel.vue'
 import GrimoireBoard from './GrimoireBoard.vue'
+import ReviewPanel from './ReviewPanel.vue'
 import StorytellerHeader from './StorytellerHeader.vue'
 import StorytellerShell from './StorytellerShell.vue'
 import '../../styles/storyteller.css'
@@ -69,6 +70,7 @@ const manualContext = computed(() => ({
 const leftOpen = ref(false)
 const rightOpen = ref(false)
 const adminTab = ref(null)
+const reviewOpen = ref(false)
 
 function closeDrawers() {
   leftOpen.value = false
@@ -139,6 +141,11 @@ const togglePlayerAlive = (playerId) => run(`seat:alive:${playerId}`, () => serv
 const removePlayer = (playerId) => run(`seat:remove:${playerId}`, () => service.removePlayer(playerId))
 const loadSave = () => run('load', () => service.loadSave())
 const resetGame = () => run('reset', () => service.resetGame())
+async function setWinner(winner) {
+  const result = await run('end', () => service.setWinner(winner))
+  if (result && winner === null) reviewOpen.value = false
+}
+const markReview = ({ seat, night, wrong }) => run('review:mark', () => service.markReview(seat, night, wrong))
 
 async function assignRandom() {
   const result = await run('assign-random', () => service.assignRandom())
@@ -184,6 +191,8 @@ watch(() => view.value?.seats, (nextSeats) => {
         @open-chats="openAdmin('chats')"
         @open-session="openAdmin('session')"
         @open-seats="openAdmin('seats')"
+        @open-end="openAdmin('end')"
+        @open-review="reviewOpen = true"
       />
     </template>
     <template #controls>
@@ -258,8 +267,19 @@ watch(() => view.value?.seats, (nextSeats) => {
         @set-marker="setMarker"
         @set-seat-fake="setFake"
         @set-red-herring="setRedHerring"
+        @set-winner="setWinner"
+        @open-review="reviewOpen = true"
       />
     </template>
   </StorytellerShell>
   <main v-else data-storyteller-live class="page center"><p>连接魔典…</p></main>
+  <ReviewPanel
+    v-if="view?.winner && reviewOpen"
+    :view="view"
+    :connected="connected"
+    :pending="pending"
+    :error="error"
+    @mark-review="markReview"
+    @back="reviewOpen = false"
+  />
 </template>
