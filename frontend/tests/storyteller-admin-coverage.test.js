@@ -27,3 +27,16 @@ it('offers native administration in lobby, day, night, and ended states', () => 
     if (view.winner) expect(header.find('[data-open-review]').exists()).toBe(true)
   }
 })
+
+it('exposes a compact administration menu for narrow screens', async () => {
+  const header = mount(StorytellerHeader, {
+    props: { view: makeStorytellerDayView(), connectionStatus: 'connected' },
+  })
+  expect(header.get('[data-open-admin-menu]').attributes('aria-expanded')).toBe('false')
+  await header.get('[data-open-admin-menu]').trigger('click')
+  expect(header.get('[data-open-admin-menu]').attributes('aria-expanded')).toBe('true')
+  expect(header.get('[data-admin-actions]').classes()).toContain('is-open')
+  await header.get('[data-open-chats]').trigger('click')
+  expect(header.emitted('open-chats')).toEqual([[]])
+  expect(header.get('[data-open-admin-menu]').attributes('aria-expanded')).toBe('false')
+})

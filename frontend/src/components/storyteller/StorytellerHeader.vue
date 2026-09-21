@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { getPhaseLabel, getScriptName } from '../../presentation/storyteller.js'
 
 const props = defineProps({
@@ -13,6 +13,11 @@ const phaseLabel = computed(() => getPhaseLabel(props.view))
 const connectionLabel = computed(() => ({
   connected: '已连接', connecting: '连接中', reconnecting: '重连中',
 }[props.connectionStatus] || props.connectionStatus))
+const menuOpen = ref(false)
+function openAdmin(event) {
+  menuOpen.value = false
+  emit(event)
+}
 </script>
 
 <template>
@@ -23,12 +28,15 @@ const connectionLabel = computed(() => ({
     <span class="header-script">{{ scriptName }}</span>
     <span class="phase-badge">{{ phaseLabel }}</span>
     <span class="connection-badge" :data-status="connectionStatus">{{ connectionLabel }}</span>
-    <button data-open-session class="btn header-primary" type="button" @click="emit('open-session')">⚙ 房间</button>
-    <button v-if="view.status === 'playing'" data-open-seats class="btn" type="button" @click="emit('open-seats')">座位</button>
-    <button v-if="view.status === 'playing'" data-open-travelers class="btn" type="button" @click="emit('open-travelers')">🎒 旅行者</button>
-    <button v-if="view.status === 'playing'" data-open-chats class="btn" type="button" @click="emit('open-chats')">💬 私聊</button>
-    <button v-if="view.status === 'playing'" data-open-end class="btn" type="button" @click="emit('open-end')">🏁 结算</button>
-    <button v-if="view.winner" data-open-review class="btn" type="button" @click="emit('open-review')">📜 复盘</button>
+    <button data-open-admin-menu class="btn header-admin-toggle" type="button" :aria-expanded="menuOpen" aria-controls="storyteller-admin-actions" @click="menuOpen = !menuOpen">管理</button>
+    <nav id="storyteller-admin-actions" data-admin-actions class="header-admin-actions" :class="{ 'is-open': menuOpen }" aria-label="说书人管理">
+      <button data-open-session class="btn header-primary" type="button" @click="openAdmin('open-session')">⚙ 房间</button>
+      <button v-if="view.status === 'playing'" data-open-seats class="btn" type="button" @click="openAdmin('open-seats')">座位</button>
+      <button v-if="view.status === 'playing'" data-open-travelers class="btn" type="button" @click="openAdmin('open-travelers')">🎒 旅行者</button>
+      <button v-if="view.status === 'playing'" data-open-chats class="btn" type="button" @click="openAdmin('open-chats')">💬 私聊</button>
+      <button v-if="view.status === 'playing'" data-open-end class="btn" type="button" @click="openAdmin('open-end')">🏁 结算</button>
+      <button v-if="view.winner" data-open-review class="btn" type="button" @click="openAdmin('open-review')">📜 复盘</button>
+    </nav>
     <button class="drawer-toggle drawer-toggle-right" type="button" @click="emit('open-right')">当前任务</button>
   </div>
 </template>

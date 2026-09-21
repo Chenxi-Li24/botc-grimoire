@@ -83,8 +83,18 @@ function chooseMarker(marker) {
 }
 
 function setMarkerValue(marker, field, value) {
+  if (!props.connected) return
   emit('set-marker', { seat: props.seat.seat, marker, on: true, [field]: value })
   picker.value = null
+}
+
+function markerDetail(marker) {
+  if (marker === 'team-change' && props.seat.team_change) {
+    return ` · 转变为${props.seat.team_change === 'evil' ? '邪恶' : '善良'}`
+  }
+  if (marker === 'mad' && props.seat.mad_about) return ` · 疯狂宣称${props.seat.mad_about.name}`
+  if (marker === 'role-change' && props.seat.role_change) return ` · 转变为${props.seat.role_change.name}`
+  return markerActive(marker) ? ' · 已标记' : ''
 }
 
 function setFake(roleId, preserve = false) {
@@ -113,7 +123,9 @@ watch(() => props.seat.seat, () => {
   picker.value = null
   clearRemoveArm()
   draftMinions.value = [...(props.view.lunatic_minions?.[String(props.seat.seat)] || [])]
-  draftBluffs.value = [...(props.view.lunatic_bluffs?.[String(props.seat.seat)] || [])]
+  draftBluffs.value = (props.view.lunatic_bluffs?.[String(props.seat.seat)] || [])
+    .map((item) => typeof item === 'string' ? item : item?.id)
+    .filter(Boolean)
 }, { immediate: true })
 watch(() => props.connected, (connected) => { if (!connected) clearRemoveArm() })
 onBeforeUnmount(clearRemoveArm)
@@ -139,16 +151,16 @@ onBeforeUnmount(clearRemoveArm)
     <section class="seat-admin-section">
       <h3>状态标记</h3>
       <div class="admin-actions">
-        <button v-for="(label, marker) in markerLabels" :key="marker" :data-seat-marker="marker" class="btn" :class="{ primary: markerActive(marker) }" type="button" :disabled="!connected || !role" @click="chooseMarker(marker)">{{ label }}{{ markerActive(marker) ? ' · 已标记' : '' }}</button>
+        <button v-for="(label, marker) in markerLabels" :key="marker" :data-seat-marker="marker" class="btn" :class="{ primary: markerActive(marker) }" type="button" :disabled="!connected || !role" @click="chooseMarker(marker)">{{ label }}{{ markerDetail(marker) }}</button>
       </div>
       <div v-if="picker === 'role-change'" class="admin-actions">
-        <button v-for="item in view.roles || []" :key="item.id" :data-seat-role="item.id" class="btn" type="button" @click="setMarkerValue('role-change', 'role', item.id)">{{ item.name }}</button>
+        <button v-for="item in view.roles || []" :key="item.id" :data-seat-role="item.id" class="btn" type="button" :disabled="!connected" @click="setMarkerValue('role-change', 'role', item.id)">{{ item.name }}</button>
       </div>
       <div v-if="picker === 'team-change'" class="admin-actions">
-        <button v-for="item in ['good', 'evil']" :key="item" :data-seat-team="item" class="btn" type="button" @click="setMarkerValue('team-change', 'team', item)">{{ item === 'good' ? '善良' : '邪恶' }}</button>
+        <button v-for="item in ['good', 'evil']" :key="item" :data-seat-team="item" class="btn" type="button" :disabled="!connected" @click="setMarkerValue('team-change', 'team', item)">{{ item === 'good' ? '善良' : '邪恶' }}</button>
       </div>
       <div v-if="picker === 'mad'" class="admin-actions">
-        <button v-for="item in goodRoles" :key="item.id" :data-seat-mad="item.id" class="btn" type="button" @click="setMarkerValue('mad', 'about', item.id)">{{ item.name }}</button>
+        <button v-for="item in goodRoles" :key="item.id" :data-seat-mad="item.id" class="btn" type="button" :disabled="!connected" @click="setMarkerValue('mad', 'about', item.id)">{{ item.name }}</button>
       </div>
     </section>
     <section v-if="fakeCandidates.length" class="seat-admin-section">
@@ -165,7 +177,7 @@ onBeforeUnmount(clearRemoveArm)
         <div class="admin-actions">
           <button v-for="item in goodRoles" :key="item.id" :data-fake-bluff="item.id" class="btn" :class="{ primary: draftBluffs.includes(item.id) }" type="button" :disabled="!connected" @click="toggleBluff(item.id)">{{ item.name }}</button>
         </div>
-        <button v-if="seat.fake_role" class="btn" type="button" :disabled="!connected || !draftMinions.length || draftBluffs.length !== 3" @click="setFake(seat.fake_role.id, true)">保存疯子线索</button>
+        <button v-if="seat.fake_role" data-save-lunatic class="btn" type="button" :disabled="!connected || !draftMinions.length || draftBluffs.length !== 3" @click="setFake(seat.fake_role.id, true)">保存疯子线索</button>
       </template>
     </section>
     <section class="seat-admin-section">

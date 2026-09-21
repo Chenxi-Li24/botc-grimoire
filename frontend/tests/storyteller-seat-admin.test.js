@@ -142,3 +142,44 @@ it('sends the lunatic fake demon with chosen minions and three bluffs', async ()
     { seat: 5, role: 'imp', minions: [2], bluffs: ['chef', 'mayor', 'investigator'] },
   ]])
 })
+
+it('reopens server-populated lunatic bluffs as editable role IDs', async () => {
+  const lunaticView = {
+    ...view,
+    fake_pools: { lunatic: ['demon'] },
+    lunatic_bluffs: { 5: [view.roles[0], view.roles[3], view.roles[4]] },
+    lunatic_minions: { 5: [2] },
+    seats: view.seats.map((slot) => slot.seat === 5 ? {
+      ...slot,
+      assigned_role: { id: 'lunatic', name: '疯子', team: 'outsider' },
+      fake_role: { id: 'imp', name: '小恶魔', team: 'demon' },
+    } : slot),
+  }
+  const wrapper = mount(ContextPanel, { props: { view: lunaticView, selectedSeat: 5, connected: true } })
+  expect(wrapper.get('[data-fake-bluff="chef"]').classes()).toContain('primary')
+  await wrapper.get('[data-fake-bluff="chef"]').trigger('click')
+  expect(wrapper.get('[data-fake-bluff="chef"]').classes()).not.toContain('primary')
+  await wrapper.get('[data-fake-bluff="chef"]').trigger('click')
+  await wrapper.get('[data-save-lunatic]').trigger('click')
+  const saved = wrapper.emitted('set-seat-fake')?.at(-1)?.[0]
+  expect(saved).toMatchObject({ seat: 5, role: 'imp', minions: [2] })
+  expect(saved.bluffs.sort()).toEqual(['chef', 'investigator', 'mayor'])
+})
+
+it('shows changed alignment and madness role and disables an open picker after disconnect', async () => {
+  const changedView = {
+    ...view,
+    seats: view.seats.map((slot) => slot.seat === 5 ? {
+      ...slot, team_change: 'evil', mad_about: { id: 'chef', name: '厨师' },
+      markers: ['mad'],
+    } : slot),
+  }
+  const wrapper = mount(ContextPanel, { props: { view: changedView, selectedSeat: 5, connected: true } })
+  expect(wrapper.text()).toContain('转变为邪恶')
+  expect(wrapper.text()).toContain('疯狂宣称厨师')
+  await wrapper.get('[data-seat-marker="role-change"]').trigger('click')
+  await wrapper.setProps({ connected: false })
+  expect(wrapper.get('[data-seat-role="imp"]').attributes('disabled')).toBeDefined()
+  await wrapper.get('[data-seat-role="imp"]').trigger('click')
+  expect(wrapper.emitted('set-marker')).toBeUndefined()
+})
