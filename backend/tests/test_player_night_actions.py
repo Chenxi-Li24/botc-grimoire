@@ -108,6 +108,93 @@ class PlayerNightActionsTest(unittest.TestCase):
         self.assertEqual(result.targets, [2])
         self.assertEqual(step.values["targets"], [2])
 
+    def test_submitted_choice_is_receipted_once_and_cannot_be_changed(self):
+        game, player_id = make_game(
+            {1: "imp", 2: "chef", 3: "poisoner"},
+            claim_seat=1, night=2, script="trouble-brewing",
+        )
+        step = current_step(game, 1, "imp")
+        body = {"step_id": step.id, "selected_seats": [2]}
+        submit_player_night_action(game, player_id, body)
+        workflow = game._player_night_workflow(1)
+        self.assertIsNone(workflow["prompt"])
+        self.assertEqual(workflow["receipt"]["step_id"], step.id)
+        submit_player_night_action(game, player_id, body)
+        self.assertEqual(len(game.pending_outcomes), 1)
+        with self.assertRaisesRegex(ValueError, "已经提交"):
+            submit_player_night_action(game, player_id, {
+                "step_id": step.id, "selected_seats": [3],
+            })
+
+    def test_storyteller_undo_clears_the_player_submission_receipt(self):
+        game, player_id = make_game(
+            {1: "imp", 2: "chef", 3: "poisoner"},
+            claim_seat=1, night=2, script="trouble-brewing",
+        )
+        step = current_step(game, 1, "imp")
+        result = submit_player_night_action(game, player_id, {
+            "step_id": step.id, "selected_seats": [2],
+        })
+        self.assertEqual(game._player_night_workflow(1)["receipt"], {"step_id": step.id})
+        game.night.undo(result.source_event, confirm=True)
+        self.assertNotIn("player_submission", step.values)
+
+    def test_widow_grimoire_survives_submission_until_dawn_without_leaking(self):
+        game, player_id = make_game(
+            {1: "widow", 2: "drunk", 3: "imp"},
+            claim_seat=1, script="wafu-leiming",
+        )
+        game.seat_state(2).perceived_character_id = "chef"
+        step = game.night.queue.step_for(1, "widow")
+        game.night.navigate(step_id=step.id)
+        before = game.player_view(player_id)["night_workflow"]
+        self.assertEqual(before["widow_grimoire"]["seats"][1]["real_character_id"], "drunk")
+        self.assertEqual(before["widow_grimoire"]["seats"][1]["perceived_character_id"], "chef")
+        submit_player_night_action(game, player_id, {
+            "step_id": step.id, "selected_seats": [2],
+        })
+        after = game.player_view(player_id)["night_workflow"]
+        self.assertIsNone(after["prompt"])
+        self.assertEqual(after["widow_grimoire"]["seats"][1]["real_character_id"], "drunk")
+        game.night.navigate(direction="next")
+        self.assertIsNotNone(game.player_view(player_id)["night_workflow"]["widow_grimoire"])
+        game.phase = "day"
+        self.assertIsNone(game.player_view(player_id)["night_workflow"]["widow_grimoire"])
+
+    def test_widow_grimoire_is_not_loaned_to_previous_or_other_claimant(self):
+        game, widow_id = make_game(
+            {1: "widow", 2: "drunk", 3: "imp"},
+            claim_seat=1, script="wafu-leiming",
+        )
+        game.night.navigate(step_id=game.night.queue.step_for(1, "widow").id)
+        other = Player(id="other-player", name="旁观", seat=2)
+        game.players[other.id] = other
+        game.seat_state(2).claimed_by = other.id
+        other.bind(game.seat_state(2))
+        game.night_steps = [{"key": "widow"}]
+        game.night_idx = 0
+        self.assertIsNone(game.player_view(other.id)["night_workflow"]["widow_grimoire"])
+        game.seat_state(1).claimed_by = "new-owner"
+        former_view = game.player_view(widow_id)
+        self.assertIsNone(former_view["night_workflow"]["widow_grimoire"])
+        self.assertNotIn("grimoire", former_view)
+
+    def test_replacement_widow_claimant_does_not_inherit_open_grimoire(self):
+        game, first_id = make_game(
+            {1: "widow", 2: "drunk", 3: "imp"},
+            claim_seat=1, script="wafu-leiming",
+        )
+        step = game.night.queue.step_for(1, "widow")
+        game.night.navigate(step_id=step.id)
+        self.assertIsNotNone(game.player_view(first_id)["night_workflow"]["widow_grimoire"])
+        game.remove_player(first_id)
+        replacement = Player(id="replacement", name="继任寡妇")
+        game.players[replacement.id] = replacement
+        game.sit(replacement.id, 1)
+        view = game.player_view(replacement.id)
+        self.assertIsNone(view["night_workflow"]["widow_grimoire"])
+        self.assertNotIn("grimoire", view)
+
     def test_status_roles_dispatch_to_sourced_effects(self):
         cases = [
             ("trouble-brewing", "poisoner", 2, None, "poisoned"),
@@ -185,6 +272,8 @@ class PlayerNightActionsTest(unittest.TestCase):
         self.assertIn(result.id, restored.pending_outcomes)
         restored_step = restored.night.step(step.id)
         self.assertEqual(restored_step.values["targets"], [2])
+        self.assertEqual(restored.player_view(player_id)["night_workflow"]["receipt"],
+                         {"step_id": step.id})
 
 
 if __name__ == "__main__":

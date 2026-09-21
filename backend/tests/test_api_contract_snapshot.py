@@ -1,4 +1,4 @@
-"""Freeze the intentional HTTP schema, including private inference writes."""
+"""Freeze the HTTP schema, including account profiles and Balloonist commands."""
 
 import hashlib
 import json
@@ -13,7 +13,7 @@ class ApiContractSnapshotTest(unittest.TestCase):
         canonical = json.dumps(app.openapi(), sort_keys=True, ensure_ascii=False)
         self.assertEqual(
             hashlib.sha256(canonical.encode()).hexdigest(),
-            "e0315e971aeb79d25b8df2335c4fb14c5d48dca2fea191def429a2c223ff6b1e",
+            "2fe9a774b6588b4d6d6a408777b40ef5535fbf3183db1778d005d916cb9cf4eb",
         )
 
     def test_websocket_entry_is_unchanged(self):

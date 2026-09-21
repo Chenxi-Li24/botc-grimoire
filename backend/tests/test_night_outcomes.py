@@ -33,6 +33,15 @@ class NightOutcomeTest(unittest.TestCase):
         self.assertEqual(context[0]["target_seats"], [3])
         self.assertTrue(game.seat_state(3).alive)
 
+    def test_retried_demon_selection_keeps_one_pending_outcome(self):
+        game, _ = make_game({1: "imp", 2: "chef"},
+                            script="trouble-brewing", night=2)
+        step = game.night.queue.step_for(1, "imp")
+        first = game.night.select_outcome(step.id, [2])
+        second = game.night.select_outcome(step.id, [2])
+        self.assertEqual(first.id, second.id)
+        self.assertEqual(len(game.pending_outcomes), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

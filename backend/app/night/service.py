@@ -61,10 +61,17 @@ class NightService:
             if seat.character_id:
                 self.abilities.set(seat.seat, "current_night", night_no, "_system")
         self.information = InformationEngine(
-            state, pack, journal, effects, self.abilities,
+            state, pack, journal, effects, self.abilities, night_no,
         )
         self.pit_hag = PitHagHandler(self)
         self.status_roles = StatusRoleHandlers(self)
+
+    def _grant_widow_grimoire(self, step: NightStep | None) -> None:
+        if (step is not None and step.character_id == "widow"
+                and step.actor_seat is not None
+                and "widow_grantee_set" not in step.values):
+            step.values["widow_grantee_set"] = True
+            step.values["widow_grantee"] = self.state.seat(step.actor_seat).claimed_by
 
     def record_fields(self, step_id: str, values: dict[str, Any]) -> NightStep:
         step = next((item for item in self.queue.steps if item.id == step_id), None)
@@ -113,6 +120,7 @@ class NightService:
         if step_id is not None:
             self._index(step_id)
             self.queue.current_step_id = step_id
+            self._grant_widow_grimoire(self.queue.current)
             return NavigationResult(current_step_id=step_id)
         if direction not in {"previous", "next"}:
             raise NavigationConflict("invalid_direction", "方向必须是 previous 或 next")
@@ -121,6 +129,7 @@ class NightService:
             if index == 0:
                 raise NavigationConflict("at_start", "已经是本夜第一步")
             self.queue.current_step_id = self.queue.steps[index - 1].id
+            self._grant_widow_grimoire(self.queue.current)
             return NavigationResult(current_step_id=self.queue.current_step_id)
 
         step = self.queue.steps[index]
@@ -170,6 +179,7 @@ class NightService:
             return NavigationResult(current_step_id=step.id,
                                     forced_event_id=forced_event_id, at_end=True)
         self.queue.current_step_id = self.queue.steps[index + 1].id
+        self._grant_widow_grimoire(self.queue.current)
         return NavigationResult(current_step_id=self.queue.current_step_id,
                                 forced_event_id=forced_event_id)
 
@@ -225,6 +235,17 @@ class NightService:
             raise NavigationConflict("invalid_actor", "该步骤没有行动座位")
         selected = (self._validate_targets(step, selected_seats)
                     if "targets" in step.required_fields else [])
+        previous = next((event for event in self.journal.records
+                         if event.kind == "action_selection"
+                         and event.state == "active"
+                         and event.payload.get("step_id") == step_id), None)
+        if previous is not None:
+            same = (previous.payload.get("selected_seats") == selected
+                    and previous.payload.get("character_id") == character_id
+                    and bool(previous.payload.get("acknowledged")) == acknowledged)
+            if not same:
+                raise NavigationConflict("already_selected", "该夜晚步骤已经记录选择；请先撤销旧记录")
+            return previous
         values: dict[str, Any] = {"targets": selected}
         if character_id is not None:
             values["character"] = character_id
@@ -248,6 +269,11 @@ class NightService:
         step = self.step(step_id)
         selection = self.record_selection(step_id, selected_seats)
         selected = selection.payload["selected_seats"]
+        previous = next((item for item in self.state.pending_outcomes.values()
+                         if item.source_event == selection.id
+                         and item.metadata.get("step_id") == step_id), None)
+        if previous is not None:
+            return previous
         character = self.pack.character_by_id.get(step.character_id)
         is_demon_attack = bool(character and character.team == "demon")
         arbitrary_source = self._arbitrary_death_source()
@@ -427,6 +453,7 @@ class NightService:
                     step.values.pop("targets", None)
                     step.values.pop("character", None)
                     step.values.pop("acknowledged", None)
+                    step.values.pop("player_submission", None)
                     step.status = "undone"
                     step.skip_reason = "event_undone"
                 elif event.kind == "forced_skip" and step.skip_reason == "forced":

@@ -68,6 +68,9 @@ class InformationDelivery:
     accepted_at: str = field(default_factory=timestamp)
     delivered_at: str | None = None
     corrections: list[dict[str, Any]] = field(default_factory=list)
+    night_no: int | None = None
+    recipient_player_id: str | None = None
+    recipient_binding_known: bool = False
 
     @property
     def event_id(self) -> str:
@@ -86,12 +89,14 @@ class InformationDelivery:
 
 class InformationEngine:
     def __init__(self, state: GameState, pack: ScriptPack, journal: EventJournal,
-                 effects: EffectLedger, abilities: AbilityStateStore) -> None:
+                 effects: EffectLedger, abilities: AbilityStateStore,
+                 night_no: int) -> None:
         self.state = state
         self.pack = pack
         self.journal = journal
         self.effects = effects
         self.abilities = abilities
+        self.night_no = night_no
 
     def _actor(self, actor_seat: int) -> tuple[str, str]:
         seat = self.state.seat(actor_seat)
@@ -138,6 +143,19 @@ class InformationEngine:
                 registrations: list[dict] | None = None,
                 source_event: str | None = None) -> InformationDraft | InformationDelivery:
         targets = list(targets or ())
+        if source_event is not None:
+            previous = next((draft for draft in self.state.information_drafts.values()
+                             if draft.source_event == source_event), None)
+            if previous is not None:
+                if (previous.actor_seat != actor_seat or previous.targets != targets
+                        or previous.registrations != list(registrations or ())):
+                    raise ValueError("information step already prepared with different inputs")
+                if previous.status == "pending":
+                    return previous
+                sent = next((delivery for delivery in self.state.information_deliveries.values()
+                             if delivery.draft_id == previous.id), None)
+                if sent is not None:
+                    return sent
         for target in targets:
             self.state.seat(target)
         real, perceived = self._actor(actor_seat)
@@ -219,15 +237,26 @@ class InformationEngine:
         except KeyError as exc:
             raise KeyError(draft_id) from exc
         if draft.status != "pending":
+            sent = next((delivery for delivery in self.state.information_deliveries.values()
+                         if delivery.draft_id == draft_id), None)
+            if sent is not None and sent.delivered_result == delivered_result:
+                return sent
             raise ValueError("information draft has already been delivered")
-        explicit_required = any(item in (draft.reason or "") for item in (
-            "drunk", "poisoned", "information_override", "vortox_forced_false",
-        ))
+        if draft.resolver_key == "chef" and type(delivered_result) is not int:
+            raise ValueError("chef information must be a single integer")
+        effect_snapshot, impairments = self._impairment(
+            draft.actor_seat, draft.real_character, draft.perceived_character,
+        )
+        impairment_terms = {"drunk", "poisoned", "information_override", "vortox_forced_false"}
+        stable_reasons = [item for item in (draft.reason or "").split(",")
+                          if item and item not in impairment_terms]
+        send_reason = ",".join(dict.fromkeys([*stable_reasons, *impairments])) or None
+        explicit_required = bool(impairments)
         if claims is None and explicit_required:
             raise ValueError("impaired information requires explicit truth flags")
         normalized_claims = (self._claims(claims) if claims is not None
                              else self._derive_claims(draft, delivered_result))
-        if "vortox_forced_false" in (draft.reason or "") and any(
+        if "vortox_forced_false" in impairments and any(
             claim.truthful for claim in normalized_claims
         ):
             raise ValueError("Vortox information must be false")
@@ -250,12 +279,15 @@ class InformationEngine:
             delivered_result=deepcopy(delivered_result),
             claims=normalized_claims,
             registrations=deepcopy(draft.registrations),
-            effect_snapshot=list(draft.effect_snapshot),
-            reason=reason or draft.reason,
+            effect_snapshot=effect_snapshot,
+            reason=send_reason or reason,
             source_event=event.id,
             draft_id=draft.id,
             automatic=automatic,
             delivered_at=None,
+            night_no=self.night_no,
+            recipient_player_id=self.state.seat(draft.actor_seat).claimed_by,
+            recipient_binding_known=True,
         )
         self.state.information_deliveries[delivery.id] = delivery
         draft.status = "delivered"

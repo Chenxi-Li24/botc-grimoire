@@ -364,6 +364,8 @@ class GameManager(LobbyMixin, BalloonistMixin, LegacyNightMixin, NominationMixin
         changed = False
         for delivery in self.information_deliveries.values():
             if (delivery.actor_seat == player.seat
+                    and delivery.recipient_binding_known
+                    and delivery.recipient_player_id == player_id
                     and delivery.source_event in active_events
                     and delivery.delivered_at is None):
                 delivery.delivered_at = delivered_at
