@@ -22,6 +22,13 @@ function onPlayerInvalid() {
   void routeCurrentEntry()
 }
 
+function onAccountChanged() {
+  if (window.location.hash.startsWith('#/account')) {
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
+  }
+  void routeCurrentEntry()
+}
+
 async function routeCurrentEntry() {
   const version = ++routeVersion
   const hash = window.location.hash
@@ -95,8 +102,8 @@ onBeforeUnmount(() => {
       @account="page = 'account'"
       @history="page = 'history'"
     />
-    <JoinPage v-else-if="page === 'join'" :account="activeAccount" @joined="onJoined" @recovered="routeCurrentEntry" @account="page = 'account'" />
-    <AccountPage v-else-if="page === 'account'" @authenticated="routeCurrentEntry" @back="page = activePlayerId ? 'player' : 'join'" />
+    <JoinPage v-else-if="page === 'join'" :account="activeAccount" @joined="onJoined" @recovered="routeCurrentEntry" @account="page = 'account'" @history="page = 'history'" />
+    <AccountPage v-else-if="page === 'account'" :account="activeAccount" @authenticated="onAccountChanged" @history="page = 'history'" @back="page = activePlayerId ? 'player' : 'join'" />
     <AccountHistoryPage v-else-if="page === 'history' && activeAccount" @back="page = activePlayerId ? 'player' : 'join'" />
     <main v-else-if="page === 'offline'" class="page center">
       <p>连接暂时不可用，身份仍保留在此设备。恢复网络后重试。</p>

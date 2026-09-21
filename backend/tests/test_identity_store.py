@@ -70,6 +70,18 @@ class IdentityStoreTests(unittest.TestCase):
         self.assertTrue(recovered[1])
         self.assertIsNone(self.store.reset_password("Dana", recovery, "third-password-123"))
 
+    def test_registration_errors_do_not_reveal_account_existence(self):
+        self.store.create_account("Alice", "test-only-password")
+        with self.assertRaisesRegex(ValueError, "无法注册账户"):
+            self.store.create_account("alice", "another-password")
+
+    def test_registration_attempts_are_rate_limited(self):
+        for _ in range(self.store.REGISTER_LIMIT):
+            self.store.check_and_record_sensitive_attempt("register", "client-1")
+        with self.assertRaises(LoginRateLimited):
+            self.store.check_and_record_sensitive_attempt("register", "client-1")
+        self.store.check_and_record_sensitive_attempt("register", "client-2")
+
 
 if __name__ == "__main__":
     unittest.main()

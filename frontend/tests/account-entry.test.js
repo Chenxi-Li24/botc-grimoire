@@ -70,3 +70,31 @@ it('resets a password using an account recovery code and rotates that code', asy
   })
   expect(wrapper.get('[data-account-recovery-code]').text()).toBe('fresh-code')
 })
+
+it('lets authenticated users change password and log out', async () => {
+  api.mockResolvedValue({ ok: true })
+  const wrapper = mount(AccountPage, { props: { account: 'Alice' } })
+  expect(wrapper.text()).toContain('Alice')
+  await wrapper.get('[data-old-password]').setValue('old-password-123')
+  await wrapper.get('[data-new-password]').setValue('new-password-123')
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  expect(api).toHaveBeenCalledWith('/api/account/change-password', {
+    method: 'POST', body: JSON.stringify({ old_password: 'old-password-123', new_password: 'new-password-123' }),
+  })
+  await wrapper.get('[data-account-logout]').trigger('click')
+  await flushPromises()
+  expect(api).toHaveBeenCalledWith('/api/account/logout', { method: 'POST' })
+  expect(wrapper.emitted('authenticated')).toEqual([[]])
+})
+
+it('lets logged-in users inspect history before joining another game', async () => {
+  api.mockResolvedValue({ account: 'Alice', player_id: null, csrf_token: 'csrf' })
+  const wrapper = mount(App, {
+    global: { stubs: { AccountHistoryPage: { template: '<div data-history-page />' } } },
+  })
+  await flushPromises()
+  await wrapper.get('[data-join-history]').trigger('click')
+  expect(wrapper.find('[data-history-page]').exists()).toBe(true)
+  wrapper.unmount()
+})

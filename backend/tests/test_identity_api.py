@@ -61,6 +61,37 @@ class IdentityApiTests(unittest.TestCase):
         self.assertEqual(login.status_code, 200)
         self.assertEqual(other.get("/api/session").json()["player_id"], player_id)
 
+    def test_logging_into_another_account_cannot_take_over_current_seat(self):
+        room = self.game.room_code
+        player_id = self.client.post("/api/join", json={"name": "甲", "room_code": room}).json()["player_id"]
+        csrf = self.client.get("/api/session").json()["csrf_token"]
+        first = self.client.post("/api/account/register", json={
+            "username": "Alice", "password": "alice-password-123",
+        }, headers={"X-CSRF-Token": csrf}).json()
+        self.store.create_account("Bob", "bob-password-123")
+        csrf = self.client.get("/api/session").json()["csrf_token"]
+        switched = self.client.post("/api/account/login", json={
+            "username": "Bob", "password": "bob-password-123",
+        }, headers={"X-CSRF-Token": csrf})
+        self.assertEqual(switched.status_code, 409)
+        self.assertEqual(self.game.players[player_id].account_id, first["account_id"])
+        self.assertEqual(self.client.get("/api/session").json()["player_id"], player_id)
+
+    def test_reset_password_limits_invalid_attempts_before_hashing(self):
+        self.store.create_account("Alice", "alice-password-123")
+        with patch.object(type(self.store.password_hasher), "hash", side_effect=AssertionError("unexpected hash")) as hashed:
+            for _ in range(self.store.RESET_LIMIT):
+                response = self.client.post("/api/account/reset-password", json={
+                    "username": "Alice", "recovery_code": "invalid", "new_password": "new-password-123",
+                })
+                self.assertEqual(response.status_code, 401)
+            self.assertEqual(hashed.call_count, 0)
+            response = self.client.post("/api/account/reset-password", json={
+                "username": "Alice", "recovery_code": "invalid", "new_password": "new-password-123",
+            })
+            self.assertEqual(response.status_code, 429)
+            self.assertEqual(hashed.call_count, 0)
+
     def test_cross_origin_join_is_rejected(self):
         bad = TestClient(app, headers={"Origin": "https://evil.example"})
         response = bad.post("/api/join", json={"name": "甲", "room_code": self.game.room_code})

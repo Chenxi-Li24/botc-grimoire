@@ -2,7 +2,8 @@
 import { ref } from 'vue'
 import { api } from '../services/api.js'
 
-const emit = defineEmits(['authenticated', 'back'])
+defineProps({ account: { type: String, default: null } })
+const emit = defineEmits(['authenticated', 'back', 'history'])
 const mode = ref('login')
 const username = ref('')
 const password = ref('')
@@ -10,6 +11,9 @@ const recoveryCode = ref('')
 const recoveryInput = ref('')
 const error = ref('')
 const busy = ref(false)
+const oldPassword = ref('')
+const newPassword = ref('')
+const notice = ref('')
 
 async function submit() {
   if (!username.value.trim() || !password.value) return
@@ -37,6 +41,39 @@ function done() {
   recoveryCode.value = ''
   emit('authenticated')
 }
+
+async function changePassword() {
+  if (!oldPassword.value || !newPassword.value) return
+  busy.value = true
+  error.value = ''
+  notice.value = ''
+  try {
+    await api('/api/account/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ old_password: oldPassword.value, new_password: newPassword.value }),
+    })
+    notice.value = '密码已修改'
+    oldPassword.value = ''
+    newPassword.value = ''
+  } catch (cause) {
+    error.value = cause.message || '修改失败'
+  } finally {
+    busy.value = false
+  }
+}
+
+async function logout(all = false) {
+  busy.value = true
+  error.value = ''
+  try {
+    await api(`/api/account/${all ? 'logout-all' : 'logout'}`, { method: 'POST' })
+    emit('authenticated')
+  } catch (cause) {
+    error.value = cause.message || '退出失败'
+  } finally {
+    busy.value = false
+  }
+}
 </script>
 
 <template>
@@ -44,7 +81,23 @@ function done() {
     <h1>玩家账户</h1>
     <p class="sub">可继续以游客身份游玩；注册账户可跨设备找回座位并保存个人历史。</p>
     <p class="inline-note">当前为 HTTP 小规模测试：请使用测试专用密码，不要复用重要账户密码。</p>
-    <template v-if="recoveryCode">
+    <template v-if="account && !recoveryCode">
+      <p class="inline-note">已登录账户：{{ account }}</p>
+      <button data-account-history class="btn" type="button" @click="emit('history')">我的对局历史</button>
+      <form class="join-form" @submit.prevent="changePassword">
+        <input v-model="oldPassword" data-old-password class="input" type="password" autocomplete="current-password" placeholder="原密码">
+        <input v-model="newPassword" data-new-password class="input" type="password" autocomplete="new-password" placeholder="新密码（至少 8 位）">
+        <button data-change-password class="btn primary" type="submit" :disabled="busy">修改密码</button>
+      </form>
+      <p v-if="notice" class="inline-note">{{ notice }}</p>
+      <p v-if="error" class="error" role="alert">{{ error }}</p>
+      <div class="admin-actions">
+        <button data-account-logout class="btn" type="button" :disabled="busy" @click="logout(false)">退出此设备</button>
+        <button data-account-logout-all class="btn" type="button" :disabled="busy" @click="logout(true)">退出所有设备</button>
+      </div>
+      <button class="btn" type="button" @click="emit('back')">返回游戏</button>
+    </template>
+    <template v-else-if="recoveryCode">
       <p>请妥善保存账户恢复码；只会显示这一次。</p>
       <strong data-account-recovery-code>{{ recoveryCode }}</strong>
       <button data-account-done class="btn primary" type="button" @click="done">已保存，进入游戏</button>

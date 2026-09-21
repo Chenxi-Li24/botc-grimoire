@@ -56,6 +56,18 @@ class AccountHistoryTests(unittest.TestCase):
         self.assertNotIn("private chat secret", str(records))
         self.assertEqual(self.store.list_archives(other_id), [])
 
+    def test_account_traveler_role_is_archived(self):
+        account_id, _ = self.store.create_account("Traveler", "test-password-123")
+        player = self.game.add_player("旅人")
+        player.account_id = account_id
+        self.game.status = "playing"
+        traveler = self.game.add_traveler(player.id)
+        self.game.assign_traveler(traveler["id"], "apprentice", "good")
+        archive_game(self.game, self.store)
+        record = self.store.list_archives(account_id)[0]
+        self.assertIsNone(record["seat"])
+        self.assertEqual(record["roles"], [{"id": "apprentice", "name": "学徒"}])
+
     def test_reset_does_not_clear_game_when_archive_fails(self):
         account_id, _ = self.store.create_account("Alice", "test-password-123")
         player = self.game.add_player("甲")

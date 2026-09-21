@@ -20,6 +20,8 @@ class IdentityStore:
     SESSION_TTL = 30 * 24 * 60 * 60
     LOGIN_WINDOW = 15 * 60
     LOGIN_LIMIT = 5
+    REGISTER_LIMIT = 20
+    RESET_LIMIT = 5
 
     def __init__(self, path: str | Path):
         self.path = Path(path)
@@ -53,6 +55,13 @@ class IdentityStore:
                     attempted_at REAL NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS recovery_attempts_client_time ON recovery_attempts(client_key, attempted_at);
+                CREATE TABLE IF NOT EXISTS sensitive_attempts (
+                    kind TEXT NOT NULL,
+                    client_key TEXT NOT NULL,
+                    attempted_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS sensitive_attempts_kind_client_time
+                    ON sensitive_attempts(kind, client_key, attempted_at);
                 CREATE TABLE IF NOT EXISTS recovery_codes (
                     code_digest TEXT PRIMARY KEY,
                     game_id TEXT NOT NULL,
@@ -89,7 +98,7 @@ class IdentityStore:
                     (account_id, username.strip(), key, password_hash, token_digest(recovery_code)),
                 )
         except sqlite3.IntegrityError as exc:
-            raise ValueError("用户名已存在") from exc
+            raise ValueError("无法注册账户，请检查用户名或稍后重试") from exc
         return account_id, recovery_code
 
     def authenticate(self, username: str, password: str, *, now: float | None = None) -> str | None:
@@ -183,19 +192,48 @@ class IdentityStore:
     ) -> tuple[str, str] | None:
         if len(new_password) < 8:
             raise ValueError("密码至少需要 8 个字符")
+        key = username_key(username)
+        digest = token_digest(recovery_code)
+        with self._connect() as db:
+            account = db.execute(
+                "SELECT id FROM accounts WHERE username_key = ? AND recovery_digest = ?",
+                (key, digest),
+            ).fetchone()
+        if account is None:
+            return None
         new_code = secrets.token_urlsafe(32)
         new_hash = self.password_hasher.hash(new_password)
         with self._connect() as db:
             result = db.execute(
                 "UPDATE accounts SET password_hash = ?, recovery_digest = ? "
                 "WHERE username_key = ? AND recovery_digest = ?",
-                (new_hash, token_digest(new_code), username_key(username), token_digest(recovery_code)),
+                (new_hash, token_digest(new_code), key, digest),
             )
             if result.rowcount != 1:
                 return None
-            row = db.execute("SELECT id FROM accounts WHERE username_key = ?", (username_key(username),)).fetchone()
-            db.execute("DELETE FROM sessions WHERE account_id = ?", (row["id"],))
-        return row["id"], new_code
+            db.execute("DELETE FROM sessions WHERE account_id = ?", (account["id"],))
+        return account["id"], new_code
+
+    def check_and_record_sensitive_attempt(
+        self, kind: str, client_key: str, *, now: float | None = None
+    ) -> None:
+        if kind not in {"register", "reset"}:
+            raise ValueError("Unknown sensitive operation")
+        now = time.time() if now is None else now
+        limit = self.REGISTER_LIMIT if kind == "register" else self.RESET_LIMIT
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("DELETE FROM sensitive_attempts WHERE attempted_at <= ?", (now - self.LOGIN_WINDOW,))
+            count = db.execute(
+                "SELECT COUNT(*) FROM sensitive_attempts WHERE kind = ? AND client_key = ? AND attempted_at > ?",
+                (kind, client_key, now - self.LOGIN_WINDOW),
+            ).fetchone()[0]
+            if count >= limit:
+                raise LoginRateLimited("尝试过于频繁")
+            db.execute(
+                "INSERT INTO sensitive_attempts(kind, client_key, attempted_at) VALUES (?, ?, ?)",
+                (kind, client_key, now),
+            )
 
     def issue_participant_recovery(
         self, game_id: str, player_id: str, *, now: float | None = None

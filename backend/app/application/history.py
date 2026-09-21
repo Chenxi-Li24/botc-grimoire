@@ -6,6 +6,7 @@ from typing import Any
 
 from app.game import GameManager
 from app.infrastructure.identity_store import IdentityStore
+from app.scripts.travelers import ROLE_BY_ID as TRAVELER_BY_ID
 
 
 def project_own_history(game: GameManager, player_id: str) -> dict[str, Any]:
@@ -25,7 +26,10 @@ def project_own_history(game: GameManager, player_id: str) -> dict[str, Any]:
                         role_ids.append(role_id)
     if player.role_id and player.role_id not in role_ids:
         role_ids.append(player.role_id)
-    roles = [{"id": role_id, "name": game.roles.get(role_id, {}).get("name", role_id)}
+    traveler = game.traveler_of(player_id)
+    if traveler and traveler.get("role_id") and traveler["role_id"] not in role_ids:
+        role_ids.append(traveler["role_id"])
+    roles = [{"id": role_id, "name": game.roles.get(role_id, TRAVELER_BY_ID.get(role_id, {})).get("name", role_id)}
              for role_id in role_ids]
     return {
         "game_id": game.game_id,

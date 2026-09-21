@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from ..application import runtime
+from ..application.identity import username_key
 from ..infrastructure.identity_store import LoginRateLimited
 from .dependencies import optional_session, require_session, resolve_participant, validate_origin
 from .schemas_legacy import JoinBody
@@ -97,8 +98,12 @@ def register(body: Credentials, request: Request, response: Response) -> dict[st
     if old and old.account_id:
         raise HTTPException(status_code=409, detail="请先退出当前账户")
     player_id = resolve_participant(runtime.game, old) if old else None
+    client_key = request.client.host if request.client else "unknown"
     try:
+        runtime.identity_store.check_and_record_sensitive_attempt("register", client_key)
         account_id, recovery_code = runtime.identity_store.create_account(body.username, body.password)
+    except LoginRateLimited as exc:
+        raise HTTPException(status_code=429, detail="注册尝试过于频繁") from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if player_id:
@@ -125,11 +130,13 @@ def login(body: Credentials, request: Request, response: Response) -> dict[str, 
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     existing = optional_session(request)
     if existing:
+        if existing.account_id and existing.account_id != account_id:
+            raise HTTPException(status_code=409, detail="请先退出当前账户再切换")
         guest_id = resolve_participant(runtime.game, existing)
         linked = next((p.id for p in runtime.game.players.values() if p.account_id == account_id), None)
         if guest_id and linked and guest_id != linked:
             raise HTTPException(status_code=409, detail="当前设备已有其他座位，请先退出")
-        if guest_id and not linked:
+        if existing.account_id is None and guest_id and not linked:
             runtime.game.players[guest_id].account_id = account_id
             runtime.game.save()
         runtime.identity_store.revoke_session(request.cookies["botc_session"])
@@ -163,7 +170,11 @@ def change_password(body: PasswordChange, request: Request) -> dict[str, bool]:
     session = require_session(request)
     if not session.account_id:
         raise HTTPException(status_code=403, detail="需要账户")
-    if not runtime.identity_store.change_password(session.account_id, body.old_password, body.new_password):
+    try:
+        changed = runtime.identity_store.change_password(session.account_id, body.old_password, body.new_password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not changed:
         raise HTTPException(status_code=401, detail="原密码错误")
     return {"ok": True}
 
@@ -171,7 +182,17 @@ def change_password(body: PasswordChange, request: Request) -> dict[str, bool]:
 @router.post("/api/account/reset-password")
 async def reset_password(body: PasswordReset, request: Request, response: Response) -> dict[str, Any]:
     _check_write(request)
-    recovered = runtime.identity_store.reset_password(body.username, body.recovery_code, body.new_password)
+    client_key = request.client.host if request.client else "unknown"
+    try:
+        runtime.identity_store.check_and_record_sensitive_attempt(
+            "reset", f"{client_key}:{username_key(body.username)}"
+        )
+    except LoginRateLimited as exc:
+        raise HTTPException(status_code=429, detail="找回尝试过于频繁") from exc
+    try:
+        recovered = runtime.identity_store.reset_password(body.username, body.recovery_code, body.new_password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not recovered:
         raise HTTPException(status_code=401, detail="账户或恢复码错误")
     account_id, recovery_code = recovered

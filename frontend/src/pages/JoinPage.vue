@@ -4,7 +4,7 @@ import { api } from '../services/api.js'
 import RecoverIdentity from '../components/player/RecoverIdentity.vue'
 
 defineProps({ account: { type: String, default: null } })
-const emit = defineEmits(['joined', 'account', 'recovered'])
+const emit = defineEmits(['joined', 'account', 'recovered', 'history'])
 
 const hashQuery = window.location.hash.split('?')[1] || ''
 const name = ref('')
@@ -67,6 +67,8 @@ async function join() {
     <p v-if="!recovering" data-error class="error" :hidden="!error">{{ error }}</p>
     <RecoverIdentity v-if="recovering" :initial-room="roomCode" @recovered="emit('recovered')" @back="recovering = false" />
     <button v-if="!recovering" data-open-recovery class="btn" type="button" @click="recovering = true">找回原座位</button>
+    <button v-if="account && !recovering" data-join-history class="btn" type="button" @click="emit('history')">我的对局历史</button>
+    <button v-if="account && !recovering" data-account-settings class="btn" type="button" @click="emit('account')">账户设置</button>
     <button v-if="!account && !recovering" data-account-entry class="btn" type="button" @click="emit('account')">账户登录或注册</button>
     <span class="credit">botc-grimoire · github.com/Chenxi-Li24/botc-grimoire</span>
   </main>
