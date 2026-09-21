@@ -143,6 +143,8 @@ class BalloonistInformationTest(unittest.TestCase):
         self.assertEqual(same_type["rule_compliant_types"], [])
         with self.assertRaisesRegex(ValueError, "真假"):
             self.game.send_balloonist(self.step.id, 3)
+        with self.assertRaisesRegex(ValueError, "错误"):
+            self.game.send_balloonist(self.step.id, 3, truthful=True)
         sent = self.game.send_balloonist(self.step.id, 3, truthful=False)
         self.assertFalse(sent["rule_compliant"])
         self.assertFalse(sent["truthful"])
@@ -162,6 +164,24 @@ class BalloonistInformationTest(unittest.TestCase):
         self.assertEqual((step.status, step.skip_reason),
                          ("skipped", "balloonist_types_exhausted"))
         self.assertTrue(self.game.balloonist_context(1)["exhausted"])
+
+    def test_non_disguised_character_cannot_register_as_another_role(self):
+        with self.assertRaisesRegex(ValueError, "真实角色"):
+            self.game.send_balloonist(self.step.id, 3, registered_type="townsfolk",
+                                      registered_role="balloonist")
+
+    def test_same_night_correction_keeps_both_sent_targets(self):
+        first = self.game.send_balloonist(self.step.id, 3)
+        with self.assertRaisesRegex(ValueError, "更正"):
+            self.game.send_balloonist(self.step.id, 2, registered_type="outsider")
+        correction = self.game.send_balloonist(
+            self.step.id, 2, registered_type="outsider",
+            correction_of=first["event_id"],
+        )
+        self.assertEqual(correction["correction_of"], first["event_id"])
+        self.assertEqual([item["target"] for item in
+                          self.game.player_view(self.player_id)["balloonist_history"]],
+                         [3, 2])
 
 
 if __name__ == "__main__":

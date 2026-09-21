@@ -154,6 +154,8 @@ class BalloonistMixin:
         registration = registered_type or target_info["real_type"]
         if registration not in target_info["options"]:
             raise ValueError("该角色不能登记为所选类型")
+        if role_id not in ("recluse", "spy") and registered_role not in (None, role_id):
+            raise ValueError("普通角色只能按真实角色登记")
         if registration == target_info["real_type"] and registered_role is None:
             registered_role = role_id
         if registered_role is not None:
@@ -173,6 +175,8 @@ class BalloonistMixin:
             raise ValueError("目标登记类型不符合当前版本的夜间类型顺序")
         if impaired and truthful is None:
             raise ValueError("信息受影响时必须明确标记本次信息真假")
+        if not rule_compliant and truthful is not False:
+            raise ValueError("违反正常类型顺序的信息必须标为错误")
         if "vortox_forced_false" in impairments and truthful is not False:
             raise ValueError("涡流影响下气球驾驶员信息必须标为错误")
         if not impaired and truthful is False:
