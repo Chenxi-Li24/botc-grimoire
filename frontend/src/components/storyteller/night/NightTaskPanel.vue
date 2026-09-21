@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { nightErrorMessage, nightStepSummary } from '../../../presentation/nightWorkflow.js'
 import BalloonistTaskCard from './BalloonistTaskCard.vue'
 import EffectHistory from './EffectHistory.vue'
@@ -76,8 +76,29 @@ const stepOutcomeHandled = computed(() => Boolean(
 ))
 const omissions = computed(() => props.night.forceOmissions?.[current.value?.id] || [])
 const actionBusy = computed(() => props.pending.some((key) => key.startsWith('night:')))
+const registrationSelections = ref({})
+watch(() => step.value?.id, () => { registrationSelections.value = {} })
+const ambiguousSeats = computed(() => role.value?.information_resolver
+  ? (props.view.seats || []).filter((seat) => ['recluse', 'spy'].includes(
+    seat.player?.role?.id || seat.assigned_role?.id,
+  )) : [])
+function registrationRoles(seat) {
+  const actual = seat.player?.role?.id || seat.assigned_role?.id
+  const teams = actual === 'recluse'
+    ? ['outsider', 'minion', 'demon'] : ['minion', 'townsfolk', 'outsider']
+  return (props.view.roles || []).filter((candidate) => teams.includes(candidate.team))
+}
+const registrationsReady = computed(() => ambiguousSeats.value.every((seat) =>
+  Boolean(registrationSelections.value[seat.seat])))
+const registrations = computed(() => ambiguousSeats.value.map((seat) => {
+  const character_id = registrationSelections.value[seat.seat]
+  const character = (props.view.roles || []).find((candidate) => candidate.id === character_id)
+  return { seat: seat.seat, character_id,
+    alignment: ['minion', 'demon'].includes(character?.team) ? 'evil' : 'good' }
+}))
 
 const omissionLabels = {
+  balloonist_information: '气球驾驶员本夜信息尚未发送',
   targets: '尚未选择玩家',
   character: '尚未选择角色',
   acknowledged: '尚未确认手动步骤',
@@ -136,6 +157,7 @@ async function submitAction() {
       step_id: step.value.id,
       actor_seat: step.value.actor_seat,
       targets,
+      registrations: registrations.value,
     })
     return
   }
@@ -226,6 +248,18 @@ function confirmUndo(eventId) {
           :execute="night.balloonist"
         />
 
+        <section v-if="isCurrent && ambiguousSeats.length && !stepInformationHandled && !stepDrafts.length" class="night-card" data-night-registrations>
+          <h4>本次信息的角色登记</h4>
+          <p class="inline-note">陌客和间谍可能按其他角色登记；先逐人确定，再生成信息。生成后如需修改，请撤销该次准备并重新选择。</p>
+          <label v-for="seat in ambiguousSeats" :key="seat.seat" class="field-row">
+            {{ seat.seat }}号 · {{ seat.player?.role?.name || seat.assigned_role?.name }}
+            <select v-model="registrationSelections[seat.seat]" :data-registration-seat="seat.seat">
+              <option value="">请选择本次登记角色</option>
+              <option v-for="candidate in registrationRoles(seat)" :key="candidate.id" :value="candidate.id">{{ candidate.name }}</option>
+            </select>
+          </label>
+        </section>
+
         <PitHagCard
           v-if="isCurrent && actorRoleId === 'pithag'"
           :step="step"
@@ -255,7 +289,7 @@ function confirmUndo(eventId) {
           v-if="isCurrent && step.actor_seat && !['pithag', 'balloonist'].includes(actorRoleId) && !stepOutcomes.length && !stepDrafts.length && !stepSelectionRecorded && !stepInformationHandled && !stepOutcomeHandled"
           class="btn primary task-submit"
           type="button"
-          :disabled="!connected || actionBusy || (selection?.players && night.selectedTargets.length !== selection.players) || (selection?.characters && !night.selectedCharacter)"
+          :disabled="!connected || actionBusy || !registrationsReady || (selection?.players && night.selectedTargets.length !== selection.players) || (selection?.characters && !night.selectedCharacter)"
           @click="submitAction"
         >{{ actionLabel() }}</button>
 

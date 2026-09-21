@@ -48,6 +48,28 @@ const view = {
 }
 
 describe('fixed night workspace', () => {
+  it('requires an explicit Recluse registration before preparing Chef information', async () => {
+    const chefStep = { ...step, id: 'chef-1', character_id: 'chef',
+      source: { ability_character: 'chef' }, required_fields: [] }
+    const chefState = night({ workflow: { ...night().workflow,
+      current_step_id: chefStep.id, steps: [chefStep], current_task: chefStep },
+      currentTask: chefStep, inspectedStep: chefStep })
+    const localView = { ...view, roles: [...roles,
+      { id: 'recluse', name: '陌客', team: 'outsider' },
+      { id: 'spy', name: '间谍', team: 'minion' }],
+      seats: [{ seat: 1, assigned_role: roles[1] },
+        { seat: 2, assigned_role: { id: 'recluse', name: '陌客' } }] }
+    const wrapper = mount(NightTaskPanel, { props: {
+      view: localView, night: chefState, connected: true, pending: [],
+    } })
+    expect(wrapper.get('.task-submit').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-registration-seat="2"]').setValue('imp')
+    expect(wrapper.get('.task-submit').attributes('disabled')).toBeUndefined()
+    await wrapper.get('.task-submit').trigger('click')
+    expect(chefState.deliverInformation).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'prepare', registrations: [{ seat: 2, character_id: 'imp', alignment: 'evil' }],
+    }))
+  })
   it('keeps night navigation below the left step list and emits the existing navigation payload', async () => {
     const state = night({ forceTokens: { s1: 'force-1' } })
     const controls = mount(GameControlPanel, {

@@ -126,6 +126,21 @@ describe('night workflow state', () => {
     }))
   })
 
+  it('waits for registration adjudication when a Recluse is in play', async () => {
+    const chefStep = { id: 'chef-first', actor_seat: 1, character_id: 'chef',
+      status: 'current', required_fields: [], source: { ability_character: 'chef' } }
+    const view = shallowRef({ roles: [{ id: 'chef', information_resolver: 'chef' }],
+      seats: [{ seat: 1, assigned_role: { id: 'chef' } },
+        { seat: 2, assigned_role: { id: 'recluse' } }],
+      night_workflow: { current_step_id: chefStep.id, steps: [chefStep],
+        current_task: chefStep, information: { drafts: [] }, outcomes: { pending: [] },
+        seat_context: [{ seat: 1 }, { seat: 2 }] } })
+    const service = { deliverInformation: vi.fn() }
+    useNightWorkflow(view, { service, run: vi.fn((_key, operation) => operation()) })
+    await nextTick()
+    expect(service.deliverInformation).not.toHaveBeenCalled()
+  })
+
   it('leaves Balloonist information to its dedicated preview/send workflow', async () => {
     const balloonistStep = {
       id: 'balloonist-night', actor_seat: 5, character_id: 'balloonist', status: 'current',

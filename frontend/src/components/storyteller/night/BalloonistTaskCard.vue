@@ -60,7 +60,9 @@ function payload(action) {
     action,
     step_id: props.step.id,
     target: /^\d+$/.test(raw) ? Number(raw) : raw,
-    ...(registeredType.value ? { registered_type: registeredType.value } : {}),
+    ...(chosenType.value && ['recluse', 'spy'].includes(choice.value?.real_role)
+      ? { registered_type: chosenType.value }
+      : registeredType.value ? { registered_type: registeredType.value } : {}),
     ...(registeredRole.value ? { registered_role: registeredRole.value } : {}),
     ...(truthful.value === '' ? {} : { truthful: truthful.value === 'true' }),
     ...(action === 'send' && currentHistory.value

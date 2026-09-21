@@ -42,7 +42,10 @@ class BalloonistMixin:
         if role["id"] != "balloonist" or self.balloonist_version is None:
             return role
         label = "新版" if self.balloonist_version == "new" else "旧版"
-        return {**role, "name": f"气球驾驶员（{label}）"}
+        ability = ("每个夜晚，你会得知一名玩家的编号；其角色类型与上一晚所示不同。"
+                   if self.balloonist_version == "new" else
+                   "每个夜晚，你会得知一名玩家的编号；其角色类型此前未展示过。四类用尽后不再获得信息。")
+        return {**role, "name": f"气球驾驶员（{label}）", "ability": ability}
 
     def balloonist_night_workflow(self) -> dict:
         workflow = self.night.projection()
@@ -213,6 +216,7 @@ class BalloonistMixin:
             "balloonist_information",
             {"actor_seat": preview["actor_seat"], "night_no": self.night_no,
              "target": target, "registered_type": preview["registered_type"],
+             "step_id": step_id,
              "correction_of": correction_of},
             {"op": "noop"},
             depends_on=[correction_of] if correction_of else [],

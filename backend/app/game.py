@@ -312,6 +312,7 @@ class GameManager(LobbyMixin, BalloonistMixin, LegacyNightMixin, NominationMixin
             self.effects,
             traveler_actions=self._traveler_night_actions(),
             restored_queue=restored_queue,
+            balloonist_version=self.balloonist_version,
         )
         self.skip_exhausted_balloonist_steps()
 

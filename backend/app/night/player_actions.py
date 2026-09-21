@@ -50,7 +50,8 @@ def submit_player_night_action(game, player_id: str, body: Any):
         raise ValueError("这不是你的夜晚步骤")
     selected_seats = list(_body_value(body, "selected_seats", []) or [])
     character_id = _body_value(body, "character_id")
-    submission = {"selected_seats": selected_seats, "character_id": character_id}
+    submission = {"selected_seats": selected_seats, "character_id": character_id,
+                  "player_id": player_id}
     receipt = step.values.get("player_submission")
     if receipt is not None:
         if receipt != submission:

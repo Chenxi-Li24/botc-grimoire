@@ -126,6 +126,20 @@ class PlayerNightActionsTest(unittest.TestCase):
                 "step_id": step.id, "selected_seats": [3],
             })
 
+    def test_receipt_remains_visible_after_other_players_steps_become_current(self):
+        game, player_id = make_game(
+            {1: "poisoner", 2: "imp", 3: "chef"},
+            claim_seat=1, night=2, script="trouble-brewing",
+        )
+        step = current_step(game, 1, "poisoner")
+        submit_player_night_action(game, player_id, {
+            "step_id": step.id, "selected_seats": [3],
+        })
+        other = game.night.queue.step_for(2, "imp")
+        game.night.queue.current_step_id = other.id
+        self.assertEqual(game.player_view(player_id)["night_workflow"]["receipt"],
+                         {"step_id": step.id})
+
     def test_storyteller_undo_clears_the_player_submission_receipt(self):
         game, player_id = make_game(
             {1: "imp", 2: "chef", 3: "poisoner"},

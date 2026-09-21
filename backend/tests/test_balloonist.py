@@ -50,6 +50,7 @@ class BalloonistInformationTest(unittest.TestCase):
         )
         self.game.balloonist_version = "new"
         self.game.balloonist_outsider_delta = 0
+        self.game._bind_night_service()
         self.step = self.game.night.queue.step_for(1, "balloonist")
         self.game.night.queue.current_step_id = self.step.id
 
@@ -107,6 +108,32 @@ class BalloonistInformationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "旧局"):
             self.game.send_balloonist(self.step.id, 2, registered_type="outsider")
         self.assertEqual(self.game.balloonist_storyteller_history(), [])
+
+    def test_navigation_warns_before_skipping_unsent_balloonist_information(self):
+        blocked = self.game.night.navigate(direction="next")
+        self.assertTrue(blocked.blocked)
+        self.assertIn("balloonist_information", blocked.omissions)
+        sent = self.game.send_balloonist(self.step.id, 3)
+        self.assertFalse(self.game.night.navigate(direction="next").blocked)
+        self.game.night.queue.current_step_id = self.step.id
+        self.step.status = "upcoming"
+        self.game.night.undo(sent["event_id"], confirm=True)
+        blocked_after_undo = self.game.night.navigate(direction="next")
+        self.assertIn("balloonist_information", blocked_after_undo.omissions)
+
+    def test_player_sees_selected_version_and_storyteller_audit_keeps_registration(self):
+        self.game.send_balloonist(self.step.id, 2, registered_type="demon",
+                                 registered_role="imp")
+        player = self.game.player_view(self.player_id)
+        self.assertIn("新版", player["me"]["role"]["name"])
+        self.assertIn("新版", next(role["name"] for role in player["script_roles"]
+                                    if role["id"] == "balloonist"))
+        self.assertNotIn("real_type", player["balloonist_history"][0])
+        audit = self.game.storyteller_view()["seats"][0]["audit"]["events"]
+        record = next(item for item in audit if item["kind"] == "balloonist")
+        self.assertEqual(record["registered_type"], "demon")
+        self.assertEqual(record["real_type"], "outsider")
+        self.assertEqual(record["target_label"], "2号")
 
     def test_session_bound_receipts_do_not_leak_to_successor(self):
         self.game.send_balloonist(self.step.id, 3)

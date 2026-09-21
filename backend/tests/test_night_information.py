@@ -25,6 +25,27 @@ class NightInformationTest(unittest.TestCase):
         self.assertEqual(len(game.information_deliveries), 1)
         self.assertEqual(len(game.information_notices), 1)
 
+    def test_unsent_registration_can_be_changed_after_explicit_undo(self):
+        game, _ = make_game({1: "chef", 2: "recluse", 3: "imp", 4: "poisoner"},
+                            script="trouble-brewing")
+        game.night.apply_poisoner(4, 1)
+        step = game.night.queue.step_for(1, "chef")
+        selection = game.night.record_selection(step.id, [])
+        first = game.night.prepare_information(1, source_event=selection.id,
+            registrations=[{"seat": 2, "character_id": "recluse", "alignment": "good"}])
+        self.assertIsInstance(first, InformationDraft)
+        with self.assertRaisesRegex(ValueError, "different inputs"):
+            game.night.prepare_information(1, source_event=selection.id,
+                registrations=[{"seat": 2, "character_id": "imp", "alignment": "evil"}])
+        preview = game.night.undo(selection.id, confirm=False)
+        self.assertIn(first.source_event, preview.event_ids)
+        game.night.undo(selection.id, confirm=True)
+        second_selection = game.night.record_selection(step.id, [])
+        second = game.night.prepare_information(1, source_event=second_selection.id,
+            registrations=[{"seat": 2, "character_id": "imp", "alignment": "evil"}])
+        self.assertEqual(second.registrations[0]["character_id"], "imp")
+        self.assertNotEqual(first.true_result, second.true_result)
+
     def test_chef_delivery_cannot_be_a_list_of_candidate_numbers(self):
         game, _ = make_game({1: "chef", 2: "poisoner", 3: "imp"})
         game.night.apply_poisoner(2, 1)

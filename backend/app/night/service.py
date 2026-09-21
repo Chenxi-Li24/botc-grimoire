@@ -42,11 +42,13 @@ class NightService:
     def __init__(self, state: GameState, pack: ScriptPack, night_no: int,
                  journal: EventJournal, effects: EffectLedger,
                  traveler_actions: list[dict[str, Any]] | None = None,
-                 restored_queue: dict[str, Any] | None = None) -> None:
+                 restored_queue: dict[str, Any] | None = None,
+                 balloonist_version: str | None = None) -> None:
         self.state = state
         self.pack = pack
         self.journal = journal
         self.effects = effects
+        self.balloonist_version = balloonist_version
         self.queue = NightQueue(state, pack, night_no, traveler_actions)
         self._force_tokens: dict[str, dict[str, Any]] = {}
         if restored_queue:
@@ -83,6 +85,13 @@ class NightService:
 
     def _missing(self, step: NightStep) -> list[str]:
         missing = []
+        if (self.balloonist_version in {"new", "old"}
+                and step.source.get("ability_character") == "balloonist"
+                and not any(event.kind == "balloonist_information"
+                            and event.state != "undone"
+                            and event.payload.get("step_id") == step.id
+                            for event in self.journal.records)):
+            missing.append("balloonist_information")
         for field_name in step.required_fields:
             value = step.values.get(field_name)
             if value is None or value == "" or value == []:

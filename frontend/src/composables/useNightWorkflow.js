@@ -129,6 +129,9 @@ export function useNightWorkflow(viewRef, { service, run }) {
     if (ability === 'balloonist') return
     const role = (roles || []).find((item) => item.id === ability)
     if (!role?.information_resolver) return
+    if ((viewRef.value?.seats || []).some((seat) => ['recluse', 'spy'].includes(
+      seat.player?.role?.id || seat.assigned_role?.id,
+    ))) return
     if (Object.prototype.hasOwnProperty.call(step.values || {}, 'targets')) return
     if (autoPreparedSteps.has(step.id)) return
     autoPreparedSteps.add(step.id)

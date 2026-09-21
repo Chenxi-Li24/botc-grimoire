@@ -100,6 +100,22 @@ class ProjectionMixin:
             })
             entries.append(item)
 
+        for record in self.balloonist_storyteller_history():
+            if record.get("actor_seat") != seat:
+                continue
+            entries.append({
+                "id": record["event_id"], "category": "information",
+                "kind": "balloonist", "phase": "night",
+                "number": record.get("night_no"), "at": record.get("sent_at"),
+                "source_event": record["event_id"],
+                "role_snapshot": "balloonist", "target_label": record.get("target_label"),
+                "registered_type": record.get("registered_type"),
+                "real_type": record.get("real_type"),
+                "truthful": record.get("truthful"),
+                "correction_of": record.get("correction_of"),
+                "state": "withdrawn" if record.get("retracted") else "effective",
+            })
+
         delivered_drafts = {item.draft_id for item in self.information_deliveries.values()}
         for draft in self.information_drafts.values():
             if (draft.actor_seat != seat or draft.id in delivered_drafts
@@ -340,9 +356,11 @@ class ProjectionMixin:
         receipt = None
         lunatic_choices = []
         if current is not None and current.actor_seat == seat:
-            if current.values.get("player_submission") is not None:
+            submission = current.values.get("player_submission")
+            if (submission is not None and
+                    (viewer_id is None or submission.get("player_id") == viewer_id)):
                 receipt = {"step_id": current.id}
-            else:
+            elif submission is None:
                 ability_id = current.source.get(
                     "ability_character", current.perceived_as or current.character_id,
                 )
@@ -394,6 +412,15 @@ class ProjectionMixin:
             ability = self.night.pack.character_by_id.get(ability_id)
             if ability and ability.team == DEMON:
                 lunatic_choices = self.night._lunatic_context()
+        if (receipt is None and viewer_id is not None and current is not None
+                and current.actor_seat != seat):
+            current_index = self.night.queue.steps.index(current)
+            for previous in reversed(self.night.queue.steps[:current_index]):
+                submission = previous.values.get("player_submission")
+                if (previous.actor_seat == seat and submission is not None
+                        and submission.get("player_id") == viewer_id):
+                    receipt = {"step_id": previous.id}
+                    break
         widow_grimoire = None
         holder = self.seat_state(seat)
         if (self.status == "playing" and self.phase == "night" and self.night_no == 1
@@ -466,7 +493,7 @@ class ProjectionMixin:
                                  for t in self.travelers],
             "room_code": self.room_code,  # 玩家卡显示当前房间号
             "seats": self._seat_slots(st_view=False, my_id=player_id),
-            "script_roles": [{"id": role["id"], "name": role["name"], "team": role["team"]}
+            "script_roles": [{"id": role["id"], "name": self.balloonist_role_view(role)["name"], "team": role["team"]}
                              for role in SCRIPTS[self.script_id]["roles"]],
             "inference": self.inference_view(player_id),
             "balloonist_history": self.balloonist_player_history(player_id),
@@ -479,6 +506,8 @@ class ProjectionMixin:
                 view["me"]["role"] = TRAVELER_BY_ID[me_traveler["role_id"]]
         elif started:
             view["me"] = me.private(self.roles, fake_id)
+            if view["me"].get("role"):
+                view["me"]["role"] = self.balloonist_role_view(view["me"]["role"])
             view["me"]["dead_vote_used"] = me.dead_vote_used
             if me.seat is not None:
                 view["night_workflow"] = self._player_night_workflow(me.seat, player_id)
