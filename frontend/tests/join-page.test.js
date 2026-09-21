@@ -45,4 +45,22 @@ describe('JoinPage', () => {
     await vi.waitFor(() => expect(wrapper.get('[data-error]').text()).toBe('房间号错误'))
     expect(wrapper.get('[data-submit]').attributes('disabled')).toBeUndefined()
   })
+
+  it('counts visible nickname characters including a combined emoji', async () => {
+    const wrapper = mount(JoinPage)
+    await wrapper.get('[data-name]').setValue('👩‍👩‍👧‍👦Ab中文123')
+    expect(wrapper.get('[data-name-remaining]').text()).toContain('0')
+    await wrapper.get('[data-name]').setValue('👩‍👩‍👧‍👦Ab中文1234')
+    expect(wrapper.get('[data-name-remaining]').text()).toContain('-1')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.get('[data-error]').text()).toContain('8')
+    expect(api).not.toHaveBeenCalled()
+  })
+
+  it('lets an account join with its saved nickname without entering a new guest name', async () => {
+    api.mockResolvedValue({ player_id: 'p1' })
+    const wrapper = mount(JoinPage, { props: { account: 'LongLegacyName' } })
+    await wrapper.get('form').trigger('submit')
+    await vi.waitFor(() => expect(wrapper.emitted('joined')).toEqual([['p1']]))
+  })
 })

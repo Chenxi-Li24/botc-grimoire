@@ -1,17 +1,36 @@
-import { getCsrfToken } from './session.js'
+import { getCsrfToken, setCsrfToken } from './session.js'
+
+const accountEntry = new Set(['/api/account/register', '/api/account/login', '/api/account/reset-password'])
+
+async function refreshCsrf() {
+  const response = await fetch('/api/session', { credentials: 'same-origin' })
+  if (response.ok) {
+    const session = await response.json()
+    setCsrfToken(session.csrf_token)
+  }
+}
 
 export async function api(path, init) {
   const method = (init?.method || 'GET').toUpperCase()
-  const csrf = getCsrfToken()
-  const response = await fetch(path, {
+  const write = !['GET', 'HEAD', 'OPTIONS'].includes(method)
+  if (write && accountEntry.has(path) && !getCsrfToken()) await refreshCsrf()
+  const send = () => fetch(path, {
     ...init,
     credentials: 'same-origin',
     headers: {
-      'Content-Type': 'application/json',
-      ...(csrf && !['GET', 'HEAD', 'OPTIONS'].includes(method) ? { 'X-CSRF-Token': csrf } : {}),
+      ...((typeof init?.body === 'string' || !init?.body) ? { 'Content-Type': 'application/json' } : {}),
+      ...(getCsrfToken() && write ? { 'X-CSRF-Token': getCsrfToken() } : {}),
       ...(init?.headers || {}),
     },
   })
+  let response = await send()
+  if (write && accountEntry.has(path) && response.status === 403) {
+    const failure = await response.clone().json().catch(() => null)
+    if (failure?.detail === '安全令牌无效') {
+      await refreshCsrf()
+      response = await send()
+    }
+  }
 
   if (!response.ok) {
     const body = await response.json().catch(() => null)

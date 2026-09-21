@@ -1,13 +1,15 @@
 """Guest entry and optional private account/session endpoints."""
 
 import os
+from io import BytesIO
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from ..application import runtime
-from ..application.identity import username_key
+from ..application.identity import nickname_key, username_key, validate_nickname
 from ..infrastructure.identity_store import LoginRateLimited
 from .dependencies import optional_session, require_session, resolve_participant, validate_origin
 from .schemas_legacy import JoinBody
@@ -19,6 +21,12 @@ COOKIE_AGE = 30 * 24 * 60 * 60
 class Credentials(BaseModel):
     username: str
     password: str
+    nickname: str | None = None
+    mode: str = "username"
+
+
+class NicknameChange(BaseModel):
+    nickname: str
 
 
 class PasswordChange(BaseModel):
@@ -48,8 +56,25 @@ def _check_write(request: Request) -> None:
     session = optional_session(request)
     if session is None:
         validate_origin(request)
+    elif session.account_id is None and resolve_participant(runtime.game, session) is None:
+        # A cookie from an earlier game is not a current participant session.
+        # Retire it, then treat this as an origin-checked anonymous write.
+        runtime.identity_store.revoke_session(request.cookies["botc_session"])
+        validate_origin(request)
     else:
         require_session(request)
+
+
+def _account_id(request: Request) -> str:
+    account_id = require_session(request).account_id
+    if not account_id:
+        raise HTTPException(status_code=403, detail="需要账户")
+    return account_id
+
+
+def _name_taken(game, name: str, *, except_player_id: str | None = None) -> bool:
+    key = nickname_key(name)
+    return any(p.id != except_player_id and nickname_key(p.name) == key for p in game.players.values())
 
 
 @router.get("/api/session")
@@ -70,14 +95,22 @@ def current_session(request: Request) -> dict[str, Any]:
 async def join(body: JoinBody, request: Request, response: Response) -> dict[str, str]:
     _check_write(request)
     game = runtime.game
-    if not body.name.strip():
-        raise HTTPException(status_code=400, detail="请输入名字")
     if body.room_code != game.room_code:
         raise HTTPException(status_code=400, detail="房间号错误")
     session = optional_session(request)
     player_id = resolve_participant(game, session) if session else None
     if player_id is None:
-        player = game.add_player(body.name)
+        if session and session.account_id:
+            profile = runtime.identity_store.account_profile(session.account_id)
+            clean_name = profile["nickname"]
+        else:
+            try:
+                clean_name, _ = validate_nickname(body.name)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if _name_taken(game, clean_name):
+            raise HTTPException(status_code=409, detail="昵称已被使用，请重新选择")
+        player = game.add_player(clean_name)
         if session and session.account_id:
             player.account_id = session.account_id
             game.save()
@@ -98,36 +131,47 @@ def register(body: Credentials, request: Request, response: Response) -> dict[st
     if old and old.account_id:
         raise HTTPException(status_code=409, detail="请先退出当前账户")
     player_id = resolve_participant(runtime.game, old) if old else None
+    if player_id and runtime.game.players[player_id].account_id:
+        raise HTTPException(status_code=409, detail="该参与者已有账户")
+    nickname = body.nickname if body.nickname is not None else (
+        runtime.game.players[player_id].name if player_id else body.username
+    )
+    if _name_taken(runtime.game, nickname, except_player_id=player_id):
+        raise HTTPException(status_code=409, detail="昵称已被使用，请重新选择")
     client_key = request.client.host if request.client else "unknown"
     try:
         runtime.identity_store.check_and_record_sensitive_attempt("register", client_key)
-        account_id, recovery_code = runtime.identity_store.create_account(body.username, body.password)
+        account_id, recovery_code = runtime.identity_store.create_account(body.username, body.password, nickname)
     except LoginRateLimited as exc:
         raise HTTPException(status_code=429, detail="注册尝试过于频繁") from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if player_id:
         player = runtime.game.players[player_id]
-        if player.account_id:
-            raise HTTPException(status_code=409, detail="该参与者已有账户")
         player.account_id = account_id
+        player.name = runtime.identity_store.account_profile(account_id)["nickname"]
         runtime.game.save()
     if old:
         runtime.identity_store.revoke_session(request.cookies["botc_session"])
     token, _ = runtime.identity_store.issue_session(account_id=account_id)
     set_session_cookie(response, token)
-    return {"account_id": account_id, "recovery_code": recovery_code}
+    return {"account_id": account_id, "uid": runtime.identity_store.account_profile(account_id)["uid"],
+            "recovery_code": recovery_code}
 
 
 @router.post("/api/account/login")
 def login(body: Credentials, request: Request, response: Response) -> dict[str, bool]:
     _check_write(request)
+    if body.mode not in {"username", "uid"}:
+        raise HTTPException(status_code=400, detail="登录方式无效")
     try:
-        account_id = runtime.identity_store.authenticate(body.username, body.password)
+        client_key = request.client.host if request.client else "unknown"
+        account_id = runtime.identity_store.authenticate(body.username, body.password,
+                                                          mode=body.mode, client_key=client_key)
     except LoginRateLimited as exc:
         raise HTTPException(status_code=429, detail="登录尝试过于频繁") from exc
     if account_id is None:
-        raise HTTPException(status_code=401, detail="用户名或密码错误")
+        raise HTTPException(status_code=401, detail="账户或密码错误")
     existing = optional_session(request)
     if existing:
         if existing.account_id and existing.account_id != account_id:
@@ -137,12 +181,81 @@ def login(body: Credentials, request: Request, response: Response) -> dict[str, 
         if guest_id and linked and guest_id != linked:
             raise HTTPException(status_code=409, detail="当前设备已有其他座位，请先退出")
         if existing.account_id is None and guest_id and not linked:
-            runtime.game.players[guest_id].account_id = account_id
+            player = runtime.game.players[guest_id]
+            display = runtime.identity_store.account_profile(account_id)["nickname"]
+            if _name_taken(runtime.game, display, except_player_id=guest_id):
+                raise HTTPException(status_code=409, detail="本局昵称已被使用，请先选择其他座位")
+            player.account_id = account_id
+            player.name = display
             runtime.game.save()
         runtime.identity_store.revoke_session(request.cookies["botc_session"])
     token, _ = runtime.identity_store.issue_session(account_id=account_id)
     set_session_cookie(response, token)
     return {"ok": True}
+
+
+@router.get("/api/account/profile")
+def account_profile(request: Request) -> dict[str, Any]:
+    account_id = _account_id(request)
+    profile = runtime.identity_store.account_profile(account_id)
+    return {**profile, "avatar_url": "/api/account/avatar"}
+
+
+@router.post("/api/account/nickname")
+async def change_nickname(body: NicknameChange, request: Request) -> dict[str, str]:
+    account_id = _account_id(request)
+    player = next((p for p in runtime.game.players.values() if p.account_id == account_id), None)
+    if _name_taken(runtime.game, body.nickname, except_player_id=player.id if player else None):
+        raise HTTPException(status_code=409, detail="本局昵称已被使用，请重新选择")
+    try:
+        nickname = runtime.identity_store.change_nickname(account_id, body.nickname)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if player:
+        player.name = nickname
+        runtime.game.save()
+        await runtime.hub.push_all()
+    return {"nickname": nickname}
+
+
+@router.put("/api/account/avatar")
+async def upload_avatar(request: Request) -> dict[str, bool]:
+    account_id = _account_id(request)
+    raw = await request.body()
+    if len(raw) > 2 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="头像不能超过 2 MiB")
+    try:
+        with Image.open(BytesIO(raw)) as image:
+            if image.format not in {"PNG", "JPEG", "WEBP"} or image.width * image.height > 16_000_000:
+                raise ValueError("不支持的头像图片")
+            image.load()
+            normalized = ImageOps.exif_transpose(image).convert("RGBA")
+            normalized.thumbnail((512, 512))
+            output = BytesIO()
+            normalized.save(output, format="PNG")
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
+        raise HTTPException(status_code=400, detail="仅支持 PNG、JPEG 或 WebP 图片") from exc
+    runtime.identity_store.set_avatar(account_id, output.getvalue())
+    await runtime.hub.push_all()
+    return {"ok": True}
+
+
+@router.get("/api/account/avatar")
+def own_avatar(request: Request) -> Response:
+    account_id = _account_id(request)
+    png = runtime.identity_store.avatar(account_id)
+    if png is None:
+        raise HTTPException(status_code=404, detail="尚未设置头像")
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
+@router.get("/api/avatar/{player_id}")
+def player_avatar(player_id: str) -> Response:
+    player = runtime.game.players.get(player_id)
+    png = runtime.identity_store.avatar(player.account_id) if player and player.account_id else None
+    if png is None:
+        raise HTTPException(status_code=404, detail="没有头像")
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 @router.post("/api/account/logout")

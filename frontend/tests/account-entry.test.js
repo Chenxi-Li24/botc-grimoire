@@ -77,7 +77,7 @@ it('lets authenticated users change password and log out', async () => {
   expect(wrapper.text()).toContain('Alice')
   await wrapper.get('[data-old-password]').setValue('old-password-123')
   await wrapper.get('[data-new-password]').setValue('new-password-123')
-  await wrapper.get('form').trigger('submit')
+  await wrapper.get('[data-change-password]').trigger('click')
   await flushPromises()
   expect(api).toHaveBeenCalledWith('/api/account/change-password', {
     method: 'POST', body: JSON.stringify({ old_password: 'old-password-123', new_password: 'new-password-123' }),
@@ -97,4 +97,54 @@ it('lets logged-in users inspect history before joining another game', async () 
   await wrapper.get('[data-join-history]').trigger('click')
   expect(wrapper.find('[data-history-page]').exists()).toBe(true)
   wrapper.unmount()
+})
+
+it('requires an explicit UID login mode and sends the password with it', async () => {
+  api.mockResolvedValue({ ok: true })
+  const wrapper = mount(AccountPage)
+  await wrapper.get('[data-login-uid]').trigger('click')
+  await wrapper.get('[data-username]').setValue('1234')
+  await wrapper.get('[data-password]').setValue('four')
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  expect(api).toHaveBeenCalledWith('/api/account/login', {
+    method: 'POST', body: JSON.stringify({ username: '1234', password: 'four', mode: 'uid' }),
+  })
+})
+
+it('shows the account profile and changes an eight-grapheme nickname', async () => {
+  api.mockImplementation((path) => path === '/api/account/profile'
+    ? Promise.resolve({ uid: '1234', username: 'Alice', nickname: '旧名', has_avatar: false })
+    : Promise.resolve({ nickname: '👩‍👩‍👧‍👦Ab中文123' }))
+  const wrapper = mount(AccountPage, { props: { account: 'Alice' } })
+  await flushPromises()
+  expect(wrapper.get('[data-account-uid]').text()).toContain('1234')
+  expect(wrapper.get('[data-account-username]').text()).toContain('Alice')
+  await wrapper.get('[data-nickname]').setValue('👩‍👩‍👧‍👦Ab中文123')
+  expect(wrapper.get('[data-nickname-remaining]').text()).toContain('0')
+  await wrapper.get('[data-change-nickname]').trigger('click')
+  await flushPromises()
+  expect(api).toHaveBeenCalledWith('/api/account/nickname', {
+    method: 'POST', body: JSON.stringify({ nickname: '👩‍👩‍👧‍👦Ab中文123' }),
+  })
+})
+
+it('labels HTTPS visits correctly instead of calling them HTTP tests', () => {
+  const oldDescriptor = Object.getOwnPropertyDescriptor(window, 'location')
+  // A queryable copy lets the component use the same protocol logic as a browser visit.
+  const wrapper = mount(AccountPage, { props: { account: null, protocol: 'https:' } })
+  expect(wrapper.text()).not.toContain('当前为 HTTP 小规模测试')
+  expect(wrapper.text()).toContain('HTTPS')
+  wrapper.unmount()
+  expect(oldDescriptor).toBeDefined()
+})
+
+it('validates password length in Unicode code points, not UTF-16 units', async () => {
+  const wrapper = mount(AccountPage)
+  await wrapper.get('[data-mode-register]').trigger('click')
+  await wrapper.get('[data-username]').setValue('Alice')
+  await wrapper.get('[data-password]').setValue('😀😀')
+  await wrapper.get('form').trigger('submit')
+  expect(wrapper.get('[role="alert"]').text()).toContain('4–128')
+  expect(api).not.toHaveBeenCalled()
 })

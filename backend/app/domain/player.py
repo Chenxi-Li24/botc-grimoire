@@ -57,7 +57,8 @@ class Player:
 
     def public(self) -> dict:
         visible_alive = (self._seat_state.public_alive if self._seat_state else self.alive)
-        return {"id": self.id, "name": self.name, "seat": self.seat, "alive": visible_alive}
+        return {"id": self.id, "name": self.name, "seat": self.seat, "alive": visible_alive,
+                "avatar_url": f"/api/avatar/{self.id}" if self.account_id else None}
 
     def private(self, roles: dict, fake_id: str | None = None) -> dict:
         """玩家自己看到的视图。fake_id 为认知覆盖:酒鬼看到说书人标记的假镇民角色。"""

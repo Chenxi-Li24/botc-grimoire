@@ -1,9 +1,12 @@
 import tempfile
 import unittest
+import sqlite3
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app import game as game_module
 from app.api import player as player_api
@@ -32,7 +35,7 @@ class IdentityApiTests(unittest.TestCase):
             p.stop()
         self.temp.cleanup()
 
-    def test_guest_session_is_private_and_names_do_not_restore_identity(self):
+    def test_guest_session_is_private_and_duplicate_names_are_rejected(self):
         room = self.game.room_code
         first = self.client.post("/api/join", json={"name": "甲", "room_code": room})
         self.assertEqual(first.status_code, 200)
@@ -41,7 +44,74 @@ class IdentityApiTests(unittest.TestCase):
         other = TestClient(app, headers={"Origin": "http://testserver"})
         self.assertEqual(other.get(f"/api/me/{alice}").status_code, 401)
         second = other.post("/api/join", json={"name": "甲", "room_code": room})
-        self.assertNotEqual(second.json()["player_id"], alice)
+        self.assertEqual(second.status_code, 409)
+        self.assertEqual(len(self.game.players), 1)
+
+    def test_registration_profile_and_uid_login_are_password_gated(self):
+        created = self.client.post("/api/account/register", json={
+            "username": "Alice", "password": "four", "nickname": "🧙甲",
+        })
+        self.assertEqual(created.status_code, 200)
+        uid = created.json()["uid"]
+        self.assertRegex(uid, r"^[1-9][0-9]{3}$")
+        profile = self.client.get("/api/account/profile").json()
+        self.assertEqual(profile["nickname"], "🧙甲")
+        self.assertEqual(profile["uid"], uid)
+        csrf = self.client.get("/api/session").json()["csrf_token"]
+        self.client.post("/api/account/logout", headers={"X-CSRF-Token": csrf})
+        self.assertEqual(self.client.post("/api/account/login", json={
+            "username": uid, "password": "four", "mode": "username",
+        }).status_code, 401)
+        self.assertEqual(self.client.post("/api/account/login", json={
+            "username": uid, "password": "wrong", "mode": "uid",
+        }).status_code, 401)
+        self.assertEqual(self.client.post("/api/account/login", json={
+            "username": uid, "password": "four", "mode": "uid",
+        }).status_code, 200)
+
+    def test_legacy_long_account_nickname_can_join_without_silent_truncation(self):
+        account_id, _ = self.store.create_account("Alice", "four")
+        with sqlite3.connect(self.store.path) as db:
+            db.execute("UPDATE accounts SET nickname = ?, nickname_key = ? WHERE id = ?",
+                       ("LongLegacyName", "longlegacyname", account_id))
+        token, csrf = self.store.issue_session(account_id=account_id)
+        self.client.cookies.set("botc_session", token)
+        joined = self.client.post("/api/join", json={"name": "LongLegacyName", "room_code": self.game.room_code},
+                                  headers={"X-CSRF-Token": csrf})
+        self.assertEqual(joined.status_code, 200)
+        self.assertEqual(self.game.players[joined.json()["player_id"]].name, "LongLegacyName")
+
+    def test_nickname_change_updates_live_player_but_not_chat_snapshot(self):
+        self.client.post("/api/join", json={"name": "旧名", "room_code": self.game.room_code})
+        csrf = self.client.get("/api/session").json()["csrf_token"]
+        registered = self.client.post("/api/account/register", json={
+            "username": "Alice", "password": "four", "nickname": "旧名",
+        }, headers={"X-CSRF-Token": csrf})
+        self.assertEqual(registered.status_code, 200)
+        player = next(iter(self.game.players.values()))
+        self.game.events.append({"name": "旧名", "kind": "chat"})
+        csrf = self.client.get("/api/session").json()["csrf_token"]
+        changed = self.client.post("/api/account/nickname", json={"nickname": "新名"}, headers={"X-CSRF-Token": csrf})
+        self.assertEqual(changed.status_code, 200)
+        self.assertEqual(player.name, "新名")
+        self.assertEqual(self.game.events[-1]["name"], "旧名")
+
+    def test_avatar_upload_reencodes_image_and_rejects_svg_or_oversize(self):
+        self.client.post("/api/account/register", json={"username": "Alice", "password": "four"})
+        csrf = self.client.get("/api/session").json()["csrf_token"]
+        stream = BytesIO()
+        Image.new("RGB", (2, 2), (255, 0, 0)).save(stream, format="JPEG")
+        uploaded = self.client.put("/api/account/avatar", content=stream.getvalue(),
+                                   headers={"X-CSRF-Token": csrf, "Content-Type": "image/jpeg"})
+        self.assertEqual(uploaded.status_code, 200)
+        avatar = self.client.get("/api/account/avatar")
+        self.assertEqual(avatar.status_code, 200)
+        self.assertEqual(avatar.headers["content-type"], "image/png")
+        self.assertTrue(avatar.content.startswith(b"\x89PNG"))
+        self.assertEqual(self.client.put("/api/account/avatar", content=b"<svg></svg>",
+                                         headers={"X-CSRF-Token": csrf, "Content-Type": "image/svg+xml"}).status_code, 400)
+        self.assertEqual(self.client.put("/api/account/avatar", content=b"x" * (2 * 1024 * 1024 + 1),
+                                         headers={"X-CSRF-Token": csrf, "Content-Type": "image/png"}).status_code, 413)
 
     def test_account_login_restores_linked_guest_and_rejects_missing_csrf(self):
         room = self.game.room_code
@@ -129,6 +199,13 @@ class IdentityApiTests(unittest.TestCase):
         token, _ = self.store.issue_session(player_id="not-a-player", game_id=self.game.game_id, now=1, ttl=1)
         self.client.cookies.set("botc_session", token)
         self.assertEqual(self.client.get("/api/session").status_code, 401)
+
+    def test_stale_guest_cookie_does_not_block_registration_without_csrf(self):
+        token, _ = self.store.issue_session(player_id="old-player", game_id="old-game")
+        self.client.cookies.set("botc_session", token)
+        created = self.client.post("/api/account/register", json={"username": "Alice", "password": "four"})
+        self.assertEqual(created.status_code, 200)
+        self.assertRegex(created.json()["uid"], r"^[1-9][0-9]{3}$")
 
     def test_removed_guest_session_cannot_be_used(self):
         player_id = self.client.post("/api/join", json={

@@ -1,9 +1,9 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { api } from '../services/api.js'
 import RecoverIdentity from '../components/player/RecoverIdentity.vue'
 
-defineProps({ account: { type: String, default: null } })
+const props = defineProps({ account: { type: String, default: null } })
 const emit = defineEmits(['joined', 'account', 'recovered', 'history'])
 
 const hashQuery = window.location.hash.split('?')[1] || ''
@@ -12,13 +12,18 @@ const roomCode = ref(new URLSearchParams(hashQuery).get('room') || '')
 const error = ref('')
 const submitting = ref(false)
 const recovering = ref(false)
+const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+const remaining = computed(() => 8 - [...segmenter.segment(name.value.trim())].length)
 
 async function join() {
   const cleanName = name.value.trim()
   const cleanRoomCode = roomCode.value.trim()
   error.value = ''
 
-  if (!cleanName) return
+  if (!props.account && (!cleanName || remaining.value < 0)) {
+    error.value = '昵称需为 1–8 个可见字符'
+    return
+  }
   if (!/^\d{4}$/.test(cleanRoomCode)) {
     error.value = '房间号需为 4 位数字'
     return
@@ -28,7 +33,7 @@ async function join() {
   try {
     const result = await api('/api/join', {
       method: 'POST',
-      body: JSON.stringify({ name: cleanName, room_code: cleanRoomCode }),
+      body: JSON.stringify({ name: cleanName || props.account, room_code: cleanRoomCode }),
     })
     emit('joined', result.player_id)
   } catch (cause) {
@@ -41,17 +46,17 @@ async function join() {
 <template>
   <main class="page center">
     <h1>🩸 血染钟楼</h1>
-    <p class="sub">输入名字和房间号加入本局，然后选座入座</p>
+    <p class="sub">{{ account ? '输入房间号，使用账户昵称加入本局，然后选座入座' : '输入名字和房间号加入本局，然后选座入座' }}</p>
     <p v-if="account" class="inline-note">已登录账户：{{ account }}。加入新局后会自动关联此账户。</p>
     <form v-if="!recovering" class="join-form" @submit.prevent="join">
-      <input
+      <input v-if="!account"
         v-model="name"
         data-name
         class="input"
         placeholder="你的名字"
-        maxlength="20"
         autofocus
       >
+      <small v-if="!account" data-name-remaining>还可输入 {{ remaining }} 个可见字符</small>
       <input
         v-model="roomCode"
         data-room
