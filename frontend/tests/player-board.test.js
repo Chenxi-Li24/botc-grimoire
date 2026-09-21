@@ -71,3 +71,12 @@ it('allows an unclaimed offline seat in private inference mode and labels guesse
   await wrapper.get('[data-seat="1"]').trigger('click')
   expect(wrapper.emitted('select-participant')).toEqual([[1]])
 })
+
+it('shows the account avatar without hiding the public nickname', () => {
+  const wrapper = mount(PlayerBoard, { props: { view: makePlayerView({
+    seats: [{ seat: 1, player: { id: 'p1', name: '阿青', alive: true,
+      avatar_url: '/api/avatar/p1' } }],
+  }) } })
+  expect(wrapper.get('[data-seat="1"] img.player-avatar').attributes('src')).toBe('/api/avatar/p1')
+  expect(wrapper.get('[data-seat="1"]').text()).toContain('阿青')
+})

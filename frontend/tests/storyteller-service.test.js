@@ -26,6 +26,26 @@ it('sends authenticated configuration and assignment payloads', async () => {
   })
 })
 
+it('sends Balloonist previews and final deliveries to the dedicated endpoint', async () => {
+  const service = createStorytellerService('secret')
+  const payload = { action: 'preview', step_id: 's1', target: 2 }
+  await service.balloonist(payload)
+  expect(api).toHaveBeenCalledWith('/api/night/balloonist', {
+    method: 'POST',
+    headers: { 'X-Storyteller-Password': 'secret' },
+    body: JSON.stringify(payload),
+  })
+})
+
+it('includes the chosen Balloonist rules only for configured boards', async () => {
+  const service = createStorytellerService('secret')
+  await service.configure('wafu-leiming', 7, { version: 'new', outsiderDelta: 0 })
+  expect(JSON.parse(api.mock.calls[0][1].body)).toEqual({
+    script: 'wafu-leiming', player_count: 7,
+    balloonist_version: 'new', balloonist_outsider_delta: 0,
+  })
+})
+
 it('uses every existing lobby endpoint without inventing request bodies', async () => {
   const service = createStorytellerService('secret')
   await service.assignRandom()

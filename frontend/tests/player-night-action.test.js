@@ -76,3 +76,29 @@ it('shows only projected messages and private context', () => {
   expect(wrapper.text()).toContain('必须声称自己是「厨师」')
   expect(wrapper.text()).not.toContain('小恶魔')
 })
+
+it('closes the choice after receipt while keeping widow grimoire visible', () => {
+  const view = makeNightPlayerView('step-1')
+  view.night_workflow.prompt = null
+  view.night_workflow.receipt = { step_id: 'step-1' }
+  view.night_workflow.widow_grimoire = {
+    seats: [{ seat: 2, name: '小白', real_character: '酒鬼', perceived_character: '厨师' }],
+  }
+  const wrapper = mount(PlayerNightAction, {
+    props: { view, connected: true, pending: [] },
+  })
+  expect(wrapper.text()).toContain('说书人已收到')
+  expect(wrapper.text()).toContain('真实：酒鬼')
+  expect(wrapper.text()).toContain('自认：厨师')
+  expect(wrapper.find('[data-submit-night]').exists()).toBe(false)
+})
+
+it('labels remembered information by the original night', () => {
+  const view = makeNightPlayerView('step-1')
+  view.night_workflow.prompt = null
+  view.night_workflow.deliveries = [
+    { id: 'old', night_no: 2, delivered_result: 3, retracted: false },
+  ]
+  const wrapper = mount(PlayerNightAction, { props: { view, connected: true, pending: [] } })
+  expect(wrapper.text()).toContain('第 2 夜：3')
+})

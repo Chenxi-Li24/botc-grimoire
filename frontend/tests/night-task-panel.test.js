@@ -10,6 +10,7 @@ const roles = [
   { id: 'chef', name: '厨师', team: 'townsfolk', information_resolver: 'chef' },
   { id: 'lunatic', name: '疯子', team: 'outsider', selection: { players: 1, allow_self: true } },
   { id: 'snakecharmer', name: '舞蛇人', team: 'townsfolk', selection: { players: 1, alive_only: true } },
+  { id: 'balloonist', name: '气球驾驶员', team: 'townsfolk', information_resolver: 'balloonist' },
 ]
 const step = {
   id: 's1', actor_seat: 1, character_id: 'imp', name: '小恶魔',
@@ -161,6 +162,70 @@ describe('fixed night workspace', () => {
 
     expect(wrapper.text()).toContain('已自动发送给 2号：2')
     expect(wrapper.find('.task-submit').exists()).toBe(false)
+  })
+
+  it('uses only the dedicated Balloonist card for the current step', () => {
+    const balloonistStep = {
+      ...step, id: 'balloonist-1', actor_seat: 2, character_id: 'balloonist',
+      source: { ability_character: 'balloonist', claimed_by: null },
+      required_fields: ['targets'],
+    }
+    const state = night({
+      workflow: {
+        ...night().workflow, current_step_id: balloonistStep.id,
+        steps: [balloonistStep], current_task: balloonistStep,
+      },
+      currentTask: balloonistStep, inspectedStep: balloonistStep,
+    })
+    const wrapper = mount(NightTaskPanel, {
+      props: { view, night: state, connected: true, pending: [] },
+    })
+    expect(wrapper.find('.task-submit').exists()).toBe(false)
+    expect(wrapper.findComponent(SeatTargetPicker).exists()).toBe(false)
+    expect(wrapper.find('[data-balloonist-card]').exists()).toBe(true)
+  })
+
+  it('shows live poisoned actor and source in the operation panel', () => {
+    const chefStep = {
+      ...step, id: 'chef-live', actor_seat: 2, character_id: 'chef',
+      source: { ability_character: 'chef', claimed_by: null },
+    }
+    const state = night({
+      workflow: {
+        ...night().workflow, current_step_id: chefStep.id,
+        steps: [chefStep], current_task: chefStep,
+        effects: { current: [{ id: 'e1', type: 'poisoned', target_seat: 2,
+          source_seat: 1, source_character: 'poisoner', started_at: '2026-09-22T00:00:00Z',
+          expected_end: 'next_dusk' }], history: [] },
+      },
+      currentTask: chefStep, inspectedStep: chefStep,
+    })
+    const wrapper = mount(NightTaskPanel, {
+      props: { view, night: state, connected: true, pending: [] },
+    })
+    expect(wrapper.get('[data-actor-impairment]').text()).toContain('中毒')
+    expect(wrapper.get('[data-actor-impairment]').text()).toContain('1号')
+    expect(wrapper.get('[data-actor-impairment]').text()).toContain('发送信息前')
+  })
+
+  it('requires truth marking when an actor becomes poisoned after a clean draft', () => {
+    const chefStep = { ...step, actor_seat: 2, character_id: 'chef',
+      source: { ability_character: 'chef', claimed_by: null } }
+    const state = night({
+      workflow: {
+        ...night().workflow, current_task: chefStep,
+        information: { drafts: [{ id: 'd1', actor_seat: 2, resolver_key: 'chef',
+          true_result: 0, legal_results: [0], reason: null, effect_snapshot: [] }], notices: [] },
+        effects: { current: [{ id: 'e1', type: 'poisoned', target_seat: 2,
+          source_seat: 1, state: 'active' }], history: [] },
+      },
+      currentTask: chefStep, inspectedStep: chefStep,
+    })
+    const wrapper = mount(NightTaskPanel, {
+      props: { view, night: state, connected: true, pending: [] },
+    })
+    expect(wrapper.text()).toContain('必须至少标记一条真假记录')
+    expect(wrapper.find('.information-editor .btn.primary').attributes('disabled')).toBeDefined()
   })
 
   it('does not offer a second outcome after the current choice was resolved', () => {

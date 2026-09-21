@@ -75,7 +75,7 @@ function resultText(result) {
 </script>
 
 <template>
-  <section v-if="prompt || view.night_workflow?.deliveries?.length || view.night_workflow?.lunatic_choices?.length || view.my_mad" class="night-action">
+  <section v-if="prompt || view.night_workflow?.receipt || view.night_workflow?.widow_grimoire || view.night_workflow?.deliveries?.length || view.night_workflow?.lunatic_choices?.length || view.my_mad" class="night-action">
     <template v-if="prompt">
       <header>
         <p class="eyebrow">第 {{ view.night_workflow.night_no }} 夜 · 轮到你行动</p>
@@ -105,16 +105,20 @@ function resultText(result) {
         </select>
       </label>
 
-      <section v-if="prompt.character_id === 'widow' && view.grimoire" class="widow-grimoire">
-        <h3>📖 临时魔典</h3>
-        <p v-for="seat in view.grimoire.seats" :key="seat.seat">{{ seat.seat }}号 {{ seat.name || '线下/未领取' }} · {{ seat.role?.name || '未配置' }}</p>
-        <p class="hint">此信息只在你的行动步骤内显示。</p>
-      </section>
-
       <button data-submit-night class="btn primary" :disabled="!canSubmit" type="button" @click="submit">
         {{ requiredTargetCount || needsCharacter ? '提交夜晚选择' : '确认已知晓' }}
       </button>
     </template>
+
+    <p v-if="view.night_workflow?.receipt" class="night-note" role="status">说书人已收到</p>
+
+    <section v-if="view.night_workflow?.widow_grimoire" class="widow-grimoire">
+      <h3>📖 临时魔典</h3>
+      <p v-for="seat in view.night_workflow.widow_grimoire.seats" :key="seat.seat">
+        {{ seat.seat }}号 {{ seat.name || '线下/未领取' }} · 真实：{{ seat.real_character || '未配置' }}<span v-if="seat.perceived_character"> · 自认：{{ seat.perceived_character }}</span>
+      </p>
+      <p class="hint">天亮后自动回收。</p>
+    </section>
 
     <section v-if="view.night_workflow?.lunatic_choices?.length" class="night-note">
       <h3>🩻 疯子的选择</h3>
@@ -126,7 +130,7 @@ function resultText(result) {
     <section v-if="view.night_workflow?.deliveries?.length" class="night-note">
       <h3>📩 说书人信息</h3>
       <p v-for="delivery in view.night_workflow.deliveries" :key="delivery.id" :class="{ retracted: delivery.retracted }">
-        {{ resultText(delivery.delivered_result) }}{{ delivery.retracted ? '（已撤回）' : '' }}
+        {{ delivery.night_no ? `第 ${delivery.night_no} 夜：` : '' }}{{ resultText(delivery.delivered_result) }}{{ delivery.retracted ? '（已撤回）' : '' }}
       </p>
     </section>
 

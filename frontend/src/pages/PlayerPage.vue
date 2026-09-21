@@ -80,6 +80,12 @@ function saveInference(command) {
       <p v-else class="inline-note">点击任意座位记录推测，线下空座也可以标记。只有你和说书人能看到。</p>
     </template>
     <template v-else>
+    <section v-if="view.balloonist_history?.length" class="player-balloonist-history" data-player-balloonist-history>
+      <h3>🎈 我前几夜收到的信息</h3>
+      <p v-for="(item, index) in view.balloonist_history" :key="`${item.night_no}-${index}`">
+        第 {{ item.night_no }} 夜：{{ item.target_label }}<span v-if="item.retracted">（已撤回）</span>
+      </p>
+    </section>
     <PlayerResult v-if="view.result" :view="view" />
     <PlayerLobby
       v-else-if="view.status === 'lobby' || (view.me?.seat == null && !view.traveler)"
@@ -128,4 +134,6 @@ function saveInference(command) {
 
 <style scoped>
 .inference-mode-actions { display: flex; justify-content: flex-end; }
+.player-balloonist-history { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+.player-balloonist-history h3, .player-balloonist-history p { margin: 0; }
 </style>

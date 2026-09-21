@@ -8,9 +8,13 @@ export function createStorytellerService(password) {
   })
 
   return {
-    configure: (script, playerCount) => command('/api/config', {
+    configure: (script, playerCount, balloonist = null) => command('/api/config', {
       script,
       player_count: playerCount,
+      ...(balloonist ? {
+        balloonist_version: balloonist.version,
+        balloonist_outsider_delta: balloonist.outsiderDelta,
+      } : {}),
     }),
     assignRandom: () => command('/api/assign'),
     assignManual: (draft) => command('/api/assign/manual', draft),
@@ -21,6 +25,7 @@ export function createStorytellerService(password) {
     selectNightTargets: (payload) => command('/api/night/select', payload),
     resolveOutcome: (payload) => command('/api/night/outcome', payload),
     deliverInformation: (payload) => command('/api/night/information', payload),
+    balloonist: (payload) => command('/api/night/balloonist', payload),
     applyNightEffect: (payload) => command('/api/night/effect', payload),
     confirmPitHag: (payload) => command('/api/night/pit-hag', payload),
     undoNightEvent: (payload) => command('/api/night/undo', payload),

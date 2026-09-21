@@ -6,6 +6,8 @@ const props = defineProps({
   roles: { type: Array, default: () => [] },
   connected: { type: Boolean, default: false },
   pending: { type: Array, default: () => [] },
+  impairments: { type: Array, default: () => [] },
+  intrinsicDrunk: { type: Boolean, default: false },
 })
 const emit = defineEmits(['set-result', 'set-claims', 'deliver'])
 
@@ -40,8 +42,10 @@ function dreamerTruthLabel(draft) {
   return `正确：${roleName(correct)}；错误：${roleName(incorrect)}`
 }
 function requiresTruthRows(draft) {
-  return ['poisoned', 'drunk', 'information_override', 'vortox_forced_false']
-    .some((reason) => (draft.reason || '').includes(reason))
+  return props.intrinsicDrunk
+    || props.impairments.length > 0
+    || ['poisoned', 'drunk', 'information_override', 'vortox_forced_false']
+      .some((reason) => (draft.reason || '').includes(reason))
 }
 function setRows(draft, next) {
   emit('set-claims', { id: draft.id, claims: next })
@@ -61,7 +65,6 @@ function deliver(draft) {
     draft_id: draft.id,
     delivered_result: parse(result(draft)),
     claims: claimRows.length ? claimRows : undefined,
-    reason: draft.reason || '',
   })
 }
 </script>
@@ -70,7 +73,7 @@ function deliver(draft) {
   <section v-if="drafts.length" class="night-stack">
     <article v-for="draft in drafts" :key="draft.id" class="night-card information-editor">
       <div class="night-card-heading"><h4>编辑并发送信息</h4><span>{{ draft.actor_seat }}号</span></div>
-      <p v-if="draft.effect_snapshot?.length" class="state-alert">异常状态：{{ draft.reason || '存在认知影响' }}</p>
+      <p v-if="draft.effect_snapshot?.length || impairments.length || intrinsicDrunk" class="state-alert">异常状态：{{ draft.reason || '发送前需再次核对当前状态' }}</p>
       <details class="information-reference">
         <summary>查看系统计算结果</summary>
         <p><strong>真实结果</strong></p>

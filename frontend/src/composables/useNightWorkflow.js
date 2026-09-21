@@ -94,6 +94,10 @@ export function useNightWorkflow(viewRef, { service, run }) {
     commandKey('information', payload.draft_id || payload.delivery_id || payload.actor_seat),
     () => service.deliverInformation(payload),
   )
+  const balloonist = (payload) => run(
+    commandKey('balloonist', payload.step_id),
+    () => service.balloonist(payload),
+  )
   const applyNightEffect = (payload) => run(
     commandKey('effect', `${payload.action}:${payload.source_seat}`),
     () => service.applyNightEffect(payload),
@@ -122,6 +126,7 @@ export function useNightWorkflow(viewRef, { service, run }) {
     const required = step.required_fields || []
     if (required.includes('targets') || required.includes('character')) return
     const ability = step.source?.ability_character || step.perceived_as || step.character_id
+    if (ability === 'balloonist') return
     const role = (roles || []).find((item) => item.id === ability)
     if (!role?.information_resolver) return
     if (Object.prototype.hasOwnProperty.call(step.values || {}, 'targets')) return
@@ -217,6 +222,7 @@ export function useNightWorkflow(viewRef, { service, run }) {
     selectNightTargets,
     resolveOutcome,
     deliverInformation,
+    balloonist,
     applyNightEffect,
     confirmPitHag,
     undoNightEvent,

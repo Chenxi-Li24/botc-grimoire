@@ -53,6 +53,7 @@ const nightContext = computed(() => ({
   selectNightTargets: nightWorkflow.selectNightTargets,
   resolveOutcome: nightWorkflow.resolveOutcome,
   deliverInformation: nightWorkflow.deliverInformation,
+  balloonist: nightWorkflow.balloonist,
   applyNightEffect: nightWorkflow.applyNightEffect,
   confirmPitHag: nightWorkflow.confirmPitHag,
   undoNightEvent: nightWorkflow.undoNightEvent,
@@ -123,8 +124,11 @@ function beginManual() {
   leftOpen.value = false
 }
 
-async function configure({ script, playerCount }) {
-  const result = await run('configure', () => service.configure(script, playerCount))
+async function configure({ script, playerCount, balloonistVersion, balloonistOutsiderDelta }) {
+  const balloonist = balloonistVersion
+    ? { version: balloonistVersion, outsiderDelta: balloonistOutsiderDelta }
+    : null
+  const result = await run('configure', () => service.configure(script, playerCount, balloonist))
   if (result) {
     manual.invalidate()
     selectedSeat.value = null

@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { nightErrorMessage, nightStepSummary } from '../../../presentation/nightWorkflow.js'
+import BalloonistTaskCard from './BalloonistTaskCard.vue'
 import EffectHistory from './EffectHistory.vue'
 import InformationEditor from './InformationEditor.vue'
 import OutcomeAdjudicator from './OutcomeAdjudicator.vue'
@@ -52,6 +53,15 @@ const selectedEffects = computed(() => (workflow.value.effects?.history || []).f
 const stepEffects = computed(() => (workflow.value.effects?.history || []).filter((item) => (
   item.source_seat === step.value?.actor_seat
 )))
+const actorImpairments = computed(() => (workflow.value.effects?.current || []).filter((item) => (
+  item.target_seat === step.value?.actor_seat
+  && item.state !== 'suspended'
+  && ['poisoned', 'drunk', 'information_override'].includes(item.type)
+)))
+const actorIsDrunk = computed(() => step.value?.character_id === 'drunk')
+function impairmentLabel(item) {
+  return `${({ poisoned: '中毒', drunk: '醉酒', information_override: '信息异常' })[item.type] || item.type}（来源：${item.source_seat ? `${item.source_seat}号` : '规则'}${item.source_character ? `/${item.source_character}` : ''}；开始：${item.started_at || '未记录'}；结束：${item.expected_end || '待裁定'}）`
+}
 const stepInformationHandled = computed(() => Boolean(
   role.value?.information_resolver
   && Object.prototype.hasOwnProperty.call(step.value?.values || {}, 'targets')
@@ -178,6 +188,13 @@ function confirmUndo(eventId) {
           <p v-if="!isCurrent" class="inline-note">当前为只读查看；点击“回到当前”后才能执行操作。</p>
         </section>
 
+        <section v-if="actorImpairments.length || actorIsDrunk" class="night-card state-alert" data-actor-impairment>
+          <h4>当前行动者异常状态</h4>
+          <p v-if="actorIsDrunk">酒鬼：按自认角色行动，所获信息需标记真假。</p>
+          <p v-for="item in actorImpairments" :key="item.id">{{ impairmentLabel(item) }}</p>
+          <p v-if="role?.information_resolver">发送信息前，请再次核对状态与真假标记。</p>
+        </section>
+
         <section v-if="recordedTargets.length || recordedCharacter" class="night-card" data-night-recorded-choice>
           <div class="night-card-heading"><h4>已记录选择</h4><span>来自当前夜晚记录</span></div>
           <p v-if="recordedTargets.length">玩家：{{ recordedTargets.map((seat) => `${seat}号`).join('、') }}</p>
@@ -190,7 +207,7 @@ function confirmUndo(eventId) {
         </section>
 
         <SeatTargetPicker
-          v-if="isCurrent && selection?.players && !stepSelectionRecorded && !stepOutcomeHandled && !stepInformationHandled"
+          v-if="isCurrent && actorRoleId !== 'balloonist' && selection?.players && !stepSelectionRecorded && !stepOutcomeHandled && !stepInformationHandled"
           :seats="view.seats"
           :roles="view.roles"
           :selected="night.selectedTargets"
@@ -198,6 +215,15 @@ function confirmUndo(eventId) {
           :selection="selection"
           @toggle="night.toggleTarget($event, step.id)"
           @inspect="night.setSelectedSeat($event)"
+        />
+
+        <BalloonistTaskCard
+          v-if="actorRoleId === 'balloonist'"
+          :view="view"
+          :step="step"
+          :connected="connected && isCurrent"
+          :pending="pending"
+          :execute="night.balloonist"
         />
 
         <PitHagCard
@@ -226,7 +252,7 @@ function confirmUndo(eventId) {
         </label>
 
         <button
-          v-if="isCurrent && step.actor_seat && actorRoleId !== 'pithag' && !stepOutcomes.length && !stepDrafts.length && !stepSelectionRecorded && !stepInformationHandled && !stepOutcomeHandled"
+          v-if="isCurrent && step.actor_seat && !['pithag', 'balloonist'].includes(actorRoleId) && !stepOutcomes.length && !stepDrafts.length && !stepSelectionRecorded && !stepInformationHandled && !stepOutcomeHandled"
           class="btn primary task-submit"
           type="button"
           :disabled="!connected || actionBusy || (selection?.players && night.selectedTargets.length !== selection.players) || (selection?.characters && !night.selectedCharacter)"
@@ -242,10 +268,13 @@ function confirmUndo(eventId) {
           @resolve="night.resolveOutcome"
         />
         <InformationEditor
+          v-if="actorRoleId !== 'balloonist'"
           :drafts="stepDrafts"
           :results="night.informationResults"
           :claims="night.informationClaims"
           :roles="view.roles"
+          :impairments="actorImpairments"
+          :intrinsic-drunk="actorIsDrunk"
           :connected="connected && isCurrent"
           :pending="pending"
           @set-result="handleResultUpdate"

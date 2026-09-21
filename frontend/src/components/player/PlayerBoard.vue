@@ -46,6 +46,7 @@ function seatPosition(index) {
         @click="$emit('select-participant', slot.seat)"
       >
         <strong>{{ slot.seat }}号</strong>
+        <img v-if="slot.player?.avatar_url" class="player-avatar" :src="slot.player.avatar_url" alt="" />
         <span>{{ slot.player?.name || '空座' }}</span>
         <template v-if="inferenceMode && guessFor(slot.seat).roleName">
           <img v-if="roleIconUrl(guessFor(slot.seat).role)" class="guess-icon" :src="roleIconUrl(guessFor(slot.seat).role)" alt="" />
@@ -81,6 +82,7 @@ function seatPosition(index) {
 .public-seat strong { font-size: clamp(8px, 1.8vw, 10px); }
 .public-seat span { font-size: clamp(8px, 2.1vw, 12px); }
 .public-seat small { font-size: clamp(7px, 1.8vw, 9px); }
+.player-avatar { width: 19px; height: 19px; border-radius: 50%; object-fit: cover; }
 .guess-icon { width: 18px; height: 18px; object-fit: contain; }
 .guess-label { color: #b6e6ff; }
 .public-seat span, .public-seat small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

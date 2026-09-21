@@ -125,4 +125,31 @@ describe('night workflow state', () => {
       action: 'prepare', step_id: chefStep.id, actor_seat: 5, targets: [],
     }))
   })
+
+  it('leaves Balloonist information to its dedicated preview/send workflow', async () => {
+    const balloonistStep = {
+      id: 'balloonist-night', actor_seat: 5, character_id: 'balloonist', status: 'current',
+      required_fields: [], source: { ability_character: 'balloonist' },
+    }
+    const view = shallowRef({
+      roles: [{ id: 'balloonist', information_resolver: 'balloonist' }],
+      night_workflow: {
+        current_step_id: balloonistStep.id, steps: [balloonistStep], current_task: balloonistStep,
+        information: { drafts: [], deliveries: [], notices: [] },
+        outcomes: { pending: [] }, seat_context: [{ seat: 5 }],
+      },
+    })
+    const service = {
+      deliverInformation: vi.fn(),
+      balloonist: vi.fn().mockResolvedValue({ result: { target: 2 } }),
+    }
+    const state = useNightWorkflow(view, {
+      service, run: vi.fn((_key, operation) => operation()),
+    })
+    await nextTick()
+    expect(service.deliverInformation).not.toHaveBeenCalled()
+    await expect(state.balloonist({ action: 'preview', step_id: balloonistStep.id, target: 2 }))
+      .resolves.toEqual({ result: { target: 2 } })
+    expect(service.balloonist).toHaveBeenCalledWith({ action: 'preview', step_id: balloonistStep.id, target: 2 })
+  })
 })
