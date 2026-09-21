@@ -5,6 +5,7 @@ import ManualAssignmentPanel from './ManualAssignmentPanel.vue'
 import PlayerDetailPanel from './PlayerDetailPanel.vue'
 import NightTaskPanel from './night/NightTaskPanel.vue'
 import TravelerPanel from './TravelerPanel.vue'
+import StorytellerChatPanel from './StorytellerChatPanel.vue'
 
 const props = defineProps({
   view: { type: Object, required: true },
@@ -21,6 +22,7 @@ defineEmits([
   'toggle-lunatic-minion', 'toggle-lunatic-bluff', 'set-godfather',
   'cancel-manual', 'confirm-manual',
   'add-traveler', 'assign-traveler', 'set-traveler-exile', 'toggle-traveler-alive',
+  'answer-chat-invite', 'send-storyteller-chat', 'leave-storyteller-chat', 'close-storyteller-chat', 'recall-chats',
 ])
 
 const selected = computed(() => props.view.seats?.find((seat) => (
@@ -29,8 +31,20 @@ const selected = computed(() => props.view.seats?.find((seat) => (
 </script>
 
 <template>
+  <StorytellerChatPanel
+    v-if="adminTab === 'chats' && view.status === 'playing'"
+    :view="view"
+    :connected="connected"
+    :pending="pending"
+    :error="error"
+    @answer-invite="$emit('answer-chat-invite', $event)"
+    @send="$emit('send-storyteller-chat', $event)"
+    @leave="$emit('leave-storyteller-chat', $event)"
+    @close="$emit('close-storyteller-chat', $event)"
+    @recall="$emit('recall-chats')"
+  />
   <TravelerPanel
-    v-if="adminTab === 'travelers' && view.status === 'playing'"
+    v-else-if="adminTab === 'travelers' && view.status === 'playing'"
     :view="view"
     :connected="connected"
     :pending="pending"

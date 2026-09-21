@@ -6,7 +6,7 @@ const props = defineProps({
   view: { type: Object, required: true },
   connectionStatus: { type: String, required: true },
 })
-const emit = defineEmits(['open-left', 'open-right', 'open-travelers'])
+const emit = defineEmits(['open-left', 'open-right', 'open-travelers', 'open-chats'])
 
 const scriptName = computed(() => getScriptName(props.view))
 const phaseLabel = computed(() => getPhaseLabel(props.view))
@@ -25,6 +25,7 @@ const connectionLabel = computed(() => ({
     <span class="connection-badge" :data-status="connectionStatus">{{ connectionLabel }}</span>
     <a class="btn header-primary" href="/legacy/#/storyteller">旧版白天与复盘工具</a>
     <button v-if="view.status === 'playing'" data-open-travelers class="btn" type="button" @click="emit('open-travelers')">🎒 旅行者</button>
+    <button v-if="view.status === 'playing'" data-open-chats class="btn" type="button" @click="emit('open-chats')">💬 私聊</button>
     <button class="drawer-toggle drawer-toggle-right" type="button" @click="emit('open-right')">当前任务</button>
   </div>
 </template>

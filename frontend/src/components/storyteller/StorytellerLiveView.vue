@@ -82,9 +82,9 @@ function selectSeat(seat) {
   leftOpen.value = false
 }
 
-function openTravelers() {
+function openAdmin(tab) {
   selectedSeat.value = null
-  adminTab.value = 'travelers'
+  adminTab.value = tab
   rightOpen.value = true
   leftOpen.value = false
 }
@@ -125,6 +125,11 @@ const addTraveler = (name) => run('traveler:add', () => service.addTraveler(name
 const assignTraveler = ({ id, role, align }) => run(`traveler:assign:${id}`, () => service.assignTraveler(id, role, align))
 const setTravelerExile = ({ id, exiled }) => run(`traveler:exile:${id}`, () => service.setTravelerExile(id, exiled))
 const toggleTravelerAlive = (id) => run(`traveler:alive:${id}`, () => service.toggleTravelerAlive(id))
+const answerChatInvite = ({ id, accept }) => run(`chat-st:invite:${id}`, () => service.answerChatInvite(id, accept))
+const sendStorytellerChat = ({ id, text }) => run(`chat-st:send:${id}`, () => service.sendStorytellerChat(id, text))
+const leaveStorytellerChat = (id) => run(`chat-st:leave:${id}`, () => service.leaveStorytellerChat(id))
+const closeStorytellerChat = (id) => run(`chat-st:close:${id}`, () => service.closeStorytellerChat(id))
+const recallChats = () => run('chat-st:recall', () => service.recallChats())
 
 async function assignRandom() {
   const result = await run('assign-random', () => service.assignRandom())
@@ -166,7 +171,8 @@ watch(() => view.value?.seats, (nextSeats) => {
         :connection-status="connectionStatus"
         @open-left="leftOpen = true; rightOpen = false"
         @open-right="adminTab = null; rightOpen = true; leftOpen = false"
-        @open-travelers="openTravelers"
+        @open-travelers="openAdmin('travelers')"
+        @open-chats="openAdmin('chats')"
       />
     </template>
     <template #controls>
@@ -227,6 +233,11 @@ watch(() => view.value?.seats, (nextSeats) => {
         @assign-traveler="assignTraveler"
         @set-traveler-exile="setTravelerExile"
         @toggle-traveler-alive="toggleTravelerAlive"
+        @answer-chat-invite="answerChatInvite"
+        @send-storyteller-chat="sendStorytellerChat"
+        @leave-storyteller-chat="leaveStorytellerChat"
+        @close-storyteller-chat="closeStorytellerChat"
+        @recall-chats="recallChats"
       />
     </template>
   </StorytellerShell>

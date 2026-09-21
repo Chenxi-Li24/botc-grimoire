@@ -86,3 +86,20 @@ it('sends traveler administration with the existing REST payloads', async () => 
     { id: 't1' }, { id: 't1', exiled: true },
   ])
 })
+
+it('sends storyteller chat commands to the existing REST endpoints', async () => {
+  const service = createStorytellerService('secret')
+  await service.answerChatInvite(2, true)
+  await service.sendStorytellerChat(2, '晚上见')
+  await service.leaveStorytellerChat(2)
+  await service.closeStorytellerChat(2)
+  await service.recallChats()
+
+  expect(api.mock.calls.map(([path]) => path)).toEqual([
+    '/api/chat-st/2/invite', '/api/chat-st/2/send', '/api/chat-st/2/leave',
+    '/api/chat-st/2/close', '/api/chat-st/recall',
+  ])
+  expect(JSON.parse(api.mock.calls[0][1].body)).toEqual({ accept: true })
+  expect(JSON.parse(api.mock.calls[1][1].body)).toEqual({ text: '晚上见' })
+  expect(api.mock.calls.slice(2).every(([, options]) => !('body' in options))).toBe(true)
+})

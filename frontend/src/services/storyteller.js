@@ -33,5 +33,10 @@ export function createStorytellerService(password) {
     assignTraveler: (id, role, align) => command('/api/traveler/assign', { id, role, align }),
     setTravelerExile: (id, exiled) => command('/api/traveler/exile', { id, exiled }),
     toggleTravelerAlive: (id) => command('/api/traveler/alive', { id }),
+    answerChatInvite: (id, accept) => command(`/api/chat-st/${id}/invite`, { accept }),
+    sendStorytellerChat: (id, text) => command(`/api/chat-st/${id}/send`, { text }),
+    leaveStorytellerChat: (id) => command(`/api/chat-st/${id}/leave`),
+    closeStorytellerChat: (id) => command(`/api/chat-st/${id}/close`),
+    recallChats: () => command('/api/chat-st/recall'),
   }
 }
