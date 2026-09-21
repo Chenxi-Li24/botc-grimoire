@@ -37,8 +37,12 @@ function nextScene() {
     const bell = playBell(active.value, props.volume)
     if (bell) {
       soundStop = bell.stop
-      emit('sound-active', true)
-      soundTimer = setTimeout(stopSound, bell.durationMs)
+      void bell.ready.then((ready) => {
+        if (soundStop !== bell.stop) return
+        if (!ready || !props.soundEnabled) { stopSound(); return }
+        emit('sound-active', true)
+        soundTimer = setTimeout(stopSound, bell.durationMs)
+      })
     }
   }
   const reduced = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches
@@ -50,7 +54,8 @@ watch(() => props.view, (current, previous) => {
   if (!previous || !current || current.phase === previous.phase) return
   const scenes = []
   if (previous.phase === 'day' && current.phase === 'night') {
-    if ((current.nominations || []).some((item) => item.day === previous.day_no && item.executed)) {
+    if ((current.nominations || []).some((item) => item.day === previous.day_no
+        && item.executed && Number.isInteger(item.nominee))) {
       scenes.push('execution')
     }
     scenes.push('night')
@@ -86,7 +91,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.stage-transition { position: fixed; inset: 0; z-index: 300; display: grid; place-items: center; overflow: hidden; pointer-events: none; color: #f6ebe1; background: #120c12e8; animation: scene-enter .5s ease-out both; }
+.stage-transition { position: fixed; inset: 0; z-index: 300; display: grid; place-items: center; overflow: hidden; pointer-events: auto; color: #f6ebe1; background: #120c12e8; animation: scene-enter .5s ease-out both; }
 .stage-transition--night { background: radial-gradient(circle at 50% 43%, #3d1b22ed, #100d13fa 68%); }
 .stage-transition--day { color: #472c19; background: radial-gradient(circle at 50% 42%, #fff3d9ee, #f6b95bf5 70%, #ad6039); }
 .stage-transition--execution { background: radial-gradient(circle at 50% 45%, #5b2028f5, #180d13fc 65%); }
@@ -112,5 +117,5 @@ onBeforeUnmount(() => {
 @keyframes lights-out { from { filter: brightness(2.4); opacity: .2; } to { filter: brightness(.2); opacity: 1; } }
 @keyframes lights-on { from { filter: brightness(.2); opacity: .2; } to { filter: brightness(2); opacity: 1; } }
 @keyframes clock-stop { from { transform: rotate(-20deg); } to { transform: rotate(0deg); } }
-@media (prefers-reduced-motion: reduce) { .stage-transition * { animation: none !important; transition: none !important; } }
+@media (prefers-reduced-motion: reduce) { .stage-transition, .stage-transition * { animation: none !important; transition: none !important; } }
 </style>

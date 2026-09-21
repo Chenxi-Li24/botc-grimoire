@@ -51,6 +51,12 @@ it('separates a confirmed execution from the dusk scene and never depicts a tie 
     nominations: [{ day: 2, executed: false, nominee: 4 }] } })
   expect(tie.get('[data-scene-transition]').attributes('data-scene-transition')).toBe('night')
   tie.unmount()
+
+  const travelerExile = mount(StorytellerBgm, { props: { view: day } })
+  await travelerExile.setProps({ view: { phase: 'night', night_no: 3,
+    nominations: [{ day: 2, executed: true, nominee: 'traveler-1' }] } })
+  expect(travelerExile.get('[data-scene-transition]').attributes('data-scene-transition')).toBe('night')
+  travelerExile.unmount()
 })
 
 it('introduces daylight after night without replaying an animation on initial connection', async () => {
@@ -84,9 +90,39 @@ it('rings the daytime bell only when storyteller sound is enabled, then stops on
     } })
     await wrapper.setProps({ view: { phase: 'day', day_no: 2 } })
     expect(starts).toHaveLength(8)
-    expect(wrapper.emitted('sound-active')).toContainEqual([true])
+    await vi.waitFor(() => expect(wrapper.emitted('sound-active')).toContainEqual([true]))
     await wrapper.setProps({ soundEnabled: false })
     expect(wrapper.emitted('sound-active').at(-1)).toEqual([false])
+    wrapper.unmount()
+  } finally {
+    vi.unstubAllGlobals()
+  }
+})
+
+it('does not duck music when the browser refuses bell audio activation', async () => {
+  let closes = 0
+  class BlockedAudioContext {
+    currentTime = 0
+    destination = {}
+    createOscillator() {
+      return { frequency: { value: 0 }, connect: (target) => target,
+        start: () => {}, stop: () => {} }
+    }
+    createGain() {
+      return { gain: { setValueAtTime: () => {}, exponentialRampToValueAtTime: () => {} },
+        connect: (target) => target }
+    }
+    resume() { return Promise.reject(new Error('autoplay blocked')) }
+    close() { closes += 1; return Promise.resolve() }
+  }
+  vi.stubGlobal('AudioContext', BlockedAudioContext)
+  try {
+    const wrapper = mount(StageTransition, { props: {
+      view: { phase: 'night', night_no: 2 }, soundEnabled: true,
+    } })
+    await wrapper.setProps({ view: { phase: 'day', day_no: 2 } })
+    await vi.waitFor(() => expect(closes).toBe(1))
+    expect(wrapper.emitted('sound-active') || []).not.toContainEqual([true])
     wrapper.unmount()
   } finally {
     vi.unstubAllGlobals()

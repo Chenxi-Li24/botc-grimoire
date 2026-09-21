@@ -21,8 +21,10 @@ export function playBell(scene, volume = 35) {
         oscillator.stop(context.currentTime + delay + 1.5)
       }
     }
-    void context.resume?.().catch(() => {})
-    return { durationMs: strikes.length > 1 ? 2050 : 1550,
+    const ready = context.resume
+      ? Promise.resolve(context.resume()).then(() => context.state !== 'suspended').catch(() => false)
+      : Promise.resolve(context.state !== 'suspended')
+    return { ready, durationMs: strikes.length > 1 ? 2050 : 1550,
       stop: () => { void context.close().catch(() => {}) } }
   } catch {
     void context?.close?.().catch(() => {})

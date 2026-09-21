@@ -55,6 +55,7 @@ async function join() {
 <template>
   <main class="page center">
     <OpeningIntro v-if="showOpening" @close="closeOpening" />
+    <div class="join-home-content" data-join-content :inert="showOpening ? '' : null" :aria-hidden="showOpening ? 'true' : null">
     <h1>🩸 血染钟楼</h1>
     <p class="sub">{{ account ? '输入房间号，使用账户昵称加入本局，然后选座入座' : '输入名字和房间号加入本局，然后选座入座' }}</p>
     <p v-if="account" class="inline-note">已登录账户：{{ account }}。加入新局后会自动关联此账户。</p>
@@ -88,5 +89,10 @@ async function join() {
     <button v-if="account && !recovering" data-account-settings class="btn" type="button" @click="emit('account')">账户设置</button>
     <button v-if="!account && !recovering" data-account-entry class="btn" type="button" @click="emit('account')">账户登录或注册</button>
     <span class="credit">botc-grimoire · github.com/Chenxi-Li24/botc-grimoire</span>
+    </div>
   </main>
 </template>
+
+<style scoped>
+.join-home-content { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
+</style>
