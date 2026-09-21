@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { formatInformationResult } from '../../presentation/information.js'
 
 const teamLabels = {
   townsfolk: '镇民', outsider: '外来者', minion: '爪牙', demon: '恶魔', traveler: '旅行者',
@@ -120,7 +121,7 @@ function seatsLabel(items) {
 
 function informationValue(value) {
   if (value == null) return '未记录'
-  return typeof value === 'string' ? value : JSON.stringify(value)
+  return formatInformationResult(value, props.view.roles)
 }
 
 function registrationLabel(item) {

@@ -1,11 +1,13 @@
 <script setup>
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { playBell } from '../../presentation/bell.js'
 
 const props = defineProps({
   view: { type: Object, required: true },
   soundEnabled: { type: Boolean, default: false },
   volume: { type: Number, default: 35 },
+  skipFirstDay: { type: Boolean, default: false },
+  initialScene: { type: String, default: null },
 })
 const emit = defineEmits(['sound-active', 'scene-change'])
 const active = ref(null)
@@ -53,14 +55,16 @@ function nextScene() {
 watch(() => props.view, (current, previous) => {
   if (!previous || !current || current.phase === previous.phase) return
   const scenes = []
-  if (previous.phase === 'day' && current.phase === 'night') {
+  if (previous.phase == null && current.phase === 'night' && current.night_no === 1) {
+    scenes.push('night')
+  } else if (previous.phase === 'day' && current.phase === 'night') {
     if ((current.nominations || []).some((item) => item.day === previous.day_no
         && item.executed && Number.isInteger(item.nominee))) {
       scenes.push('execution')
     }
     scenes.push('night')
   } else if (previous.phase === 'night' && current.phase === 'day') {
-    scenes.push('day')
+    if (!(props.skipFirstDay && previous.night_no === 1 && current.day_no === 1)) scenes.push('day')
   }
   if (!scenes.length) return
   waiting = scenes
@@ -68,6 +72,12 @@ watch(() => props.view, (current, previous) => {
 })
 
 watch(() => props.soundEnabled, (enabled) => { if (!enabled) stopSound() })
+onMounted(() => {
+  if (props.initialScene && labels[props.initialScene]) {
+    waiting = [props.initialScene]
+    nextScene()
+  }
+})
 onBeforeUnmount(() => {
   clearTimeout(sceneTimer)
   stopSound()

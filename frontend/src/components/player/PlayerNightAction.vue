@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { formatInformationResult } from '../../presentation/information.js'
 
 const props = defineProps({
   view: { type: Object, required: true },
@@ -70,7 +71,7 @@ function submit() {
 }
 
 function resultText(result) {
-  return typeof result === 'string' ? result : JSON.stringify(result)
+  return formatInformationResult(result, props.view.script_roles)
 }
 </script>
 

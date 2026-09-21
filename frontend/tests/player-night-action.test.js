@@ -102,3 +102,15 @@ it('labels remembered information by the original night', () => {
   const wrapper = mount(PlayerNightAction, { props: { view, connected: true, pending: [] } })
   expect(wrapper.text()).toContain('第 2 夜：3')
 })
+
+it('renders investigator role identifiers as Chinese role names in delivered information', () => {
+  const view = makeNightPlayerView('step-1')
+  view.script_roles = [{ id: 'poisoner', name: '投毒者', team: 'minion' }]
+  view.night_workflow.prompt = null
+  view.night_workflow.deliveries = [{ id: 'investigator-1', night_no: 1,
+    delivered_result: { character_id: 'poisoner', seats: [2, 5], count: 1 }, retracted: false }]
+  const wrapper = mount(PlayerNightAction, { props: { view, connected: true, pending: [] } })
+  expect(wrapper.text()).toContain('2号与5号中有一位是投毒者')
+  expect(wrapper.text()).not.toContain('character_id')
+  expect(wrapper.text()).not.toContain('poisoner')
+})

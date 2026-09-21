@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import PlayerBoard from '../components/player/PlayerBoard.vue'
 import InferenceEditor from '../components/player/InferenceEditor.vue'
 import PlayerChat from '../components/player/PlayerChat.vue'
@@ -8,6 +8,9 @@ import PlayerLobby from '../components/player/PlayerLobby.vue'
 import PlayerNightAction from '../components/player/PlayerNightAction.vue'
 import PlayerResult from '../components/player/PlayerResult.vue'
 import PlayerRoleCard from '../components/player/PlayerRoleCard.vue'
+import PlayerCeremony from '../components/player/PlayerCeremony.vue'
+import OpeningIntro from '../components/player/OpeningIntro.vue'
+import StageTransition from '../components/storyteller/StageTransition.vue'
 import PlayerShell from '../components/player/PlayerShell.vue'
 import PublicTimeline from '../components/player/PublicTimeline.vue'
 import { usePlayerActions } from '../composables/usePlayerActions.js'
@@ -32,6 +35,31 @@ const { pending, error, run } = usePlayerActions({ service, connected })
 const selectedParticipant = ref(null)
 const inferenceMode = ref(false)
 const playerChat = ref(null)
+const ceremonyActive = ref(true)
+const showOpening = ref(false)
+const openingKey = `botc_first_dawn_${props.playerId}`
+const firstNightKey = `botc_first_night_${props.playerId}`
+const initialNightScene = computed(() => view.value?.phase === 'night' && view.value.night_no === 1
+  && globalThis.sessionStorage?.getItem(firstNightKey) !== '1' ? 'night' : null)
+
+watch(view, (current) => {
+  if (current?.status === 'playing' && current.phase === 'day' && current.day_no === 1
+      && !current.result
+      && globalThis.sessionStorage?.getItem(openingKey) !== '1') {
+    showOpening.value = true
+  }
+}, { immediate: true })
+
+function closeOpening() {
+  showOpening.value = false
+  globalThis.sessionStorage?.setItem(openingKey, '1')
+}
+
+function onSceneChange(scene) {
+  if (scene === 'night' && view.value?.night_no === 1) {
+    globalThis.sessionStorage?.setItem(firstNightKey, '1')
+  }
+}
 
 async function handleChatCommand(command) {
   const cid = command.cid ?? 'new'
@@ -63,7 +91,8 @@ function saveInference(command) {
       {{ connectionStatus === 'reconnecting' ? '正在重新连接…' : '正在连接房间…' }}
     </p>
   </main>
-  <PlayerShell v-else data-player-page :view="view" :connection-status="connectionStatus">
+  <PlayerShell v-else data-player-page :view="view" :connection-status="connectionStatus"
+    :inert="ceremonyActive || showOpening ? '' : null" :aria-hidden="ceremonyActive || showOpening ? 'true' : null">
     <template #header-actions>
       <div class="player-account-actions">
         <button v-if="!account" data-open-account class="btn" type="button" @click="emit('account')">绑定账户</button>
@@ -130,6 +159,10 @@ function saveInference(command) {
     </template>
     </template>
   </PlayerShell>
+  <PlayerCeremony v-if="view" :view="view" :player-id="playerId" @active-change="ceremonyActive = $event" />
+  <OpeningIntro v-if="showOpening && !ceremonyActive" @close="closeOpening" />
+  <StageTransition v-if="view && !ceremonyActive && !showOpening" :view="view"
+    :initial-scene="initialNightScene" skip-first-day @scene-change="onSceneChange" />
 </template>
 
 <style scoped>

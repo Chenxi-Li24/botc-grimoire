@@ -8,6 +8,7 @@ import {
   makeFinishedPlayerView,
   makeLobbyPlayerView,
   makeNightPlayerView,
+  makePlayerView,
 } from './fixtures/playerView.js'
 
 vi.mock('../src/composables/usePlayerView.js', () => ({ usePlayerView: vi.fn() }))
@@ -16,7 +17,103 @@ let currentView
 
 beforeEach(() => {
   currentView = shallowRef(null)
+  sessionStorage.clear()
   usePlayerView.mockReturnValue({ view: currentView, connectionStatus: ref('connected') })
+})
+
+it('welcomes a newly joined player before the board and reveals their private role with a flip', async () => {
+  currentView.value = makeLobbyPlayerView()
+  const wrapper = mount(PlayerPage, { props: { playerId: 'p1' } })
+  expect(wrapper.get('[data-player-welcome]').text()).toContain('鸦木布拉夫镇')
+  await wrapper.get('[data-welcome-enter]').trigger('click')
+  expect(wrapper.find('[data-player-welcome]').exists()).toBe(false)
+  currentView.value = makePlayerView()
+  await wrapper.vm.$nextTick()
+  expect(wrapper.get('[data-identity-reveal]').text()).not.toContain('厨师')
+  await wrapper.get('[data-identity-flip]').trigger('click')
+  expect(wrapper.get('[data-identity-reveal]').text()).toContain('厨师')
+  expect(wrapper.get('[data-identity-reveal]').text()).toContain('你得知相邻邪恶玩家对数')
+  await wrapper.get('[data-identity-enter]').trigger('click')
+  expect(wrapper.find('[data-identity-reveal]').exists()).toBe(false)
+  expect(wrapper.get('.public-board').exists()).toBe(true)
+  wrapper.unmount()
+  const revisit = mount(PlayerPage, { props: { playerId: 'p1' } })
+  expect(revisit.find('[data-player-welcome]').exists()).toBe(false)
+  expect(revisit.find('[data-identity-reveal]').exists()).toBe(false)
+  revisit.unmount()
+})
+
+it('shows the storyteller clocktower scene only when the first night ends', async () => {
+  sessionStorage.setItem('botc_welcome_p1', '1')
+  sessionStorage.setItem('botc_role_seen_p1', '1')
+  currentView.value = makePlayerView({ phase: 'night', night_no: 1 })
+  const wrapper = mount(PlayerPage, { props: { playerId: 'p1' } })
+  expect(wrapper.find('[data-opening-intro]').exists()).toBe(false)
+  currentView.value = makeDayPlayerView()
+  await wrapper.vm.$nextTick()
+  expect(wrapper.get('[data-opening-intro]').text()).toContain('说书人被吊死在钟楼之上')
+  await wrapper.get('[data-opening-skip]').trigger('click')
+  expect(wrapper.find('[data-opening-intro]').exists()).toBe(false)
+  wrapper.unmount()
+  const revisit = mount(PlayerPage, { props: { playerId: 'p1' } })
+  expect(revisit.find('[data-opening-intro]').exists()).toBe(false)
+  revisit.unmount()
+})
+
+it('moves keyboard focus into each private ceremony step', async () => {
+  currentView.value = makePlayerView()
+  const wrapper = mount(PlayerPage, { props: { playerId: 'p1' }, attachTo: document.body })
+  await wrapper.vm.$nextTick()
+  expect(document.activeElement).toBe(wrapper.get('[data-welcome-enter]').element)
+  await wrapper.get('[data-welcome-enter]').trigger('click')
+  await wrapper.vm.$nextTick()
+  expect(document.activeElement).toBe(wrapper.get('[data-identity-flip]').element)
+  await wrapper.get('[data-identity-flip]').trigger('click')
+  await wrapper.vm.$nextTick()
+  expect(document.activeElement).toBe(wrapper.get('[data-identity-enter]').element)
+  wrapper.unmount()
+})
+
+it('still plays an unseen first-dawn scene when reconnecting directly on day one', async () => {
+  sessionStorage.setItem('botc_welcome_p1', '1')
+  sessionStorage.setItem('botc_role_seen_p1', '1')
+  currentView.value = makeDayPlayerView()
+  const wrapper = mount(PlayerPage, { props: { playerId: 'p1' } })
+  await wrapper.vm.$nextTick()
+  expect(wrapper.get('[data-opening-intro]').text()).toContain('说书人被吊死在钟楼之上')
+  wrapper.unmount()
+})
+
+it('waits for the role ceremony before starting the first-dawn scene timer', async () => {
+  vi.useFakeTimers()
+  try {
+    currentView.value = makeDayPlayerView()
+    const wrapper = mount(PlayerPage, { props: { playerId: 'p1' } })
+    expect(wrapper.find('[data-player-welcome]').exists()).toBe(true)
+    expect(wrapper.find('[data-opening-intro]').exists()).toBe(false)
+    vi.advanceTimersByTime(3500)
+    await wrapper.get('[data-welcome-enter]').trigger('click')
+    await wrapper.get('[data-identity-flip]').trigger('click')
+    await wrapper.get('[data-identity-enter]').trigger('click')
+    expect(wrapper.get('[data-opening-intro]').text()).toContain('说书人被吊死在钟楼之上')
+    wrapper.unmount()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('plays the first lights-out scene after identity reveal, never behind it', async () => {
+  currentView.value = makeLobbyPlayerView()
+  const wrapper = mount(PlayerPage, { props: { playerId: 'p1' } })
+  await wrapper.get('[data-welcome-enter]').trigger('click')
+  currentView.value = makePlayerView({ phase: 'night', night_no: 1 })
+  await wrapper.vm.$nextTick()
+  expect(wrapper.get('[data-identity-reveal]').exists()).toBe(true)
+  expect(wrapper.find('[data-scene-transition]').exists()).toBe(false)
+  await wrapper.get('[data-identity-flip]').trigger('click')
+  await wrapper.get('[data-identity-enter]').trigger('click')
+  expect(wrapper.get('[data-scene-transition="night"]').text()).toContain('灯光熄灭')
+  wrapper.unmount()
 })
 
 const states = {

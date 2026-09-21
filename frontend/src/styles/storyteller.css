@@ -151,7 +151,6 @@ body:has(.storyteller-shell) { overflow: hidden; }
 .grimoire-seat.team-minion, .grimoire-seat.team-demon, .grimoire-seat.team-evil { --team-color: #cf4149; }
 .grimoire-seat.team-traveler { --team-color: #d6ad55; }
 .seat-role-icon { width: 40px; height: 40px; object-fit: contain; flex: none; }
-.seat-role-icon.is-avatar { object-fit: cover; border-radius: 50%; }
 .grimoire-seat.is-empty { opacity: .42; border-style: dashed; }
 .grimoire-seat.is-unclaimed { border-style: dashed; }
 .grimoire-seat.is-dead { filter: grayscale(.75); opacity: .62; }

@@ -186,6 +186,19 @@ describe('fixed night workspace', () => {
     expect(wrapper.find('.task-submit').exists()).toBe(false)
   })
 
+  it('shows an automatically sent investigator result as a readable role instead of a raw ID', () => {
+    const state = night()
+    state.workflow.information.notices = [{
+      id: 'notice-investigator', kind: 'automatic_information_sent', actor_seat: 1,
+      payload: { character_id: 'poisoner', seats: [2, 5], count: 1 },
+    }]
+    const wrapper = mount(NightTaskPanel, {
+      props: { view: { ...view, roles: [...roles, { id: 'poisoner', name: '投毒者', team: 'minion' }] }, night: state, connected: true, pending: [] },
+    })
+    expect(wrapper.text()).toContain('已自动发送给 1号：2号与5号中有一位是投毒者')
+    expect(wrapper.text()).not.toContain('character_id')
+  })
+
   it('uses only the dedicated Balloonist card for the current step', () => {
     const balloonistStep = {
       ...step, id: 'balloonist-1', actor_seat: 2, character_id: 'balloonist',

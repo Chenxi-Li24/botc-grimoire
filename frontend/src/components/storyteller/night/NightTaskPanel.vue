@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { nightErrorMessage, nightStepSummary } from '../../../presentation/nightWorkflow.js'
+import { formatInformationResult } from '../../../presentation/information.js'
 import BalloonistTaskCard from './BalloonistTaskCard.vue'
 import EffectHistory from './EffectHistory.vue'
 import InformationEditor from './InformationEditor.vue'
@@ -113,9 +114,7 @@ function omissionLabel(value) {
 function noticeText(notice) {
   if (notice.message || notice.text) return notice.message || notice.text
   const recipient = notice.actor_seat ? `${notice.actor_seat}号` : '对应玩家'
-  const payload = typeof notice.payload === 'string'
-    ? notice.payload
-    : JSON.stringify(notice.payload)
+  const payload = formatInformationResult(notice.payload, props.view.roles)
   return `已自动发送给 ${recipient}：${payload}`
 }
 function targetRoleTeams() {

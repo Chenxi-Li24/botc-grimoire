@@ -35,14 +35,12 @@ it('warns that an unset lunatic perception is unknown', () => {
   expect(wrapper.text()).not.toContain('他以为')
 })
 
-it('uses a claimed player avatar and falls back to the role icon with descriptive alt text', async () => {
+it('keeps storyteller seats on role icons even when a player has an avatar', () => {
   const withAvatar = mount(SeatNode, {
     props: { seat: { seat: 1, player: { name: '阿青', role: imp, avatar_url: '/avatars/a.png' } }, position: {} },
   })
-  expect(withAvatar.get('img').attributes('src')).toBe('/avatars/a.png')
-  expect(withAvatar.get('img').attributes('alt')).toContain('阿青')
-  await withAvatar.get('img').trigger('error')
   expect(withAvatar.get('img').attributes('src')).toContain('imp')
+  expect(withAvatar.get('img').attributes('alt')).toContain('小恶魔')
   const fallback = mount(SeatNode, {
     props: { seat: { seat: 2, player: { name: '小白', role: imp } }, position: {} },
   })
@@ -102,6 +100,17 @@ it('shows demon selection, adjudicated impact, and dawn death as distinct facts'
   expect(text).toContain('实际影响：4号')
   expect(text).toContain('天亮死亡：4号')
   expect(text).toContain('疯子自选：3号')
+})
+
+it('translates investigator role IDs in the storyteller information history', () => {
+  const base = makeStorytellerDayView()
+  const seat = { ...base.seats[4], audit: { complete: true, events: [
+    { id: 'investigator-info', category: 'information', kind: 'delivery', phase: 'night', number: 1,
+      state: 'effective', delivered_result: { character_id: 'poisoner', seats: [2, 5], count: 1 } },
+  ] } }
+  const wrapper = mount(PlayerDetailPanel, { props: { seat, view: base } })
+  expect(wrapper.get('[data-audit-category="information"]').text()).toContain('2号与5号中有一位是投毒者')
+  expect(wrapper.get('[data-audit-category="information"]').text()).not.toContain('character_id')
 })
 
 it('distinguishes an unsent draft from a missing old record', () => {

@@ -12,34 +12,12 @@ beforeEach(() => {
 })
 
 describe('JoinPage', () => {
-  it('shows the clocktower opening on the home page and lets visitors skip it', async () => {
+  it('leaves the join form usable without showing the storyteller death before the first night', () => {
     const wrapper = mount(JoinPage, { attachTo: document.body })
-    expect(wrapper.get('[data-opening-intro]').text()).toContain('说书人被吊死在钟楼之上')
-    expect(document.activeElement).toBe(wrapper.get('[data-opening-skip]').element)
-    expect(wrapper.get('[data-join-content]').attributes('inert')).toBeDefined()
-    await wrapper.get('[data-opening-skip]').trigger('click')
     expect(wrapper.find('[data-opening-intro]').exists()).toBe(false)
     expect(wrapper.get('[data-join-content]').attributes('inert')).toBeUndefined()
     expect(wrapper.get('[data-room]').element.value).toBe('2468')
-    expect(sessionStorage.getItem('botc_opening_seen')).toBe('1')
     wrapper.unmount()
-    const revisit = mount(JoinPage)
-    expect(revisit.find('[data-opening-intro]').exists()).toBe(false)
-    revisit.unmount()
-  })
-
-  it('ends the clocktower opening automatically without requiring a click', async () => {
-    vi.useFakeTimers()
-    try {
-      const wrapper = mount(JoinPage)
-      expect(wrapper.find('[data-opening-intro]').exists()).toBe(true)
-      vi.advanceTimersByTime(3500)
-      await wrapper.vm.$nextTick()
-      expect(wrapper.find('[data-opening-intro]').exists()).toBe(false)
-      wrapper.unmount()
-    } finally {
-      vi.useRealTimers()
-    }
   })
   it('prefills the room from the QR hash', () => {
     const wrapper = mount(JoinPage)

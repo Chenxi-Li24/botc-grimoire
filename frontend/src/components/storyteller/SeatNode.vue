@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { roleIconUrl } from '../../presentation/roleIcons.js'
 
 const markerLabels = {
@@ -34,12 +34,8 @@ const hiddenIdentity = computed(() => !props.draftMode && ['drunk', 'lunatic'].i
 const perceivedRole = computed(() => hiddenIdentity.value ? props.seat.fake_role || null : null)
 const displayRole = computed(() => perceivedRole.value || role.value)
 const roleIcon = computed(() => roleIconUrl(displayRole.value?.id))
-const avatarFailed = ref(false)
-watch(() => player.value?.avatar_url, () => { avatarFailed.value = false })
-const showAvatar = computed(() => !props.draftMode && player.value?.avatar_url && !avatarFailed.value)
-const seatImage = computed(() => showAvatar.value ? player.value.avatar_url : roleIcon.value)
-const seatImageAlt = computed(() => showAvatar.value
-  ? `${player.value.name}的头像` : displayRole.value ? `${displayRole.value.name}角色图标` : '')
+const seatImage = roleIcon
+const seatImageAlt = computed(() => displayRole.value ? `${displayRole.value.name}角色图标` : '')
 const realBadge = computed(() => role.value?.id === 'drunk' ? '🍺 酒鬼' : '🌙 疯子')
 const accessibleName = computed(() => {
   const base = `${props.seat.seat}号 · ${player.value?.name || (role.value ? '线下/未领取' : '空座')}`
@@ -70,7 +66,7 @@ const isDead = computed(() => props.secretDead || props.seat.alive === false || 
   >
     <span class="seat-number">{{ seat.seat }}号</span>
     <strong class="seat-player">{{ player?.name || (role ? '线下/未领取' : '空座') }}</strong>
-    <img v-if="seatImage" class="seat-role-icon" :class="{ 'is-avatar': showAvatar }" :src="seatImage" :alt="seatImageAlt" width="40" height="40" loading="lazy" @error="avatarFailed = true" />
+    <img v-if="seatImage" class="seat-role-icon" :src="seatImage" :alt="seatImageAlt" width="40" height="40" loading="lazy" />
     <span v-if="displayRole" class="seat-role">{{ perceivedRole ? `他以为：${displayRole.name}` : displayRole.name }}</span>
     <span v-if="hiddenIdentity" class="seat-real-role">{{ realBadge }}</span>
     <span v-if="hiddenIdentity && !perceivedRole" class="seat-perception-pending">待配置认知</span>

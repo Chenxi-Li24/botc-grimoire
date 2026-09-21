@@ -14,7 +14,7 @@ onBeforeUnmount(() => clearTimeout(timer))
 </script>
 
 <template>
-  <section class="opening-intro" data-opening-intro role="dialog" aria-modal="true" aria-label="钟楼开场">
+  <section class="opening-intro" data-opening-intro role="dialog" aria-modal="true" aria-label="首夜结束">
     <div class="opening-sky" aria-hidden="true">
       <div class="opening-moon" />
       <div class="opening-tower"><div class="opening-clock" /></div>
@@ -22,9 +22,9 @@ onBeforeUnmount(() => clearTimeout(timer))
     <div class="opening-copy">
       <span class="opening-kicker">血染钟楼</span>
       <h2>说书人被吊死在钟楼之上</h2>
-      <p>夜幕将至，故事由你们继续。</p>
+      <p>天亮了，故事由你们继续。</p>
     </div>
-    <button ref="skipButton" class="opening-skip" data-opening-skip type="button" @click="emit('close')">跳过开场 →</button>
+    <button ref="skipButton" class="opening-skip" data-opening-skip type="button" @click="emit('close')">跳过 →</button>
   </section>
 </template>
 
