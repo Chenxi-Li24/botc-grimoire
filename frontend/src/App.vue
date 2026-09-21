@@ -1,53 +1,78 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import JoinPage from './pages/JoinPage.vue'
+import AccountPage from './pages/AccountPage.vue'
+import AccountHistoryPage from './pages/AccountHistoryPage.vue'
 import PlayerPage from './pages/PlayerPage.vue'
 import StorytellerPage from './pages/StorytellerPage.vue'
 import { api } from './services/api.js'
 import { resolveEntry } from './services/navigation.js'
-import { clearPlayerId, getPlayerId } from './services/session.js'
+import { clearCsrfToken, setCsrfToken } from './services/session.js'
 
 const page = ref('loading')
 const activePlayerId = ref(null)
+const activeAccount = ref(null)
 let routeVersion = 0
 
 function onJoined(playerId) {
-  activePlayerId.value = playerId
-  page.value = 'player'
+  void routeCurrentEntry()
 }
 
 function onPlayerInvalid() {
-  routeVersion += 1
-  clearPlayerId()
-  activePlayerId.value = null
-  page.value = 'join'
+  void routeCurrentEntry()
+}
+
+function onAccountChanged() {
+  if (window.location.hash.startsWith('#/account')) {
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
+  }
+  void routeCurrentEntry()
 }
 
 async function routeCurrentEntry() {
   const version = ++routeVersion
-  const playerId = getPlayerId()
-  const destination = await resolveEntry({
-    hash: window.location.hash,
-    playerId,
-    validatePlayer: (id) => api(`/api/me/${encodeURIComponent(id)}`),
-  })
-
+  const hash = window.location.hash
+  page.value = 'loading'
+  let destination = await resolveEntry({ hash, session: null })
   if (version !== routeVersion) return
-
-  if (destination?.vuePage) {
-    if (destination.vuePage === 'player') activePlayerId.value = playerId
-    page.value = destination.vuePage
-    return
-  }
 
   if (destination?.redirectHash) {
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${destination.redirectHash}`)
     page.value = destination.vuePageAfterRedirect
     return
   }
+  if (destination?.vuePage === 'storyteller') {
+    page.value = 'storyteller'
+    return
+  }
 
-  if (playerId) clearPlayerId()
-  activePlayerId.value = null
+  let session
+  try {
+    session = await api('/api/session')
+  } catch (error) {
+    if (version !== routeVersion) return
+    if (error?.status === 401) {
+      clearCsrfToken()
+      activePlayerId.value = null
+      activeAccount.value = null
+      page.value = destination?.vuePage === 'account' ? 'account' : 'join'
+    } else {
+      page.value = 'offline'
+    }
+    return
+  }
+
+  if (version !== routeVersion) return
+  setCsrfToken(session.csrf_token)
+  activePlayerId.value = session.player_id || null
+  activeAccount.value = session.account || null
+  destination = await resolveEntry({ hash, session })
+  if (version !== routeVersion) return
+
+  if (destination?.vuePage) {
+    page.value = destination.vuePage === 'history' && !session.account ? 'account' : destination.vuePage
+    return
+  }
   page.value = 'join'
 }
 
@@ -72,9 +97,18 @@ onBeforeUnmount(() => {
     <PlayerPage
       v-else-if="page === 'player' && activePlayerId"
       :player-id="activePlayerId"
+      :account="activeAccount"
       @invalid="onPlayerInvalid"
+      @account="page = 'account'"
+      @history="page = 'history'"
     />
-    <JoinPage v-else-if="page === 'join'" @joined="onJoined" />
+    <JoinPage v-else-if="page === 'join'" :account="activeAccount" @joined="onJoined" @recovered="routeCurrentEntry" @account="page = 'account'" @history="page = 'history'" />
+    <AccountPage v-else-if="page === 'account'" :account="activeAccount" @authenticated="onAccountChanged" @history="page = 'history'" @back="page = activePlayerId ? 'player' : 'join'" />
+    <AccountHistoryPage v-else-if="page === 'history' && activeAccount" @back="page = activePlayerId ? 'player' : 'join'" />
+    <main v-else-if="page === 'offline'" class="page center">
+      <p>连接暂时不可用，身份仍保留在此设备。恢复网络后重试。</p>
+      <button data-retry-session class="btn primary" type="button" @click="routeCurrentEntry">重试连接</button>
+    </main>
     <main v-else class="page center">
       <p>加载中…</p>
     </main>

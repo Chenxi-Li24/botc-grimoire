@@ -38,7 +38,8 @@ def decode_save(payload: dict, pack: ScriptPack) -> GameState:
         state = GameState.empty(player_count)
         state.players = {}
         for player_id, account in payload.get("players", {}).items():
-            account = {**account, "seat": _optional_seat(account.get("seat"), player_count)}
+            account = {**account, "seat": _optional_seat(account.get("seat"), player_count),
+                       "account_id": account.get("account_id")}
             state.players[player_id] = PlayerAccount(**account)
         for key, seat_payload in payload.get("seats", {}).items():
             seat = int(key)

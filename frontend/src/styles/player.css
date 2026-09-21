@@ -61,6 +61,14 @@ body:has(.player-shell[data-phase='day']) {
   overflow-wrap: anywhere;
 }
 
+.player-account-actions { display: flex; align-items: center; gap: 6px; }
+.player-account-actions .btn { font-size: 12px; min-height: 36px; padding: 6px 9px; }
+.account-history { width: min(680px, 100%); margin: 0 auto; display: grid; gap: 14px; }
+.history-header { display: flex; align-items: center; gap: 12px; }
+.history-header h1 { font-size: 22px; margin: 0; }
+.history-card { border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--panel); }
+.history-card h2 { font-size: 18px; margin: 0 0 8px; }
+
 @media (max-width: 420px) {
   .player-shell .player-content {
     padding: 12px;

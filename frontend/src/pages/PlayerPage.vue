@@ -18,8 +18,9 @@ const props = defineProps({
     type: String,
     required: true,
   },
+  account: { type: String, default: null },
 })
-const emit = defineEmits(['invalid'])
+const emit = defineEmits(['invalid', 'account', 'history'])
 
 const { view, connectionStatus } = usePlayerView(props.playerId, {
   onInvalid: (code) => emit('invalid', code),
@@ -56,6 +57,12 @@ async function handleChatCommand(command) {
     </p>
   </main>
   <PlayerShell v-else data-player-page :view="view" :connection-status="connectionStatus">
+    <template #header-actions>
+      <div class="player-account-actions">
+        <button v-if="!account" data-open-account class="btn" type="button" @click="emit('account')">绑定账户</button>
+        <button v-else data-open-history class="btn" type="button" @click="emit('history')">我的历史</button>
+      </div>
+    </template>
     <p v-if="error" class="error" role="alert">{{ error.message }}</p>
     <PlayerResult v-if="view.result" :view="view" />
     <PlayerLobby

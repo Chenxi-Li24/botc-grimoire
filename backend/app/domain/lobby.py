@@ -21,6 +21,9 @@ class LobbyMixin:
         min_players = SCRIPTS[script_id].get("min_players", 5)
         if not min_players <= player_count <= 15:
             raise ValueError(f"人数需在 {min_players}~15 之间")
+        if self.status == "playing" or self.winner is not None:
+            self.game_id = secrets.token_hex(16)
+            self.players.clear()
         self.script_id = script_id
         self.player_count = player_count
         for p in self.players.values():  # 改配置 → 清空座位与角色,玩家重新入座

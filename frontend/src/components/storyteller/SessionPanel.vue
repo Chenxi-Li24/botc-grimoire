@@ -55,7 +55,7 @@ function confirm(action) {
     <p v-if="error?.key && ['room', 'load', 'reset'].includes(error.key)" class="inline-error">{{ error.message }}</p>
     <section class="session-danger-zone">
       <h3>存档操作</h3>
-      <p class="inline-note">读档会用磁盘上的上次自动存档覆盖当前内存状态。重置会清空本局；重置本身不写盘。</p>
+      <p class="inline-note">读档会用磁盘上的上次自动存档覆盖当前内存状态。重置会先归档账户玩家的本局历史，再清空并保存新局。</p>
       <button data-session-load class="btn" type="button" :disabled="!connected || !!pending.length" :aria-pressed="armed === 'load'" @click="confirm('load')">{{ armed === 'load' ? '确认从磁盘读档？' : '从磁盘读档' }}</button>
       <button data-session-reset class="btn danger" type="button" :disabled="!connected || !!pending.length" :aria-pressed="armed === 'reset'" @click="confirm('reset')">{{ armed === 'reset' ? '确认重置本局？' : '重置本局' }}</button>
     </section>

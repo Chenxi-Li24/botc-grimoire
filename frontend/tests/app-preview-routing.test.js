@@ -9,8 +9,9 @@ vi.mock('../src/services/navigation.js', () => ({
   resolveEntry: vi.fn(),
 }))
 vi.mock('../src/services/session.js', () => ({
-  clearPlayerId: vi.fn(),
-  getPlayerId: vi.fn().mockReturnValue(null),
+  clearCsrfToken: vi.fn(),
+  setCsrfToken: vi.fn(),
+  getCsrfToken: vi.fn(),
   getStorytellerPassword: vi.fn().mockReturnValue(null),
   setStorytellerPassword: vi.fn(),
   clearStorytellerPassword: vi.fn(),

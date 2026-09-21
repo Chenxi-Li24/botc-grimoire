@@ -1,7 +1,16 @@
+import { getCsrfToken } from './session.js'
+
 export async function api(path, init) {
+  const method = (init?.method || 'GET').toUpperCase()
+  const csrf = getCsrfToken()
   const response = await fetch(path, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
+    credentials: 'same-origin',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(csrf && !['GET', 'HEAD', 'OPTIONS'].includes(method) ? { 'X-CSRF-Token': csrf } : {}),
+      ...(init?.headers || {}),
+    },
   })
 
   if (!response.ok) {

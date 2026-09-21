@@ -35,6 +35,7 @@ class PlayerAccount:
     name: str
     seat: int | None = None
     wish: str | None = None
+    account_id: str | None = None
 
 
 @dataclass

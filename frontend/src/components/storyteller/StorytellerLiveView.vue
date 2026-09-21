@@ -259,6 +259,7 @@ watch(() => view.value?.seats, (nextSeats) => {
     <template #context>
       <ContextPanel
         :view="view"
+        :service="service"
         :selected-seat="selectedSeat"
         :manual="manualContext"
         :connected="connected"

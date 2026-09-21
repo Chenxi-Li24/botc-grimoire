@@ -1,4 +1,4 @@
-export async function resolveEntry({ hash, playerId, validatePlayer }) {
+export function resolveEntry({ hash, session }) {
   if (hash.startsWith('#/storyteller-preview')) {
     return { redirectHash: '#/storyteller', vuePageAfterRedirect: 'storyteller' }
   }
@@ -7,12 +7,7 @@ export async function resolveEntry({ hash, playerId, validatePlayer }) {
     return { vuePage: 'storyteller' }
   }
 
-  if (!playerId) return 'join'
-
-  try {
-    await validatePlayer(playerId)
-    return { vuePage: 'player' }
-  } catch {
-    return 'join'
-  }
+  if (hash.startsWith('#/account')) return { vuePage: 'account' }
+  if (hash.startsWith('#/history')) return { vuePage: 'history' }
+  return { vuePage: session?.player_id ? 'player' : 'join' }
 }

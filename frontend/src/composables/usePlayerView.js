@@ -5,7 +5,6 @@ export function usePlayerView(playerId, { onInvalid = () => {} } = {}) {
   const view = shallowRef(null)
   const connectionStatus = ref('connecting')
   const connection = openSocket({
-    query: `who=${encodeURIComponent(playerId)}`,
     onMessage: (nextView) => {
       view.value = nextView
     },

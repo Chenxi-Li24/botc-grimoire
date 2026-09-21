@@ -61,3 +61,17 @@ it('passes the nomination stage through to the player chat pause state', () => {
   expect(wrapper.text()).toContain('提名阶段暂停私聊')
   expect(wrapper.get('[data-chat-new]').attributes('disabled')).toBeDefined()
 })
+
+it('offers account binding to guests and private history only to account players', async () => {
+  currentView.value = makeLobbyPlayerView()
+  const guest = mount(PlayerPage, { props: { playerId: 'p1' } })
+  expect(guest.find('[data-open-account]').exists()).toBe(true)
+  expect(guest.find('[data-open-history]').exists()).toBe(false)
+  await guest.get('[data-open-account]').trigger('click')
+  expect(guest.emitted('account')).toEqual([[]])
+  guest.unmount()
+  const member = mount(PlayerPage, { props: { playerId: 'p1', account: 'Alice' } })
+  expect(member.find('[data-open-history]').exists()).toBe(true)
+  expect(member.find('[data-open-account]').exists()).toBe(false)
+  member.unmount()
+})

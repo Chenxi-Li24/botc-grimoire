@@ -28,7 +28,7 @@ it('projects player messages, connection state, fatal invalidation and cleanup',
   })
   const wrapper = mount(Harness)
 
-  expect(socketOptions.query).toBe('who=p%2F1')
+  expect(socketOptions.query).toBeUndefined()
   socketOptions.onStatus('connected')
   socketOptions.onMessage({ room_code: '2468' })
   await nextTick()
