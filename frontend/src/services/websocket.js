@@ -1,5 +1,5 @@
 export function openSocket({
-  query,
+  query = '',
   onMessage,
   onStatus = () => {},
   onFatal = () => {},
@@ -16,7 +16,7 @@ export function openSocket({
     if (stopped) return
     onStatus(attempts ? 'reconnecting' : 'connecting')
     const protocol = location.protocol === 'https:' ? 'wss' : 'ws'
-    socket = new WebSocketImpl(`${protocol}://${location.host}/ws?${query}`)
+    socket = new WebSocketImpl(`${protocol}://${location.host}/ws${query ? `?${query}` : ''}`)
     socket.onopen = () => {
       attempts = 0
       onStatus('connected')

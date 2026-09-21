@@ -1,9 +1,8 @@
 <script setup>
 import { ref } from 'vue'
 import { api } from '../services/api.js'
-import { setPlayerId } from '../services/session.js'
 
-const emit = defineEmits(['joined'])
+const emit = defineEmits(['joined', 'account'])
 
 const hashQuery = window.location.hash.split('?')[1] || ''
 const name = ref('')
@@ -28,7 +27,6 @@ async function join() {
       method: 'POST',
       body: JSON.stringify({ name: cleanName, room_code: cleanRoomCode }),
     })
-    setPlayerId(result.player_id)
     emit('joined', result.player_id)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '加入失败'
@@ -63,6 +61,7 @@ async function join() {
       </button>
     </form>
     <p data-error class="error" :hidden="!error">{{ error }}</p>
+    <button data-account-entry class="btn" type="button" @click="emit('account')">账户登录或注册</button>
     <span class="credit">botc-grimoire · github.com/Chenxi-Li24/botc-grimoire</span>
   </main>
 </template>
