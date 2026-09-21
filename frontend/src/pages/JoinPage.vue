@@ -1,7 +1,8 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { api } from '../services/api.js'
 import RecoverIdentity from '../components/player/RecoverIdentity.vue'
+import OpeningIntro from '../components/player/OpeningIntro.vue'
 
 const props = defineProps({ account: { type: String, default: null } })
 const emit = defineEmits(['joined', 'account', 'recovered', 'history'])
@@ -12,6 +13,14 @@ const roomCode = ref(new URLSearchParams(hashQuery).get('room') || '')
 const error = ref('')
 const submitting = ref(false)
 const recovering = ref(false)
+const showOpening = ref(globalThis.sessionStorage?.getItem('botc_opening_seen') !== '1')
+const nameInput = ref(null)
+const roomInput = ref(null)
+function closeOpening() {
+  showOpening.value = false
+  globalThis.sessionStorage?.setItem('botc_opening_seen', '1')
+  void nextTick(() => (props.account ? roomInput.value : nameInput.value)?.focus())
+}
 const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 const remaining = computed(() => 8 - [...segmenter.segment(name.value.trim())].length)
 
@@ -45,19 +54,22 @@ async function join() {
 
 <template>
   <main class="page center">
+    <OpeningIntro v-if="showOpening" @close="closeOpening" />
     <h1>🩸 血染钟楼</h1>
     <p class="sub">{{ account ? '输入房间号，使用账户昵称加入本局，然后选座入座' : '输入名字和房间号加入本局，然后选座入座' }}</p>
     <p v-if="account" class="inline-note">已登录账户：{{ account }}。加入新局后会自动关联此账户。</p>
     <form v-if="!recovering" class="join-form" @submit.prevent="join">
       <input v-if="!account"
+        ref="nameInput"
         v-model="name"
         data-name
         class="input"
         placeholder="你的名字"
-        autofocus
+        :autofocus="!showOpening"
       >
       <small v-if="!account" data-name-remaining>还可输入 {{ remaining }} 个可见字符</small>
       <input
+        ref="roomInput"
         v-model="roomCode"
         data-room
         class="input"

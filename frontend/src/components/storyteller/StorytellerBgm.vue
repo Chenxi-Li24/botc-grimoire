@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { BGM_TRACKS, sceneForView } from '../../presentation/bgm.js'
+import StageTransition from './StageTransition.vue'
 
 const props = defineProps({
   view: { type: Object, required: true },
@@ -8,6 +9,9 @@ const props = defineProps({
 })
 const enabled = ref(false)
 const muted = ref(false)
+const soundEffects = ref(globalThis.localStorage?.getItem('botc_sfx_enabled') !== '0')
+const ducked = ref(false)
+const activeTransition = ref(null)
 const volume = ref(Number(globalThis.localStorage?.getItem('botc_bgm_volume') ?? 35))
 const selection = ref('auto')
 const introDay = ref(false)
@@ -16,7 +20,7 @@ let audio = null
 let introTimer = null
 
 const automaticScene = computed(() => sceneForView(props.view, props.reviewOpen))
-const scene = computed(() => selection.value !== 'auto' ? selection.value : introDay.value ? 'day' : automaticScene.value)
+const scene = computed(() => selection.value !== 'auto' ? selection.value : activeTransition.value || (introDay.value ? 'day' : automaticScene.value))
 const track = computed(() => BGM_TRACKS[scene.value])
 
 watch(() => props.view.phase, (phase, previous) => {
@@ -28,7 +32,7 @@ watch(() => props.view.phase, (phase, previous) => {
 
 function play() {
   if (!audio) return
-  audio.volume = Math.max(0, Math.min(1, Number(volume.value) / 100))
+  audio.volume = Math.max(0, Math.min(1, Number(volume.value) / 100)) * (ducked.value ? 0.35 : 1)
   audio.muted = muted.value
   audio.loop = scene.value !== 'victory'
   if (audio.getAttribute('src') !== track.value.src) {
@@ -43,9 +47,12 @@ function play() {
   } else audio.pause()
 }
 
-watch([scene, enabled, muted, volume], () => {
+watch([scene, enabled, muted, volume, ducked], () => {
   globalThis.localStorage?.setItem('botc_bgm_volume', String(volume.value))
   play()
+})
+watch(soundEffects, (value) => {
+  globalThis.localStorage?.setItem('botc_sfx_enabled', value ? '1' : '0')
 })
 onMounted(() => { audio = new Audio(); audio.preload = 'none'; play() })
 onBeforeUnmount(() => { clearTimeout(introTimer); audio?.pause(); audio = null })
@@ -63,7 +70,9 @@ onBeforeUnmount(() => { clearTimeout(introTimer); audio?.pause(); audio = null }
     </label>
     <label>音量 <input v-model="volume" data-bgm-volume type="range" min="0" max="100" /></label>
     <button data-bgm-mute class="btn" type="button" @click="muted = !muted">{{ muted ? '取消静音' : '静音' }}</button>
+    <button data-sfx-toggle class="btn" type="button" @click="soundEffects = !soundEffects">{{ soundEffects ? '关闭钟声' : '开启钟声' }}</button>
     <small v-if="error" role="status">{{ error }}</small>
+    <StageTransition :view="view" :sound-enabled="enabled && !muted && soundEffects" :volume="Number(volume)" @sound-active="ducked = $event" @scene-change="activeTransition = $event" />
   </div>
 </template>
 
