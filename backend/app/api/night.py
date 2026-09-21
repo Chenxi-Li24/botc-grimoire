@@ -13,6 +13,7 @@ from ..night.journal import UndoConflict
 from ..night.outcomes import OutcomeConflict
 from ..night.service import NavigationConflict
 from .schemas import (
+    BalloonistBody,
     EffectBody,
     InformationBody,
     NavigateBody,
@@ -89,6 +90,21 @@ def create_night_router(game: GameManager, hub: Any,
             "result": _serialize(result),
             "night_workflow": game.night.projection(),
         }
+
+    @router.post("/balloonist")
+    async def balloonist(body: BalloonistBody) -> dict[str, Any]:
+        try:
+            kwargs = {"registered_type": body.registered_type,
+                      "registered_role": body.registered_role,
+                      "truthful": body.truthful}
+            if body.action == "preview":
+                result = game.preview_balloonist(body.step_id, body.target, **kwargs)
+                return await success(result, mutate=False)
+            result = game.send_balloonist(body.step_id, body.target,
+                                          correction_of=body.correction_of, **kwargs)
+            return await success(result)
+        except Exception as exc:
+            _raise_domain(exc)
 
     @router.post("/step")
     async def navigate(body: NavigateBody) -> dict[str, Any]:

@@ -44,9 +44,11 @@ class CommunityCatalogTests(unittest.TestCase):
     def test_small_script_rejects_oversized_table_and_inference_is_not_carried_into_new_game(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(game_module, "SAVE_PATH", Path(directory) / "game.json"):
             game = GameManager()
-            game.configure("qieqiesiyu", 6)
+            game.configure("qieqiesiyu", 6, balloonist_version="new",
+                           balloonist_outsider_delta=1)
             with self.assertRaises(ValueError):
-                game.configure("qieqiesiyu", 7)
+                game.configure("qieqiesiyu", 7, balloonist_version="new",
+                               balloonist_outsider_delta=1)
             game.assign_roles()
             self.assertEqual(game.status, "playing")
             self.assertTrue(game.night_steps)
@@ -58,7 +60,8 @@ class CommunityCatalogTests(unittest.TestCase):
     def test_poppy_grower_never_auto_reveals_evil_team(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(game_module, "SAVE_PATH", Path(directory) / "game.json"):
             game = GameManager()
-            game.configure("yebankuanghuan", 7)
+            game.configure("yebankuanghuan", 7, balloonist_version="new",
+                           balloonist_outsider_delta=1)
             minion = game.add_player("爪牙")
             demon = game.add_player("恶魔")
             game.sit(minion.id, 1)

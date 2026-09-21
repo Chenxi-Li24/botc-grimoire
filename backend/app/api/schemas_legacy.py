@@ -16,6 +16,8 @@ class SitBody(BaseModel):
 class ConfigBody(BaseModel):
     script: str
     player_count: int
+    balloonist_version: str | None = None
+    balloonist_outsider_delta: int | None = None
 
 
 
@@ -193,4 +195,3 @@ class SeatKillBody(BaseModel):
 class SeatChoiceBody(BaseModel):
     targets: list[int]
     char: str | None = None  # 麻脸巫婆/洗脑师的角色选择
-

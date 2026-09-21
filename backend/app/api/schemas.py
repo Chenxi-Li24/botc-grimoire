@@ -59,6 +59,16 @@ class InformationBody(BaseModel):
     reason: str = ""
 
 
+class BalloonistBody(BaseModel):
+    action: Literal["preview", "send"]
+    step_id: str
+    target: int | str
+    registered_type: str | None = None
+    registered_role: str | None = None
+    truthful: bool | None = None
+    correction_of: str | None = None
+
+
 class EffectBody(BaseModel):
     action: Literal["poisoner", "widow", "cerenovus", "source_ability"]
     source_seat: int

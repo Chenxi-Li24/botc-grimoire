@@ -469,6 +469,7 @@ class ProjectionMixin:
             "script_roles": [{"id": role["id"], "name": role["name"], "team": role["team"]}
                              for role in SCRIPTS[self.script_id]["roles"]],
             "inference": self.inference_view(player_id),
+            "balloonist_history": self.balloonist_player_history(player_id),
         }
         if me_traveler is not None:
             # 旅行者条目(不含 player_id)+ 已指派角色 + 阵营(官方:旅行者本人知道自己的阵营)
@@ -653,10 +654,12 @@ class ProjectionMixin:
             "script": self.script_id,
             "player_count": self.player_count,
             "scripts": [{"id": sid, "name": s["name"], "en": s["en"],
+                         "has_balloonist": any(role["id"] == "balloonist" for role in s["roles"]),
                          "min": s.get("min_players", 5), "max": s.get("max_players", 15)}
                         for sid, s in SCRIPTS.items()],
             # 手动发身份用:当前板子的角色表 + 基础配比 + 调整角色
-            "roles": SCRIPTS[self.script_id]["roles"],
+            "roles": [self.balloonist_role_view(role)
+                      for role in SCRIPTS[self.script_id]["roles"]],
             "composition": list(COMPOSITION[self.player_count]),
             "adjust_roles": {rid: list(ROLE_ADJUSTMENTS[rid])
                              for rid in SCRIPT_ADJUST_ROLES.get(self.script_id, ())},
@@ -681,6 +684,13 @@ class ProjectionMixin:
             "bluffs": [self.roles[rid] for rid in self.bluffs],  # 恶魔的三个伪装(说书人可见)
             "fake_pools": FAKE_POOLS,  # 认知覆盖类角色 → 假身份可取阵营(手动面板渲染选择器用)
             "sentinel": self.sentinel,  # 哨兵:+1/−1/2(不变)/0(关),说书人可见
+            "balloonist_version": self.balloonist_version,
+            "balloonist_outsider_delta": self.balloonist_outsider_delta,
+            "balloonist_history": self.balloonist_storyteller_history(),
+            "balloonist_context": (self.balloonist_context(current.actor_seat)
+                                   if (current := self.night.queue.current) is not None
+                                   and current.source.get("ability_character") == "balloonist"
+                                   and current.actor_seat is not None else None),
             # 入夜会面:告诉爪牙谁是恶魔、告诉恶魔谁是爪牙(空座预发也列出)
             "demon_seats": self._team_seats(DEMON),
             "minion_seats": self._team_seats(MINION),
@@ -702,7 +712,7 @@ class ProjectionMixin:
             "night_kills": self.night_kills,  # 夜晚刀人:恶魔/疯子的手机选择(说书人可见)
             "night_choices": self.night_choices,  # 夜晚信息交互:各座位选择与说书人回复
             "night_actions": NIGHT_ACTIONS,  # 夜晚行动配置(前端代操作面板用)
-            "night_workflow": self.night.projection(),  # Vue 夜晚工作台的权威动态队列
+            "night_workflow": self.balloonist_night_workflow(),  # Vue 夜晚工作台的权威动态队列
             "fortuneteller_red": self.fortuneteller_red,  # 占卜师宿敌(红鲱鱼):只有说书人知道
             # 已加入的玩家(含未入座):许愿仅说书人可见,配板/手动发身份时参考
             "players": [{"id": p.id, "name": p.name, "seat": p.seat, "alive": p.alive,

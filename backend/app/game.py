@@ -16,6 +16,7 @@ from pathlib import Path
 from .application.projections import ProjectionMixin
 from .domain.player import Player
 from .domain.lobby import LobbyMixin
+from .domain.balloonist import BalloonistMixin
 from .domain.legacy_night import LegacyNightMixin
 from .domain.nomination import NominationMixin
 from .domain.review import ReviewMixin
@@ -85,7 +86,7 @@ class _SeatFieldMap(MutableMapping):
         return sum(1 for _ in self)
 
 
-class GameManager(LobbyMixin, LegacyNightMixin, NominationMixin, ReviewMixin,
+class GameManager(LobbyMixin, BalloonistMixin, LegacyNightMixin, NominationMixin, ReviewMixin,
                   ChatMixin, SeatAdministrationMixin, InferenceMixin, ProjectionMixin):
     """一局游戏的全部状态;每次变更自动存档,重启自动恢复。"""
 
@@ -120,6 +121,9 @@ class GameManager(LobbyMixin, LegacyNightMixin, NominationMixin, ReviewMixin,
         self.travelers: list[dict] = []  # 旅行者:[{id(t1..),player_id,name,role_id,align,alive,exiled,joined_phase,joined_no,died_day,dead_vote_used}]
         self.bluffs: list[str] = []  # 恶魔的三个伪装:不在场的好角色 id(开局时抽取)
         self.sentinel: int = 0  # 哨兵(神职角色):0=关 / +1 / -1 / 2=在场但不调整
+        self.balloonist_version: str | None = None
+        self.balloonist_outsider_delta: int | None = None
+        self.balloonist_events: list[dict] = []
         self.room_code: str = f"{random.randrange(10000):04d}"  # 房间号:4 位数字,说书人可改,玩家凭名字+房号加入
         self.winner: str | None = None  # 结算:good/evil 获胜(说书人宣布游戏结束),None = 未结束
         self.fabled: list[str] = []  # 传奇角色(公开):在场的 Fabled id 列表,说书人勾选
@@ -309,11 +313,13 @@ class GameManager(LobbyMixin, LegacyNightMixin, NominationMixin, ReviewMixin,
             traveler_actions=self._traveler_night_actions(),
             restored_queue=restored_queue,
         )
+        self.skip_exhausted_balloonist_steps()
 
     def _rebuild_night_queue(self, cause_event_id: str | None = None) -> None:
         if self.phase == "night" and hasattr(self, "night"):
             self.night.queue.traveler_actions = self._traveler_night_actions()
             self.night.rebuild(cause_event_id)
+            self.skip_exhausted_balloonist_steps()
 
     def _migrate_legacy_effects(self) -> None:
         """Expose pre-ledger markers as sourced manual effects without losing history."""
@@ -397,6 +403,9 @@ class GameManager(LobbyMixin, LegacyNightMixin, NominationMixin, ReviewMixin,
             "fortuneteller_red": self.fortuneteller_red,
             "travelers": self.travelers,
             "bluffs": self.bluffs, "sentinel": self.sentinel, "room_code": self.room_code,
+            "balloonist_version": self.balloonist_version,
+            "balloonist_outsider_delta": self.balloonist_outsider_delta,
+            "balloonist_events": self.balloonist_events,
             "winner": self.winner, "fabled": self.fabled,
             "chats": self.chats, "chat_seq": self.chat_seq,
             "events": self.events, "event_seq": self.event_seq,
@@ -445,6 +454,11 @@ class GameManager(LobbyMixin, LegacyNightMixin, NominationMixin, ReviewMixin,
                 setattr(self, key, d[key])
             self.day_stage = d.get("day_stage", "talk")  # 旧存档没有白天子阶段 → 默认公聊
             self.sentinel = d.get("sentinel", 0)  # 旧存档没有哨兵字段 → 默认关
+            self.balloonist_version = self.balloonist_version_from_save(d)
+            self.balloonist_outsider_delta = (
+                d.get("balloonist_outsider_delta") if self.balloonist_version else None
+            )
+            self.balloonist_events = list(d.get("balloonist_events", ()))
             self.winner = d.get("winner")  # 旧存档没有结算 → None
             self.fabled = d.get("fabled", [])  # 旧存档没有传奇角色 → 空
             self.events = d.get("events", [])  # 旧存档没有复盘日志 → 空

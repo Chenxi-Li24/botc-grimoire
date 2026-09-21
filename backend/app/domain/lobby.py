@@ -15,18 +15,34 @@ from ..state import SeatState
 
 
 class LobbyMixin:
-    def configure(self, script_id: str, player_count: int) -> None:
+    def configure(self, script_id: str, player_count: int, *,
+                  balloonist_version: str | None = None,
+                  balloonist_outsider_delta: int | None = None) -> None:
         if script_id not in SCRIPTS:
             raise ValueError("未知脚本")
         min_players = SCRIPTS[script_id].get("min_players", 5)
         max_players = SCRIPTS[script_id].get("max_players", 15)
         if not min_players <= player_count <= max_players:
             raise ValueError(f"人数需在 {min_players}~{max_players} 之间")
+        has_balloonist = any(role["id"] == "balloonist"
+                           for role in SCRIPTS[script_id]["roles"])
+        if has_balloonist:
+            if balloonist_version not in ("new", "old"):
+                raise ValueError("请明确选择气球驾驶员规则（新版或旧版）")
+            if balloonist_outsider_delta not in (0, 1):
+                raise ValueError("请明确选择气球驾驶员外来者调整 +0 或 +1")
+            if balloonist_version == "old" and balloonist_outsider_delta != 1:
+                raise ValueError("旧版气球驾驶员外来者固定 +1")
+        elif balloonist_version is not None or balloonist_outsider_delta is not None:
+            raise ValueError("当前剧本不含气球驾驶员")
         if self.status == "playing" or self.winner is not None:
             self.game_id = secrets.token_hex(16)
             self.players.clear()
         self.script_id = script_id
         self.player_count = player_count
+        self.balloonist_version = balloonist_version
+        self.balloonist_outsider_delta = balloonist_outsider_delta
+        self.balloonist_events = []
         for p in self.players.values():  # 改配置 → 清空座位与角色,玩家重新入座
             p.seat = None
             p.bind(None)
@@ -131,6 +147,11 @@ class LobbyMixin:
         state = self.seat_state(seat)
         state.claimed_by = player_id
         me.bind(state)
+        for delivery in self.information_deliveries.values():
+            if (delivery.actor_seat == seat and delivery.recipient_binding_known
+                    and delivery.recipient_player_id is None):
+                delivery.recipient_player_id = player_id
+        self.bind_balloonist_claim(seat, player_id)
         self._rebuild_night_queue()
         if (self.status == "lobby" and self.seat_roles
                 and len(self.seats) == self.player_count):
@@ -333,6 +354,10 @@ class LobbyMixin:
         for rid in SCRIPT_ADJUST_ROLES.get(self.script_id, ()):
             if rid in role_ids:
                 dt, do, dm, dd = ROLE_ADJUSTMENTS[rid]
+                if rid == "balloonist":
+                    adjustment = (self.balloonist_outsider_delta
+                                  if self.balloonist_outsider_delta is not None else 1)
+                    dt, do = -adjustment, adjustment
                 comp[0] += dt
                 comp[1] += do
                 comp[2] += dm

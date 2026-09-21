@@ -170,7 +170,9 @@ async def config(body: ConfigBody) -> dict[str, Any]:
     try:
         if game.status == "playing" or game.winner is not None:
             archive_game(game, runtime.identity_store)
-        game.configure(body.script, body.player_count)
+        game.configure(body.script, body.player_count,
+                       balloonist_version=body.balloonist_version,
+                       balloonist_outsider_delta=body.balloonist_outsider_delta)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await hub.push_all()
