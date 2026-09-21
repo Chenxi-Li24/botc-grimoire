@@ -117,7 +117,7 @@ class ProjectionMixin:
             if outcome.source_seat != seat:
                 continue
             number = outcome.metadata.get("night_no") or night_of(outcome.source_event)
-            entries.append({
+            audit_outcome = {
                 "id": outcome.id, "category": "action", "kind": "outcome",
                 "phase": "night", "number": number, "at": outcome.created_at,
                 "source_event": outcome.source_event,
@@ -128,7 +128,31 @@ class ProjectionMixin:
                 "resolution": outcome.resolution, "metadata": outcome.metadata,
                 "state": state_of(outcome.source_event, outcome.resolution_event)
                 or ("pending" if outcome.status == "pending" else "effective"),
-            })
+            }
+            if outcome.source_character == "lunatic":
+                demon = next((item for item in self.pending_outcomes.values()
+                              if item.id != outcome.id
+                              and item.metadata.get("night_no") == number
+                              and item.metadata.get("is_demon_attack")
+                              and state_of(item.source_event, item.resolution_event) is None), None)
+                if demon is not None:
+                    audit_outcome["linked_outcome_id"] = demon.id
+                    audit_outcome["demon_followed"] = (
+                        demon.selected_seats == outcome.selected_seats)
+            elif outcome.metadata.get("is_demon_attack"):
+                lunatic = next((item for item in self.pending_outcomes.values()
+                                if item.id != outcome.id
+                                and item.metadata.get("night_no") == number
+                                and item.source_character == "lunatic"
+                                and state_of(item.source_event, item.resolution_event) is None), None)
+                if lunatic is not None:
+                    audit_outcome["linked_lunatic_selection"] = list(lunatic.selected_seats)
+                audit_outcome["dawn_deaths"] = [
+                    target.seat for target in self.seat_states.values()
+                    if target.death_record and target.death_record.get("outcome_id") == outcome.id
+                    and not target.public_alive
+                ]
+            entries.append(audit_outcome)
 
         for event in self.journal_events:
             data = event.payload
@@ -378,6 +402,8 @@ class ProjectionMixin:
             widow_step = next((step for step in self.night.queue.steps
                                if step.actor_seat == seat and step.character_id == "widow"
                                and step.status in {"upcoming", "completed"}
+                               and step.values.get("widow_grantee_set")
+                               and step.values.get("widow_grantee") == viewer_id
                                and (step.id == self.night.queue.current_step_id
                                     or step.status == "completed")), None)
             if widow_step is not None:
@@ -395,12 +421,15 @@ class ProjectionMixin:
         event_states = {event.id: event.state for event in self.journal_events}
         deliveries = []
         for delivery in self.information_deliveries.values():
-            if delivery.actor_seat != seat:
+            if (delivery.actor_seat != seat
+                    or not delivery.recipient_binding_known
+                    or delivery.recipient_player_id != viewer_id):
                 continue
             item = delivery.to_dict()
             for hidden in (
                 "real_character", "true_result", "claims", "registrations",
                 "effect_snapshot", "reason", "corrections",
+                "recipient_player_id", "recipient_binding_known",
             ):
                 item.pop(hidden, None)
             item["retracted"] = event_states.get(delivery.source_event) == "undone"
@@ -554,7 +583,7 @@ class ProjectionMixin:
                                        if self._seat_real_role(s)]  # 线下/未领取座位同样可选
                 view["night_wake"] = wake
                 if (wake.get("grimoire") and me.seat is not None
-                        and self.seat_state(me.seat).claimed_by == player_id):
+                        and view.get("night_workflow", {}).get("widow_grimoire") is not None):
                     # 寡妇首夜查看魔典:全部座位的真实角色与旅行者(仅此夜、仅此步,睡下后不可再看)
                     view["grimoire"] = {
                         "seats": [{"seat": s,

@@ -100,6 +100,32 @@ class SeatAuditTest(unittest.TestCase):
         self.assertEqual(entry["state"], "selected")
         self.assertEqual(entry["number"], 2)
 
+    def test_lunatic_choice_links_to_demon_and_dawn_death_is_separate(self):
+        game, _ = make_game({1: "lunatic", 2: "imp", 3: "chef", 4: "chef"})
+        game.pending_outcomes["lunatic-1"] = PendingOutcome(
+            id="lunatic-1", source_event="select-l", source_seat=1,
+            source_character="lunatic", selected_seats=[3], hints=[],
+            resolution="choice_only", status="resolved", metadata={"night_no": 2, "lunatic_choice": True},
+        )
+        game.pending_outcomes["demon-1"] = PendingOutcome(
+            id="demon-1", source_event="select-d", source_seat=2,
+            source_character="imp", selected_seats=[3], hints=[],
+            resolution="redirected", affected_seats=[4], status="resolved",
+            metadata={"night_no": 2, "is_demon_attack": True},
+        )
+        victim = game.seat_state(4)
+        victim.public_alive = False
+        victim.death_record = {"outcome_id": "demon-1", "night_no": 2}
+        seats = game.storyteller_view()["seats"]
+        lunatic = next(item for item in seats[0]["audit"]["events"] if item["id"] == "lunatic-1")
+        demon = next(item for item in seats[1]["audit"]["events"] if item["id"] == "demon-1")
+        self.assertEqual(lunatic["linked_outcome_id"], "demon-1")
+        self.assertTrue(lunatic["demon_followed"])
+        self.assertEqual(demon["linked_lunatic_selection"], [3])
+        self.assertEqual(demon["selected_seats"], [3])
+        self.assertEqual(demon["affected_seats"], [4])
+        self.assertEqual(demon["dawn_deaths"], [4])
+
 
 if __name__ == "__main__":
     unittest.main()

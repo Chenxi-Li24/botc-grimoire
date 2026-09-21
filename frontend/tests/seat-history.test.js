@@ -64,7 +64,8 @@ it('shows current effects before subjective notes and filters three audit catego
         corrections: [{ id: 'correction-1', reason: '登记更正', claims: [{ label: '判断', truthful: true }] }],
         source_event: 'ev-2' },
       { id: 'a3', category: 'action', kind: 'outcome', phase: 'night', number: 3,
-        role_snapshot: 'lunatic', selected_seats: [4], affected_seats: [], state: 'pending', source_event: 'ev-3' },
+        role_snapshot: 'lunatic', selected_seats: [4], affected_seats: [], state: 'pending',
+        linked_outcome_id: 'demon-1', demon_followed: true, source_event: 'ev-3' },
     ] },
   }
   const view = { ...base, seats: base.seats.map((item) => item.seat === 5 ? seat : item) }
@@ -78,11 +79,28 @@ it('shows current effects before subjective notes and filters three audit catego
   expect(wrapper.get('[data-audit-category="information"]').text()).toContain('登记更正')
   expect(wrapper.get('[data-audit-category="information"]').text()).toContain('4号')
   expect(wrapper.get('[data-audit-category="action"]').text()).toContain('选择：4号')
+  expect(wrapper.get('[data-audit-category="action"]').text()).toContain('真恶魔沿用')
   await wrapper.get('[data-audit-round]').setValue('night:2')
   expect(wrapper.find('[data-audit-category="action"]').exists()).toBe(false)
   expect(wrapper.find('[data-audit-category="information"]').exists()).toBe(true)
   await wrapper.get('[data-audit-filter]').setValue('status')
   expect(wrapper.find('[data-audit-category="information"]').exists()).toBe(false)
+})
+
+it('shows demon selection, adjudicated impact, and dawn death as distinct facts', () => {
+  const base = makeStorytellerDayView()
+  const seat = { ...base.seats[4], audit: { complete: false, events: [
+    { id: 'demon-1', category: 'action', kind: 'outcome', phase: 'night', number: 2,
+      role_snapshot: 'imp', selected_seats: [3], affected_seats: [4], dawn_deaths: [4],
+      resolution: 'redirected', linked_lunatic_selection: [3], state: 'effective' },
+  ] } }
+  const wrapper = mount(PlayerDetailPanel, { props: { seat, view: base } })
+  const text = wrapper.get('[data-audit-category="action"]').text()
+  expect(text).toContain('选择：3号')
+  expect(text).toContain('裁定：redirected')
+  expect(text).toContain('实际影响：4号')
+  expect(text).toContain('天亮死亡：4号')
+  expect(text).toContain('疯子自选：3号')
 })
 
 it('distinguishes an unsent draft from a missing old record', () => {

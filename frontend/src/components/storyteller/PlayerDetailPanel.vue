@@ -305,8 +305,11 @@ onBeforeUnmount(clearRemoveArm)
           <span v-if="item.expected_end">预期结束：{{ item.expected_end }}</span>
           <span v-if="effectEndedAt(item)">结束于：{{ effectEndedAt(item) }}</span>
           <span v-if="item.selected_seats?.length">选择：{{ seatsLabel(item.selected_seats) }}</span>
+          <span v-if="item.linked_lunatic_selection?.length">疯子自选：{{ seatsLabel(item.linked_lunatic_selection) }}</span>
+          <span v-if="item.linked_outcome_id">{{ item.demon_followed ? '真恶魔沿用' : '真恶魔未沿用' }} · 裁定 {{ item.linked_outcome_id }}</span>
           <span v-if="item.resolution">裁定：{{ item.resolution }}</span>
           <span v-if="item.affected_seats?.length">实际影响：{{ seatsLabel(item.affected_seats) }}</span>
+          <span v-if="item.dawn_deaths?.length">天亮死亡：{{ seatsLabel(item.dawn_deaths) }}</span>
           <span v-if="item.delivered_result != null">告知：{{ informationValue(item.delivered_result) }}</span>
           <span v-if="item.reply != null">回复：{{ item.reply }}</span>
           <span v-if="item.claims?.length">真假：{{ item.claims.map((claim) => `${claim.label || '结果'}${claim.truthful ? '真' : '假'}`).join('、') }}</span>
@@ -316,7 +319,7 @@ onBeforeUnmount(clearRemoveArm)
           <span v-if="item.source_event">事件：{{ item.source_event }}</span>
           <span v-if="item.transitions?.length">变化：{{ item.transitions.map((transition) => `${transition.at || '时间未记录'} ${transition.reason || transition.to}`).join('；') }}</span>
         </div>
-        <details v-if="group.events.length > 4"><summary>展开更早记录（{{ group.events.length - 4 }}）</summary><div v-for="item in group.events.slice(4)" :key="item.id" class="effect-history-row"><strong>{{ roundLabel(item) }} · {{ auditTitle(item) }}</strong><span>{{ auditState(item) }}</span><span v-if="item.source_event">事件：{{ item.source_event }}</span><span v-if="item.selected_seats?.length">选择：{{ seatsLabel(item.selected_seats) }}</span><span v-if="item.delivered_result != null">告知：{{ informationValue(item.delivered_result) }}</span></div></details>
+        <details v-if="group.events.length > 4"><summary>展开更早记录（{{ group.events.length - 4 }}）</summary><div v-for="item in group.events.slice(4)" :key="item.id" class="effect-history-row"><strong>{{ roundLabel(item) }} · {{ auditTitle(item) }}</strong><span>{{ auditState(item) }}</span><span v-if="item.source_event">事件：{{ item.source_event }}</span><span v-if="item.selected_seats?.length">选择：{{ seatsLabel(item.selected_seats) }}</span><span v-if="item.linked_lunatic_selection?.length">疯子自选：{{ seatsLabel(item.linked_lunatic_selection) }}</span><span v-if="item.linked_outcome_id">{{ item.demon_followed ? '真恶魔沿用' : '真恶魔未沿用' }} · 裁定 {{ item.linked_outcome_id }}</span><span v-if="item.resolution">裁定：{{ item.resolution }}</span><span v-if="item.affected_seats?.length">实际影响：{{ seatsLabel(item.affected_seats) }}</span><span v-if="item.dawn_deaths?.length">天亮死亡：{{ seatsLabel(item.dawn_deaths) }}</span><span v-if="item.delivered_result != null">告知：{{ informationValue(item.delivered_result) }}</span></div></details>
       </section>
     </section>
     <p v-if="error?.key?.startsWith('seat:')" class="inline-error">{{ error.message }}</p>
