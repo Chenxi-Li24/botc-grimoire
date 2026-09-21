@@ -149,3 +149,44 @@ class IdentityStore:
     def revoke_account_sessions(self, account_id: str) -> None:
         with self._connect() as db:
             db.execute("DELETE FROM sessions WHERE account_id = ?", (account_id,))
+
+    def account_name(self, account_id: str) -> str | None:
+        with self._connect() as db:
+            row = db.execute("SELECT username FROM accounts WHERE id = ?", (account_id,)).fetchone()
+        return row["username"] if row else None
+
+    def change_password(self, account_id: str, old_password: str, new_password: str) -> bool:
+        if len(new_password) < 8:
+            raise ValueError("密码至少需要 8 个字符")
+        with self._connect() as db:
+            row = db.execute("SELECT password_hash FROM accounts WHERE id = ?", (account_id,)).fetchone()
+            if row is None:
+                return False
+            try:
+                self.password_hasher.verify(row["password_hash"], old_password)
+            except VerifyMismatchError:
+                return False
+            db.execute(
+                "UPDATE accounts SET password_hash = ? WHERE id = ?",
+                (self.password_hasher.hash(new_password), account_id),
+            )
+        return True
+
+    def reset_password(
+        self, username: str, recovery_code: str, new_password: str
+    ) -> tuple[str, str] | None:
+        if len(new_password) < 8:
+            raise ValueError("密码至少需要 8 个字符")
+        new_code = secrets.token_urlsafe(32)
+        new_hash = self.password_hasher.hash(new_password)
+        with self._connect() as db:
+            result = db.execute(
+                "UPDATE accounts SET password_hash = ?, recovery_digest = ? "
+                "WHERE username_key = ? AND recovery_digest = ?",
+                (new_hash, token_digest(new_code), username_key(username), token_digest(recovery_code)),
+            )
+            if result.rowcount != 1:
+                return None
+            row = db.execute("SELECT id FROM accounts WHERE username_key = ?", (username_key(username),)).fetchone()
+            db.execute("DELETE FROM sessions WHERE account_id = ?", (row["id"],))
+        return row["id"], new_code

@@ -1,28 +1,17 @@
 """Player HTTP endpoints; server game state remains authoritative."""
 
 from typing import Any
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from ..application.runtime import game, hub
 from ..net import get_lan_ip
 from ..night.player_actions import submit_player_night_action
 from ..night.service import NavigationConflict
 from .night import NightCommandError
+from .dependencies import require_matching_player
 from .schemas import PlayerNightActionBody
 from .schemas_legacy import *
 
 router = APIRouter()
-
-@router.post("/api/join")
-async def join(body: JoinBody) -> dict[str, Any]:
-    if not body.name.strip():
-        raise HTTPException(status_code=400, detail="请输入名字")
-    if body.room_code != game.room_code:
-        raise HTTPException(status_code=400, detail="房间号错误")
-    player = game.add_player(body.name)
-    await hub.push_all()
-    return {"player_id": player.id}
-
-
 
 @router.post("/api/player/{player_id}/sit")
 async def sit(player_id: str, body: SitBody) -> dict[str, Any]:
@@ -43,7 +32,7 @@ def info() -> dict[str, Any]:
 
 
 @router.get("/api/me/{player_id}")
-def me(player_id: str) -> dict[str, Any]:
+def me(player_id: str, _: str = Depends(require_matching_player)) -> dict[str, Any]:
     if player_id not in game.players:
         raise HTTPException(status_code=404, detail="玩家不存在(说书人可能已重置本局)")
     return game.player_view(player_id)
@@ -134,4 +123,3 @@ async def player_night_action(player_id: str, body: PlayerNightActionBody) -> di
     game.save()
     await hub.push_all()
     return game.player_view(player_id)
-

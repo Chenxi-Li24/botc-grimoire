@@ -57,6 +57,19 @@ class IdentityStoreTests(unittest.TestCase):
             names = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         self.assertTrue({"accounts", "sessions", "login_attempts", "recovery_codes", "archives"} <= names)
 
+    def test_account_recovery_code_is_one_time_and_password_can_change(self):
+        account_id, recovery = self.store.create_account("Dana", "test-only-password")
+        self.assertEqual(self.store.account_name(account_id), "Dana")
+        self.assertFalse(self.store.change_password(account_id, "wrong", "new-password-123"))
+        self.assertTrue(self.store.change_password(account_id, "test-only-password", "new-password-123"))
+        self.assertIsNone(self.store.authenticate("Dana", "test-only-password"))
+        self.assertEqual(self.store.authenticate("Dana", "new-password-123"), account_id)
+        self.assertIsNone(self.store.reset_password("Dana", "wrong", "again-password-123"))
+        recovered = self.store.reset_password("Dana", recovery, "again-password-123")
+        self.assertEqual(recovered[0], account_id)
+        self.assertTrue(recovered[1])
+        self.assertIsNone(self.store.reset_password("Dana", recovery, "third-password-123"))
+
 
 if __name__ == "__main__":
     unittest.main()
