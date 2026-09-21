@@ -10,6 +10,7 @@ import GameControlPanel from './GameControlPanel.vue'
 import GrimoireBoard from './GrimoireBoard.vue'
 import ReviewPanel from './ReviewPanel.vue'
 import StorytellerHeader from './StorytellerHeader.vue'
+import StorytellerBgm from './StorytellerBgm.vue'
 import StorytellerShell from './StorytellerShell.vue'
 import '../../styles/storyteller.css'
 
@@ -219,6 +220,9 @@ watch(() => view.value?.seats, (nextSeats) => {
         @open-end="openAdmin('end')"
         @open-review="reviewOpen = true"
       />
+    </template>
+    <template #music>
+      <StorytellerBgm :view="view" :review-open="reviewOpen" />
     </template>
     <template #controls>
       <GameControlPanel

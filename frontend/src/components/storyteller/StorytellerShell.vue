@@ -13,6 +13,7 @@ const emit = defineEmits(['close-drawer'])
     <header data-shell-header class="storyteller-header">
       <slot name="header" />
     </header>
+    <slot name="music" />
     <div class="storyteller-grid">
       <aside
         data-shell-controls
