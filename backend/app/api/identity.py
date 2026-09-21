@@ -50,11 +50,12 @@ def _check_write(request: Request) -> None:
 def current_session(request: Request) -> dict[str, Any]:
     session = require_session(request)
     game = runtime.game
-    if session.account_id is None and session.game_id != game.game_id:
+    player_id = resolve_participant(game, session)
+    if session.account_id is None and player_id is None:
         raise HTTPException(status_code=401, detail="本局身份已失效")
     return {
         "account": runtime.identity_store.account_name(session.account_id) if session.account_id else None,
-        "player_id": resolve_participant(game, session),
+        "player_id": player_id,
         "csrf_token": session.csrf,
     }
 

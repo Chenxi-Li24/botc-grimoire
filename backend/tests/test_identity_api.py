@@ -99,6 +99,13 @@ class IdentityApiTests(unittest.TestCase):
         self.client.cookies.set("botc_session", token)
         self.assertEqual(self.client.get("/api/session").status_code, 401)
 
+    def test_removed_guest_session_cannot_be_used(self):
+        player_id = self.client.post("/api/join", json={
+            "name": "甲", "room_code": self.game.room_code
+        }).json()["player_id"]
+        self.game.remove_player(player_id)
+        self.assertEqual(self.client.get("/api/session").status_code, 401)
+
 
 if __name__ == "__main__":
     unittest.main()

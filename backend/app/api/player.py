@@ -13,7 +13,7 @@ from .schemas_legacy import *
 
 router = APIRouter()
 
-@router.post("/api/player/{player_id}/sit")
+@router.post("/api/player/{player_id}/sit", dependencies=[Depends(require_matching_player)])
 async def sit(player_id: str, body: SitBody) -> dict[str, Any]:
     try:
         game.sit(player_id, body.seat)
@@ -39,7 +39,7 @@ def me(player_id: str, _: str = Depends(require_matching_player)) -> dict[str, A
 
 
 
-@router.post("/api/player/{player_id}/traveler")
+@router.post("/api/player/{player_id}/traveler", dependencies=[Depends(require_matching_player)])
 async def join_traveler(player_id: str) -> dict[str, Any]:
     """玩家以旅行者身份加入(开局后任意时刻,不占座位)。"""
     try:
@@ -51,7 +51,7 @@ async def join_traveler(player_id: str) -> dict[str, Any]:
 
 
 
-@router.post("/api/player/{player_id}/nominate")
+@router.post("/api/player/{player_id}/nominate", dependencies=[Depends(require_matching_player)])
 async def nominate(player_id: str, body: NomineeBody) -> dict[str, Any]:
     """玩家手机发起提名:提名者必须是本人(存活、今天未提名过、白天、无进行中提名)。"""
     try:
@@ -63,7 +63,7 @@ async def nominate(player_id: str, body: NomineeBody) -> dict[str, Any]:
 
 
 
-@router.post("/api/player/{player_id}/vote")
+@router.post("/api/player/{player_id}/vote", dependencies=[Depends(require_matching_player)])
 async def vote(player_id: str) -> dict[str, Any]:
     """玩家手机举手/放下:只能投自己(死者举手=交出唯一死票,未结算可收回)。"""
     try:
@@ -75,7 +75,7 @@ async def vote(player_id: str) -> dict[str, Any]:
 
 
 
-@router.post("/api/player/{player_id}/wish")
+@router.post("/api/player/{player_id}/wish", dependencies=[Depends(require_matching_player)])
 async def set_wish(player_id: str, body: WishBody) -> dict[str, Any]:
     """许愿(仅大厅):开局前表达愿望——善良/邪恶或自定义文字;空 = 清除。"""
     try:
@@ -87,7 +87,7 @@ async def set_wish(player_id: str, body: WishBody) -> dict[str, Any]:
 
 
 
-@router.post("/api/player/{player_id}/kill")
+@router.post("/api/player/{player_id}/kill", dependencies=[Depends(require_matching_player)])
 async def night_kill(player_id: str, body: KillBody) -> dict[str, Any]:
     """夜晚刀人(仅瓦釜雷鸣):恶魔手机选择目标,天亮自动执行;疯子选择只演戏。"""
     try:
@@ -99,7 +99,7 @@ async def night_kill(player_id: str, body: KillBody) -> dict[str, Any]:
 
 
 
-@router.post("/api/player/{player_id}/choice")
+@router.post("/api/player/{player_id}/choice", dependencies=[Depends(require_matching_player)])
 async def night_choice(player_id: str, body: NightChoiceBody) -> dict[str, Any]:
     """夜晚信息交互(仅瓦釜雷鸣):占卜师/筑梦师等手机选人,说书人看到后电子回复。"""
     try:
@@ -111,7 +111,7 @@ async def night_choice(player_id: str, body: NightChoiceBody) -> dict[str, Any]:
 
 
 
-@router.post("/api/player/{player_id}/night-action")
+@router.post("/api/player/{player_id}/night-action", dependencies=[Depends(require_matching_player)])
 async def player_night_action(player_id: str, body: PlayerNightActionBody) -> dict[str, Any]:
     """Submit the current seat-owned action to the canonical night workflow."""
     try:
