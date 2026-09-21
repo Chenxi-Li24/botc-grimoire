@@ -32,6 +32,36 @@ const playerInferences = computed(() => (props.view.player_inferences || []).map
   events: (owner.events || []).filter((item) => item.target === props.seat.seat),
   current: (owner.current || []).filter((item) => item.target === props.seat.seat),
 })).filter((owner) => owner.events.length))
+const auditRound = ref('all')
+const auditCategory = ref('all')
+const auditEvents = computed(() => props.seat.audit?.events || (props.seat.effect_history || []).map((effect) => ({
+  ...effect, category: 'status', kind: effect.type, phase: null, number: null,
+  at: effect.started_at,
+})))
+const auditRounds = computed(() => [...new Set(auditEvents.value
+  .filter((item) => item.phase && item.number != null)
+  .map((item) => `${item.phase}:${item.number}`))])
+const visibleAudit = computed(() => auditEvents.value.filter((item) =>
+  (auditRound.value === 'all' || `${item.phase}:${item.number}` === auditRound.value)
+  && (auditCategory.value === 'all' || item.category === auditCategory.value)))
+const auditGroups = computed(() => [
+  { id: 'status', label: '状态与转变' },
+  { id: 'information', label: '收到的信息' },
+  { id: 'action', label: '能力与目标' },
+].map((group) => ({ ...group, events: visibleAudit.value.filter((item) => item.category === group.id) })))
+const currentStatus = computed(() => [
+  ...(props.seat.effects || []).map((item) => ({
+    id: item.id, label: markerLabels[item.type] || item.type, state: effectState(item),
+    started_at: item.started_at, source_seat: item.source_seat,
+    source_character: item.source_character, expected_end: item.expected_end,
+  })),
+  ...(props.seat.markers || []).filter((marker) =>
+    !['role-change', 'team-change'].includes(marker)
+    && !(props.seat.effects || []).some((effect) => effect.type === marker))
+    .map((marker) => ({ id: `marker-${marker}`, label: markerLabels[marker] || marker })),
+  ...(props.seat.role_change ? [{ id: 'role-change', label: `角色转变为${props.seat.role_change.name}` }] : []),
+  ...(props.seat.team_change ? [{ id: 'team-change', label: `阵营转变为${props.seat.team_change === 'evil' ? '邪恶' : '善良'}` }] : []),
+])
 const picker = ref(null)
 const removeArmed = ref(false)
 let removeTimer = null
@@ -54,6 +84,44 @@ function inferenceLabel(item) {
 
 function effectEndedAt(effect) {
   return [...(effect.transitions || [])].reverse().find((item) => item.to === 'ended')?.at || null
+}
+
+function roundLabel(item) {
+  return item.number == null ? '轮次未记录' : `第 ${item.number} ${item.phase === 'day' ? '天' : '夜'}`
+}
+
+function roleName(id) {
+  return props.view.roles?.find((item) => item.id === id)?.name || id || '未知'
+}
+
+function auditTitle(item) {
+  if (item.category === 'status') {
+    if (item.kind === 'role_change') return `角色转变：${roleName(item.from)} → ${roleName(item.to)}`
+    if (item.kind === 'team_change') return `阵营转变：${item.to || '未知'}`
+    return markerLabels[item.kind] || markerLabels[item.marker] || item.kind
+  }
+  if (item.category === 'information') return item.kind === 'delivery' ? '获告知的信息' : item.kind === 'draft' ? '待发送信息' : '说书人回复'
+  if (item.kind === 'lunatic_kill') return '疯子自选目标（不直接生效）'
+  return `${roleName(item.role_snapshot)} · ${item.kind === 'outcome' ? '选择与裁定' : '夜晚选择'}`
+}
+
+function auditState(item) {
+  return ({ withdrawn: '已撤回', unsent: '未发送', pending: '待裁定', selected: '已选择',
+    effective: '已生效', ended: '已结束', suspended: '已暂停', active: '持续中' })[item.state] || item.state
+}
+
+function seatsLabel(items) {
+  return (items || []).length ? items.map((item) => `${item}号`).join('、') : '未记录'
+}
+
+function informationValue(value) {
+  if (value == null) return '未记录'
+  return typeof value === 'string' ? value : JSON.stringify(value)
+}
+
+function registrationLabel(item) {
+  if (typeof item !== 'object' || item === null) return String(item)
+  return `${item.seat ? `${item.seat}号：` : ''}${item.as || item.registered_as || item.character || informationValue(item)}`
 }
 
 function clearRemoveArm() {
@@ -133,6 +201,8 @@ function toggleBluff(roleId) {
 }
 
 watch(() => props.seat.seat, () => {
+  auditRound.value = 'all'
+  auditCategory.value = 'all'
   picker.value = null
   clearRemoveArm()
   draftMinions.value = [...(props.view.lunatic_minions?.[String(props.seat.seat)] || [])]
@@ -151,10 +221,21 @@ onBeforeUnmount(clearRemoveArm)
       <button data-clear-selection class="context-close" type="button" @click="$emit('close')">返回当前任务</button>
     </div>
     <dl class="player-summary">
-      <div><dt>角色</dt><dd>{{ role?.name || '未分配' }}</dd></div>
+      <div><dt>角色</dt><dd>{{ role?.name || '未分配' }}<span v-if="seat.fake_role && ['drunk', 'lunatic'].includes(role?.id)"> · 他以为：{{ seat.fake_role.name }}</span><span v-else-if="['drunk', 'lunatic'].includes(role?.id)"> · 待配置认知</span></dd></div>
       <div><dt>阵营</dt><dd>{{ teamLabel }}</dd></div>
       <div><dt>状态</dt><dd>{{ alive ? '存活' : '死亡' }}</dd></div>
     </dl>
+    <div v-if="seat.red_herring" class="seat-red-herring">🎯 宿敌</div>
+    <section data-current-status class="seat-admin-section">
+      <h3>当前状态</h3>
+      <p v-if="!currentStatus.length" class="inline-note">暂无异常状态</p>
+      <div v-for="item in currentStatus" :key="item.id" class="effect-history-row">
+        <strong>{{ item.label }}{{ item.state ? ` · ${item.state}` : '' }}</strong>
+        <span>开始：{{ item.started_at || '早期历史未记录' }}</span>
+        <span v-if="item.source_seat || item.source_character">来源：{{ item.source_seat ? `${item.source_seat}号` : '' }}{{ item.source_character ? ` · ${roleName(item.source_character)}` : '' }}</span>
+        <span v-if="item.expected_end">预计结束：{{ item.expected_end }}</span>
+      </div>
+    </section>
     <p v-if="seat.player?.wish" class="inline-note">许愿：{{ seat.player.wish }}</p>
     <div class="admin-actions">
       <button data-seat-alive class="btn" type="button" :disabled="!connected || !role" @click="toggleLife">{{ alive ? '标记死亡' : '复活' }}</button>
@@ -207,18 +288,36 @@ onBeforeUnmount(clearRemoveArm)
       <h3>占卜师宿敌</h3>
       <button data-seat-red class="btn" type="button" :disabled="!connected || !role" @click="$emit('set-red-herring', view.fortuneteller_red === seat.seat ? null : seat.seat)">{{ view.fortuneteller_red === seat.seat ? '清除本座宿敌' : '设本座为宿敌' }}</button>
     </section>
-    <section v-if="seat.effects?.length || seat.effect_history?.length" class="seat-admin-section">
-      <h3>异常状态溯源</h3>
-      <p v-for="effect in seat.effects || []" :key="`current-${effect.id}`" class="inline-note">当前：{{ markerLabels[effect.type] || effect.type }} · {{ effectState(effect) }}</p>
-      <div v-for="effect in seat.effect_history || []" :key="`history-${effect.id}`" class="effect-history-row">
-        <strong>{{ markerLabels[effect.type] || effect.type }} · {{ effectState(effect) }}</strong>
-        <span>获得：{{ effect.started_at }}</span>
-        <span v-if="effect.source_seat">来源：{{ effect.source_seat }}号{{ effect.source_character ? ` · ${effect.source_character}` : '' }}</span>
-        <span v-else-if="effect.source_character">来源：{{ effect.source_character }}</span>
-        <span v-if="effect.expected_end">预期结束：{{ effect.expected_end }}</span>
-        <span v-if="effectEndedAt(effect)">结束于：{{ effectEndedAt(effect) }}</span>
-        <span v-for="(transition, index) in effect.transitions || []" :key="index">{{ transition.at }} · {{ transition.reason }}</span>
+    <section class="seat-admin-section" data-seat-audit>
+      <h3>逐日记录</h3>
+      <div class="admin-actions">
+        <label>轮次 <select v-model="auditRound" data-audit-round><option value="all">全部</option><option v-for="round in auditRounds" :key="round" :value="round">{{ roundLabel({ phase: round.split(':')[0], number: Number(round.split(':')[1]) }) }}</option></select></label>
+        <label>类别 <select v-model="auditCategory" data-audit-filter><option value="all">全部</option><option value="status">状态与转变</option><option value="information">收到的信息</option><option value="action">能力与目标</option></select></label>
       </div>
+      <p v-if="!visibleAudit.length" class="inline-note">无历史记录；早期事件可能未留存。</p>
+      <section v-for="group in auditGroups.filter((item) => item.events.length)" :key="group.id" :data-audit-category="group.id" class="seat-audit-group">
+        <h4>{{ group.label }}</h4>
+        <div v-for="item in group.events.slice(0, 4)" :key="item.id" class="effect-history-row">
+          <strong>{{ roundLabel(item) }} · {{ auditTitle(item) }}</strong>
+          <span>{{ auditState(item) }}</span>
+          <span v-if="item.at">获得：{{ item.at }}</span>
+          <span v-if="item.source_seat">来源：{{ item.source_seat }}号{{ item.source_character ? ` · ${roleName(item.source_character)}` : '' }}</span>
+          <span v-if="item.expected_end">预期结束：{{ item.expected_end }}</span>
+          <span v-if="effectEndedAt(item)">结束于：{{ effectEndedAt(item) }}</span>
+          <span v-if="item.selected_seats?.length">选择：{{ seatsLabel(item.selected_seats) }}</span>
+          <span v-if="item.resolution">裁定：{{ item.resolution }}</span>
+          <span v-if="item.affected_seats?.length">实际影响：{{ seatsLabel(item.affected_seats) }}</span>
+          <span v-if="item.delivered_result != null">告知：{{ informationValue(item.delivered_result) }}</span>
+          <span v-if="item.reply != null">回复：{{ item.reply }}</span>
+          <span v-if="item.claims?.length">真假：{{ item.claims.map((claim) => `${claim.label || '结果'}${claim.truthful ? '真' : '假'}`).join('、') }}</span>
+          <span v-if="item.registrations?.length">登记：{{ item.registrations.map(registrationLabel).join('、') }}</span>
+          <span v-if="item.effect_snapshot?.length">异常快照：{{ item.effect_snapshot.join('、') }}</span>
+          <span v-for="correction in item.corrections || []" :key="correction.id">更正：{{ correction.reason || '原因未记录' }}{{ correction.claims?.length ? ` · ${correction.claims.map((claim) => `${claim.label || '结果'}${claim.truthful ? '真' : '假'}`).join('、')}` : '' }}</span>
+          <span v-if="item.source_event">事件：{{ item.source_event }}</span>
+          <span v-if="item.transitions?.length">变化：{{ item.transitions.map((transition) => `${transition.at || '时间未记录'} ${transition.reason || transition.to}`).join('；') }}</span>
+        </div>
+        <details v-if="group.events.length > 4"><summary>展开更早记录（{{ group.events.length - 4 }}）</summary><div v-for="item in group.events.slice(4)" :key="item.id" class="effect-history-row"><strong>{{ roundLabel(item) }} · {{ auditTitle(item) }}</strong><span>{{ auditState(item) }}</span><span v-if="item.source_event">事件：{{ item.source_event }}</span><span v-if="item.selected_seats?.length">选择：{{ seatsLabel(item.selected_seats) }}</span><span v-if="item.delivered_result != null">告知：{{ informationValue(item.delivered_result) }}</span></div></details>
+      </section>
     </section>
     <p v-if="error?.key?.startsWith('seat:')" class="inline-error">{{ error.message }}</p>
   </div>

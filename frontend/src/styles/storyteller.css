@@ -151,6 +151,7 @@ body:has(.storyteller-shell) { overflow: hidden; }
 .grimoire-seat.team-minion, .grimoire-seat.team-demon, .grimoire-seat.team-evil { --team-color: #cf4149; }
 .grimoire-seat.team-traveler { --team-color: #d6ad55; }
 .seat-role-icon { width: 40px; height: 40px; object-fit: contain; flex: none; }
+.seat-role-icon.is-avatar { object-fit: cover; border-radius: 50%; }
 .grimoire-seat.is-empty { opacity: .42; border-style: dashed; }
 .grimoire-seat.is-unclaimed { border-style: dashed; }
 .grimoire-seat.is-dead { filter: grayscale(.75); opacity: .62; }
@@ -163,10 +164,17 @@ body:has(.storyteller-shell) { overflow: hidden; }
 .grimoire-seat.has-effects::after { content: ''; position: absolute; right: 5px; top: 5px; width: 7px; height: 7px; border-radius: 50%; background: #b782db; box-shadow: 0 0 8px #b782db; }
 @keyframes acting-seat { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 38%, transparent); } }
 .seat-number, .seat-role, .seat-life, .seat-marker, .seat-draft, .seat-effect { font-size: 10px; }
+.seat-real-role, .seat-perception-pending, .seat-red-herring { font-size: 9px; line-height: 1.15; text-align: center; }
+.seat-real-role { color: #f3c8d7; }
+.seat-perception-pending { color: #ffd479; }
+.seat-red-herring { padding: 1px 4px; border: 1px solid #d8b965; border-radius: 999px; color: #f7da90; }
+.seat-audit-group { display: grid; gap: 7px; }
+.seat-audit-group h4 { font-size: 12px; }
 .seat-number, .seat-role { color: var(--dim); }
 .seat-player { max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .seat-life { color: var(--danger); }
 .seat-marker { padding: 1px 5px; border-radius: 999px; background: #57442a; color: #ffe3a3; }
+.seat-marker-count { display: none; font-size: 9px; color: var(--dim); }
 .seat-draft { color: #ffd479; }
 .seat-effect { color: #d9b5f1; }
 .grimoire-center {
@@ -466,6 +474,10 @@ body:has(.storyteller-shell) { overflow: hidden; }
   }
 }
 @media (max-width: 600px) {
+  .grimoire-seat { width: 76px; padding: 5px 3px; }
+  .seat-role-icon { width: 30px; height: 30px; }
+  .seat-marker-extra { display: none; }
+  .seat-marker-count { display: inline; }
   .storyteller-header-inner { padding-inline: 8px; gap: 6px; }
   .storyteller-title { font-size: 16px; }
   .header-chip, .phase-badge { display: none; }

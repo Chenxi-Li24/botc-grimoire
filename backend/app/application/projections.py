@@ -43,6 +43,189 @@ class ProjectionMixin:
         """座位生死只读取 canonical SeatState,与账号是否在线无关。"""
         return self.seat_state(seat).alive
 
+    def _seat_audit(self, seat: int) -> dict:
+        """Storyteller-only, seat-owned history; never reconstruct missing old facts."""
+        journal = {event.id: event for event in self.journal_events}
+        entries: list[dict] = []
+
+        def night_of(event_id: str | None, seen: set[str] | None = None) -> int | None:
+            if not event_id or event_id not in journal:
+                return None
+            seen = seen or set()
+            if event_id in seen:
+                return None
+            seen.add(event_id)
+            event = journal[event_id]
+            value = event.payload.get("night_no")
+            if isinstance(value, int):
+                return value
+            step_id = event.payload.get("step_id")
+            if isinstance(step_id, str) and step_id.startswith("night:"):
+                part = step_id.split(":", 2)[1]
+                if part.isdigit():
+                    return int(part)
+            for parent in event.depends_on:
+                found = night_of(parent, seen)
+                if found is not None:
+                    return found
+            return None
+
+        def state_of(*ids: str | None) -> str | None:
+            return ("withdrawn" if any(journal[item].state == "undone"
+                                      for item in ids if item in journal) else None)
+
+        for effect in self.effect_records.values():
+            if effect.target_seat != seat:
+                continue
+            entries.append({
+                "id": effect.id, "category": "status", "kind": effect.type,
+                "phase": "night" if night_of(effect.source_event) is not None else None,
+                "number": night_of(effect.source_event), "at": effect.started_at,
+                "source_event": effect.source_event, "source_seat": effect.source_seat,
+                "role_snapshot": effect.source_character, "state": state_of(effect.source_event)
+                or effect.state, "expected_end": effect.expected_end,
+                "transitions": effect.transitions, "payload": effect.payload,
+            })
+
+        for delivery in self.information_deliveries.values():
+            if delivery.actor_seat != seat:
+                continue
+            item = delivery.to_dict()
+            item.update({
+                "category": "information", "kind": "delivery", "phase": "night",
+                "number": night_of(delivery.source_event), "at": delivery.accepted_at,
+                "role_snapshot": delivery.real_character,
+                "state": state_of(delivery.source_event) or "effective",
+                "selected_seats": list(delivery.targets),
+            })
+            entries.append(item)
+
+        delivered_drafts = {item.draft_id for item in self.information_deliveries.values()}
+        for draft in self.information_drafts.values():
+            if (draft.actor_seat != seat or draft.id in delivered_drafts
+                    or draft.status != "pending"):
+                continue
+            entries.append({
+                "id": draft.id, "category": "information", "kind": "draft",
+                "phase": "night", "number": night_of(draft.prepared_event),
+                "at": draft.created_at, "source_event": draft.prepared_event,
+                "role_snapshot": draft.real_character,
+                "selected_seats": list(draft.targets), "state": "unsent",
+            })
+
+        for outcome in self.pending_outcomes.values():
+            if outcome.source_seat != seat:
+                continue
+            number = outcome.metadata.get("night_no") or night_of(outcome.source_event)
+            entries.append({
+                "id": outcome.id, "category": "action", "kind": "outcome",
+                "phase": "night", "number": number, "at": outcome.created_at,
+                "source_event": outcome.source_event,
+                "resolution_event": outcome.resolution_event,
+                "role_snapshot": outcome.source_character,
+                "selected_seats": list(outcome.selected_seats),
+                "affected_seats": list(outcome.affected_seats),
+                "resolution": outcome.resolution, "metadata": outcome.metadata,
+                "state": state_of(outcome.source_event, outcome.resolution_event)
+                or ("pending" if outcome.status == "pending" else "effective"),
+            })
+
+        for event in self.journal_events:
+            data = event.payload
+            if (event.kind == "action_selection" and data.get("source_seat") == seat
+                    and not any(outcome.source_event == event.id
+                                for outcome in self.pending_outcomes.values())):
+                entries.append({
+                    "id": event.id, "category": "action", "kind": "selection",
+                    "phase": "night", "number": night_of(event.id), "at": event.created_at,
+                    "source_event": event.id,
+                    "role_snapshot": data.get("source_character"),
+                    "selected_seats": list(data.get("selected_seats") or []),
+                    "state": state_of(event.id) or "selected",
+                })
+            if event.kind != "pit_hag_transformation" or data.get("target_seat") != seat:
+                continue
+            entries.append({
+                "id": event.id, "category": "status", "kind": "role_change",
+                "phase": "night", "number": night_of(event.id), "at": event.created_at,
+                "source_event": event.id, "source_seat": data.get("actor_seat"),
+                "role_snapshot": data.get("from"), "from": data.get("from"),
+                "to": data.get("to"), "state": state_of(event.id) or "effective",
+            })
+
+        for night, choices in self.night_choices.items():
+            entry = choices.get(str(seat))
+            if not entry:
+                continue
+            number = int(night) if str(night).isdigit() else None
+            entries.append({
+                "id": f"legacy-choice:{night}:{seat}", "category": "action",
+                "kind": "legacy_choice", "phase": "night", "number": number,
+                "at": None, "source_event": entry.get("event_id"),
+                "role_snapshot": entry.get("role"),
+                "selected_seats": list(entry.get("targets") or []),
+                "chosen_character": entry.get("char"),
+                "state": state_of(entry.get("event_id"))
+                or ("effective" if entry.get("applied") else "selected"),
+                "reply": entry.get("reply"), "wrong": entry.get("wrong"),
+            })
+
+        for night, kill in self.night_kills.items():
+            number = int(night) if str(night).isdigit() else None
+            for actor_key, target_key, kind in (("by", "seat", "legacy_kill"),
+                                                ("lunatic_by", "lunatic_seat", "lunatic_kill")):
+                if kill.get(actor_key) != seat or kill.get(target_key) is None:
+                    continue
+                entries.append({
+                    "id": f"legacy-kill:{night}:{seat}:{kind}", "category": "action",
+                    "kind": kind, "phase": "night", "number": number, "at": None,
+                    "source_event": None,
+                    "role_snapshot": kill.get("role") if kind == "legacy_kill" else "lunatic",
+                    "selected_seats": [kill[target_key]], "affected_seats": [],
+                    "state": "selected",
+                })
+
+        # The old review log is the only durable before/after snapshot for manual changes.
+        for event in self.events:
+            kind = event.get("type")
+            data = event.get("data") or {}
+            if event.get("seat") != seat or kind not in {
+                "role_change", "team_change", "marker", "kill", "lunatic_kill",
+                "choice", "reply",
+            }:
+                continue
+            if kind in {"kill", "lunatic_kill"} and any(
+                item["category"] == "action" and item.get("kind") in {"legacy_kill", "lunatic_kill"}
+                and item.get("number") == event.get("n")
+                and item.get("selected_seats") == [data.get("target")]
+                for item in entries
+            ):
+                continue
+            if kind == "choice" and any(
+                item.get("kind") == "legacy_choice" and item.get("number") == event.get("n")
+                and item.get("selected_seats") == data.get("targets") for item in entries
+            ):
+                continue
+            entries.append({
+                "id": f"legacy-event:{event['seq']}",
+                "category": ("information" if kind == "reply" else "action"
+                             if kind in {"kill", "lunatic_kill", "choice"} else "status"),
+                "kind": kind, "phase": event.get("phase"), "number": event.get("n"),
+                "at": None, "source_event": None,
+                "from": data.get("from"), "to": data.get("to") or data.get("team"),
+                "marker": data.get("marker"), "on": data.get("on"),
+                "selected_seats": ([data["target"]] if kind in {"kill", "lunatic_kill"}
+                                   and "target" in data else data.get("targets", [])),
+                "delivered_result": data.get("text") if kind == "reply" else None,
+                "role_snapshot": data.get("role") or data.get("from"),
+                "state": "effective", "legacy": True,
+            })
+
+        entries.sort(key=lambda item: (item.get("number") or -1,
+                                       item.get("phase") == "day", item.get("at") or "",
+                                       item["id"]), reverse=True)
+        return {"events": entries, "complete": False}
+
     def _seat_slots(self, st_view: bool, my_id: str | None = None) -> list[dict]:
         seat_of = self.seats
         slots = []
@@ -72,6 +255,9 @@ class ProjectionMixin:
                     effect_view = self.effects.projection(i)
                     slot["effects"] = effect_view["badges"]
                     slot["effect_history"] = effect_view["history"]
+                    slot["audit"] = self._seat_audit(i)
+                    if self.fortuneteller_red == i and self._role_seats("fortuneteller"):
+                        slot["red_herring"] = True
                 slots.append(slot)
                 continue
             entry = p.storyteller(self.roles) if st_view else p.public()
@@ -98,6 +284,9 @@ class ProjectionMixin:
                 effect_view = self.effects.projection(i)
                 slot["effects"] = effect_view["badges"]
                 slot["effect_history"] = effect_view["history"]
+                slot["audit"] = self._seat_audit(i)
+                if self.fortuneteller_red == i and self._role_seats("fortuneteller"):
+                    slot["red_herring"] = True
             if my_id is not None:  # is_me 属于座位槽位层,不属于 player
                 slot["is_me"] = p.id == my_id
             slots.append(slot)
@@ -120,59 +309,89 @@ class ProjectionMixin:
             return True  # 第 2 夜起 / 白天:首夜会面早已发生
         return any(s["key"] == key for s in self.night_steps[:self.night_idx + 1])
 
-    def _player_night_workflow(self, seat: int) -> dict:
+    def _player_night_workflow(self, seat: int, viewer_id: str | None = None) -> dict:
         """Project only this seat's prompt and delivered message, never adjudication facts."""
         current = self.night.queue.current
         prompt = None
+        receipt = None
         lunatic_choices = []
         if current is not None and current.actor_seat == seat:
+            if current.values.get("player_submission") is not None:
+                receipt = {"step_id": current.id}
+            else:
+                ability_id = current.source.get(
+                    "ability_character", current.perceived_as or current.character_id,
+                )
+                ability = self.night.pack.character_by_id.get(ability_id)
+                selection = ability.selection if ability else None
+                needs_targets = "targets" in current.required_fields
+                needs_character = "character" in current.required_fields
+                target_seats = []
+                if needs_targets:
+                    for candidate in sorted(self.seat_states.values(), key=lambda item: item.seat):
+                        if candidate.character_id is None:
+                            continue
+                        if selection and not selection.allow_self and candidate.seat == seat:
+                            continue
+                        if selection and selection.alive_only and not candidate.alive:
+                            continue
+                        target_seats.append(candidate.seat)
+                character_candidates = []
+                if needs_character:
+                    allowed = selection.character_teams if selection else ()
+                    for character in self.night.pack.characters:
+                        if allowed and character.team not in allowed:
+                            continue
+                        character_candidates.append({
+                            "id": character.id,
+                            "name": self.night.pack.locale[character.name_key],
+                            "team": character.team,
+                        })
+                prompt = {
+                    "id": current.id,
+                    "character_id": ability_id,
+                    "trigger": current.trigger,
+                    "status": ("current" if current.status == "upcoming"
+                               else current.status),
+                    "required_fields": list(current.required_fields),
+                    "values": {key: value for key, value in current.values.items()
+                               if key in {"targets", "character", "acknowledged"}},
+                    "name": current.name,
+                    "reminder": current.reminder,
+                    "target_seats": target_seats,
+                    "player_count": selection.players if selection and needs_targets else 0,
+                    "character_candidates": character_candidates,
+                    "allow_self": selection.allow_self if selection else True,
+                    "alive_only": selection.alive_only if selection else False,
+                }
             ability_id = current.source.get(
                 "ability_character", current.perceived_as or current.character_id,
             )
             ability = self.night.pack.character_by_id.get(ability_id)
-            selection = ability.selection if ability else None
-            needs_targets = "targets" in current.required_fields
-            needs_character = "character" in current.required_fields
-            target_seats = []
-            if needs_targets:
-                for candidate in sorted(self.seat_states.values(), key=lambda item: item.seat):
-                    if candidate.character_id is None:
-                        continue
-                    if selection and not selection.allow_self and candidate.seat == seat:
-                        continue
-                    if selection and selection.alive_only and not candidate.alive:
-                        continue
-                    target_seats.append(candidate.seat)
-            character_candidates = []
-            if needs_character:
-                allowed = selection.character_teams if selection else ()
-                for character in self.night.pack.characters:
-                    if allowed and character.team not in allowed:
-                        continue
-                    character_candidates.append({
-                        "id": character.id,
-                        "name": self.night.pack.locale[character.name_key],
-                        "team": character.team,
-                    })
-            prompt = {
-                "id": current.id,
-                "character_id": ability_id,
-                "trigger": current.trigger,
-                "status": ("current" if current.status == "upcoming"
-                           else current.status),
-                "required_fields": list(current.required_fields),
-                "values": {key: value for key, value in current.values.items()
-                           if key in {"targets", "character", "acknowledged"}},
-                "name": current.name,
-                "reminder": current.reminder,
-                "target_seats": target_seats,
-                "player_count": selection.players if selection and needs_targets else 0,
-                "character_candidates": character_candidates,
-                "allow_self": selection.allow_self if selection else True,
-                "alive_only": selection.alive_only if selection else False,
-            }
             if ability and ability.team == DEMON:
                 lunatic_choices = self.night._lunatic_context()
+        widow_grimoire = None
+        holder = self.seat_state(seat)
+        if (self.status == "playing" and self.phase == "night" and self.night_no == 1
+                and holder.character_id == "widow" and viewer_id is not None
+                and holder.claimed_by == viewer_id):
+            widow_step = next((step for step in self.night.queue.steps
+                               if step.actor_seat == seat and step.character_id == "widow"
+                               and step.status in {"upcoming", "completed"}
+                               and (step.id == self.night.queue.current_step_id
+                                    or step.status == "completed")), None)
+            if widow_step is not None:
+                widow_grimoire = {"seats": [
+                    {"seat": item.seat,
+                     "name": self.seats[item.seat].name if item.seat in self.seats else None,
+                     "alive": item.alive,
+                     "real_character_id": item.character_id,
+                     "real_character": self.roles[item.character_id]["name"] if item.character_id else None,
+                     "perceived_character_id": item.perceived_character_id,
+                     "perceived_character": (self.roles[item.perceived_character_id]["name"]
+                                             if item.perceived_character_id else None)}
+                    for item in sorted(self.seat_states.values(), key=lambda value: value.seat)
+                ]}
         event_states = {event.id: event.state for event in self.journal_events}
         deliveries = []
         for delivery in self.information_deliveries.values():
@@ -186,8 +405,9 @@ class ProjectionMixin:
                 item.pop(hidden, None)
             item["retracted"] = event_states.get(delivery.source_event) == "undone"
             deliveries.append(item)
-        return {"night_no": self.night_no, "prompt": prompt,
-                "deliveries": deliveries, "lunatic_choices": lunatic_choices}
+        return {"night_no": self.night_no, "prompt": prompt, "receipt": receipt,
+                "deliveries": deliveries, "lunatic_choices": lunatic_choices,
+                "widow_grimoire": widow_grimoire}
 
     def player_view(self, player_id: str) -> dict:
         me = self.players[player_id]
@@ -231,7 +451,7 @@ class ProjectionMixin:
             view["me"] = me.private(self.roles, fake_id)
             view["me"]["dead_vote_used"] = me.dead_vote_used
             if me.seat is not None:
-                view["night_workflow"] = self._player_night_workflow(me.seat)
+                view["night_workflow"] = self._player_night_workflow(me.seat, player_id)
         # 结算:说书人宣布游戏结束 → 全场揭晓真实角色与获胜方
         if self.winner is not None:
             view["result"] = {
@@ -333,7 +553,8 @@ class ProjectionMixin:
                     wake["targets"] = [s for s in range(1, self.player_count + 1)
                                        if self._seat_real_role(s)]  # 线下/未领取座位同样可选
                 view["night_wake"] = wake
-                if wake.get("grimoire"):
+                if (wake.get("grimoire") and me.seat is not None
+                        and self.seat_state(me.seat).claimed_by == player_id):
                     # 寡妇首夜查看魔典:全部座位的真实角色与旅行者(仅此夜、仅此步,睡下后不可再看)
                     view["grimoire"] = {
                         "seats": [{"seat": s,
