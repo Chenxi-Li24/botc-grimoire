@@ -12,6 +12,7 @@ class Player:
     name: str
     seat: int | None = None
     wish: str | None = None  # 许愿(仅大厅):善良/邪恶或自定义文字,说书人配板时参考;仅本人与说书人可见
+    account_id: str | None = None
     _seat_state: SeatState | None = field(default=None, repr=False, compare=False)
 
     def bind(self, seat_state: SeatState | None) -> None:

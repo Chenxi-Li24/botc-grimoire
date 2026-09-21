@@ -8,6 +8,7 @@ v1 完整版新增:
 """
 
 import random
+import secrets
 import time
 from collections.abc import MutableMapping
 from pathlib import Path
@@ -95,6 +96,7 @@ class GameManager(LobbyMixin, LegacyNightMixin, NominationMixin, ReviewMixin,
 
     def reset(self) -> None:
         # 注意:reset 不写盘 → 误重置可用「读档」撤销;开始新局的第一次变更会覆盖存档
+        self.game_id = secrets.token_hex(16)
         self.players: dict[str, Player] = {}
         self.seat_states: dict[int, SeatState] = {
             seat: SeatState(seat=seat) for seat in range(1, self.player_count + 1)
@@ -253,6 +255,7 @@ class GameManager(LobbyMixin, LegacyNightMixin, NominationMixin, ReviewMixin,
             player_count=self.player_count,
             players={player_id: PlayerAccount(
                 id=player.id, name=player.name, seat=player.seat, wish=player.wish,
+                account_id=player.account_id,
             ) for player_id, player in self.players.items()},
             seats=self.seat_states,
             event_records=self.journal_events,
@@ -378,6 +381,7 @@ class GameManager(LobbyMixin, LegacyNightMixin, NominationMixin, ReviewMixin,
         """Build the complete serializable payload without touching disk."""
         payload = encode_save(self._canonical_state())
         payload.update({
+            "game_id": self.game_id,
             "status": self.status, "script_id": self.script_id,
             "lunatic_minions": self.lunatic_minions, "lunatic_bluffs": self.lunatic_bluffs,
             "phase": self.phase, "night_no": self.night_no, "day_no": self.day_no,
@@ -425,7 +429,8 @@ class GameManager(LobbyMixin, LegacyNightMixin, NominationMixin, ReviewMixin,
             self.information_notices = core.information_notices
             self.pending_transformations = core.pending_transformations
             self.players = {pid: Player(id=account.id, name=account.name,
-                                        seat=account.seat, wish=account.wish)
+                                        seat=account.seat, wish=account.wish,
+                                        account_id=account.account_id)
                             for pid, account in core.players.items()}
             self._bind_players_to_seats()
             self._bind_night_ledgers()
@@ -452,6 +457,7 @@ class GameManager(LobbyMixin, LegacyNightMixin, NominationMixin, ReviewMixin,
                     m["from"] = _norm(m["from"])
                 self.chats.append(c)
             self.room_code = d.get("room_code") or f"{random.randrange(10000):04d}"  # 旧存档没有房间号 → 现生成
+            self.game_id = d.get("game_id", self.game_id)
             self.lunatic_minions = {int(k): v for k, v in d.get("lunatic_minions", {}).items()}
             self.lunatic_bluffs = {int(k): v for k, v in d.get("lunatic_bluffs", {}).items()}
             # 死票座位/旅行者 id 存档时统一转 str,读档时数字座位还原为 int(旅行者 id 保持 "t1" 字符串)
