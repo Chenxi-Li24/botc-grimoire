@@ -24,8 +24,12 @@ cd backend
 ```
 
 - **说书人**:浏览器打开 `http://localhost:8000/#/storyteller`(默认密码 `grimoire`,可用环境变量 `STORYTELLER_PASSWORD` 修改)
-- **玩家**:手机连同一 WiFi,扫描说书人界面上的二维码加入
+- **玩家**:同一 WiFi 优先扫「本地码」；本地打不开时扫「公网备用码」
 - Windows 首次运行会弹防火墙提示,勾选「专用网络」并**允许**,否则手机连不上
+
+公网备用码需要在启动后端前设置 `PUBLIC_URL` 为隧道的 HTTPS 根地址，
+例如 `PUBLIC_URL=https://example.nyat.app:30677/`。未配置时只显示本地码。
+两个码都会带当前房间号；修改房间号后，请让玩家重新扫码。
 
 ## 前端开发与构建
 

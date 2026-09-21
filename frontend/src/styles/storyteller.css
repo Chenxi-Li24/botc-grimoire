@@ -184,15 +184,27 @@ body:has(.storyteller-shell) { overflow: hidden; }
 .grimoire-center span { font-size: 36px; }
 .grimoire-center strong { font-size: 13px; }
 
-.join-context { align-items: stretch; }
+.join-context { align-items: stretch; gap: 14px; }
+.join-code-card {
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.join-code-primary { border-color: #a68040; }
+.join-code-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.join-code-heading strong { font-size: 14px; }
+.join-code-heading span { color: #f4d394; font-size: 11px; }
 .join-qr {
-  width: min(100%, 224px);
+  width: min(100%, 168px);
   aspect-ratio: 1;
   margin: 0 auto;
   padding: 8px;
   border-radius: 14px;
   background: white;
 }
+.join-link { color: #8fc4e7; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .room-code-block {
   display: flex;
   align-items: baseline;

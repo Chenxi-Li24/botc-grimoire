@@ -22,7 +22,7 @@ it('shows join information when no player is selected', () => {
   const wrapper = mount(ContextPanel, { props: { view: lobbyView, selectedSeat: null } })
   expect(wrapper.text()).toContain('2468')
   expect(wrapper.text()).toContain('已入座 2/6')
-  expect(wrapper.get('img').attributes('src')).toBe('/api/qr')
+  expect(wrapper.get('img').attributes('src')).toBe('/api/qr?mode=local&room=2468')
 })
 
 it('prioritizes selected-player details and can clear the selection', async () => {
