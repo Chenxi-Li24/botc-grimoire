@@ -13,7 +13,7 @@ class ApiContractSnapshotTest(unittest.TestCase):
         canonical = json.dumps(app.openapi(), sort_keys=True, ensure_ascii=False)
         self.assertEqual(
             hashlib.sha256(canonical.encode()).hexdigest(),
-            "8b32765c1ff78ff538f0a5e8ba2ed7267cdc6169b1d01ec4ea56677718263bf1",
+            "55bbd1fec1b5c13fb50fd2fc72588fd8e2eeb7ca816d318b06ee56ce22cde44f",
         )
 
     def test_websocket_entry_is_unchanged(self):

@@ -31,6 +31,11 @@ class PasswordReset(BaseModel):
     new_password: str
 
 
+class ParticipantRecovery(BaseModel):
+    room_code: str
+    code: str
+
+
 def set_session_cookie(response: Response, token: str) -> None:
     response.set_cookie(
         "botc_session", token, httponly=True, samesite="lax", path="/",
@@ -171,3 +176,30 @@ def reset_password(body: PasswordReset, request: Request, response: Response) ->
     token, _ = runtime.identity_store.issue_session(account_id=account_id)
     set_session_cookie(response, token)
     return {"ok": True, "recovery_code": recovery_code}
+
+
+@router.post("/api/recover-participant")
+def recover_participant(body: ParticipantRecovery, request: Request, response: Response) -> dict[str, str]:
+    _check_write(request)
+    game = runtime.game
+    client_key = request.client.host if request.client else "unknown"
+    try:
+        runtime.identity_store.check_recovery_limit(client_key)
+    except LoginRateLimited as exc:
+        raise HTTPException(status_code=429, detail="续接尝试过于频繁") from exc
+    if body.room_code != game.room_code:
+        runtime.identity_store.record_recovery_failure(client_key)
+        raise HTTPException(status_code=400, detail="房间号错误")
+    result = runtime.identity_store.redeem_participant_recovery_session(game.game_id, body.code)
+    if result is None:
+        runtime.identity_store.record_recovery_failure(client_key)
+        raise HTTPException(status_code=401, detail="续接码无效或已过期")
+    player_id, token, _ = result
+    if player_id not in game.players or game.players[player_id].account_id is not None:
+        runtime.identity_store.revoke_session(token)
+        raise HTTPException(status_code=403, detail="原身份已不存在")
+    old_token = request.cookies.get("botc_session")
+    if old_token:
+        runtime.identity_store.revoke_session(old_token)
+    set_session_cookie(response, token)
+    return {"player_id": player_id}

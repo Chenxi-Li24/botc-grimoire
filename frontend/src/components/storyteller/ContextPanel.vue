@@ -7,6 +7,7 @@ import NightTaskPanel from './night/NightTaskPanel.vue'
 import TravelerPanel from './TravelerPanel.vue'
 import StorytellerChatPanel from './StorytellerChatPanel.vue'
 import SessionPanel from './SessionPanel.vue'
+import RecoveryPanel from './RecoveryPanel.vue'
 import EndGamePanel from './EndGamePanel.vue'
 
 const props = defineProps({
@@ -18,6 +19,7 @@ const props = defineProps({
   error: { type: Object, default: null },
   night: { type: Object, default: null },
   adminTab: { type: String, default: null },
+  service: { type: Object, default: null },
 })
 defineEmits([
   'clear-selection', 'toggle-role', 'toggle-bluff', 'set-fake',
@@ -46,16 +48,18 @@ const selected = computed(() => props.view.seats?.find((seat) => (
     @set-winner="$emit('set-winner', $event)"
     @open-review="$emit('open-review')"
   />
-  <SessionPanel
-    v-else-if="adminTab === 'session'"
-    :view="view"
-    :connected="connected"
-    :pending="pending"
-    :error="error"
-    @set-room="$emit('set-room', $event)"
-    @load-save="$emit('load-save')"
-    @reset-game="$emit('reset-game')"
-  />
+  <div v-else-if="adminTab === 'session'">
+    <SessionPanel
+      :view="view"
+      :connected="connected"
+      :pending="pending"
+      :error="error"
+      @set-room="$emit('set-room', $event)"
+      @load-save="$emit('load-save')"
+      @reset-game="$emit('reset-game')"
+    />
+    <RecoveryPanel v-if="service" :view="view" :service="service" :connected="connected" />
+  </div>
   <JoinPanel v-else-if="adminTab === 'join'" :view="view" />
   <StorytellerChatPanel
     v-else-if="adminTab === 'chats' && view.status === 'playing'"

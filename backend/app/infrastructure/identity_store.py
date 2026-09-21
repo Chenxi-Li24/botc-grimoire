@@ -47,6 +47,11 @@ class IdentityStore:
                     attempted_at REAL NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS attempts_name_time ON login_attempts(username_key, attempted_at);
+                CREATE TABLE IF NOT EXISTS recovery_attempts (
+                    client_key TEXT NOT NULL,
+                    attempted_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS recovery_attempts_client_time ON recovery_attempts(client_key, attempted_at);
                 CREATE TABLE IF NOT EXISTS recovery_codes (
                     code_digest TEXT PRIMARY KEY,
                     game_id TEXT NOT NULL,
@@ -190,3 +195,90 @@ class IdentityStore:
             row = db.execute("SELECT id FROM accounts WHERE username_key = ?", (username_key(username),)).fetchone()
             db.execute("DELETE FROM sessions WHERE account_id = ?", (row["id"],))
         return row["id"], new_code
+
+    def issue_participant_recovery(
+        self, game_id: str, player_id: str, *, now: float | None = None
+    ) -> str:
+        now = time.time() if now is None else now
+        code = secrets.token_urlsafe(24)
+        with self._connect() as db:
+            db.execute(
+                "DELETE FROM recovery_codes WHERE game_id = ? AND player_id = ?",
+                (game_id, player_id),
+            )
+            db.execute(
+                "INSERT INTO recovery_codes(code_digest, game_id, player_id, expires_at, consumed_at) "
+                "VALUES (?, ?, ?, ?, NULL)",
+                (token_digest(code), game_id, player_id, now + 600),
+            )
+        return code
+
+    @staticmethod
+    def _consume_recovery(db: sqlite3.Connection, game_id: str, code: str, now: float) -> str | None:
+        digest = token_digest(code)
+        row = db.execute(
+            "SELECT player_id FROM recovery_codes WHERE code_digest = ? AND game_id = ? "
+            "AND consumed_at IS NULL AND expires_at > ?",
+            (digest, game_id, now),
+        ).fetchone()
+        if row is None:
+            return None
+        result = db.execute(
+            "UPDATE recovery_codes SET consumed_at = ? WHERE code_digest = ? "
+            "AND consumed_at IS NULL AND expires_at > ?",
+            (now, digest, now),
+        )
+        return row["player_id"] if result.rowcount == 1 else None
+
+    def redeem_participant_recovery(
+        self, game_id: str, code: str, *, now: float | None = None
+    ) -> str | None:
+        now = time.time() if now is None else now
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            return self._consume_recovery(db, game_id, code, now)
+
+    def redeem_participant_recovery_session(
+        self, game_id: str, code: str, *, now: float | None = None
+    ) -> tuple[str, str, str] | None:
+        """Consume a code and issue a guest session in one SQLite transaction."""
+        now = time.time() if now is None else now
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            player_id = self._consume_recovery(db, game_id, code, now)
+            if player_id is None:
+                return None
+            token = secrets.token_urlsafe(32)
+            csrf = secrets.token_urlsafe(32)
+            db.execute(
+                "INSERT INTO sessions(token_digest, account_id, player_id, game_id, csrf, expires_at) "
+                "VALUES (?, NULL, ?, ?, ?, ?)",
+                (token_digest(token), player_id, game_id, csrf, now + self.SESSION_TTL),
+            )
+        return player_id, token, csrf
+
+    def revoke_guest_sessions(self, game_id: str, player_id: str) -> None:
+        with self._connect() as db:
+            db.execute(
+                "DELETE FROM sessions WHERE game_id = ? AND player_id = ? AND account_id IS NULL",
+                (game_id, player_id),
+            )
+
+    def check_recovery_limit(self, client_key: str, *, now: float | None = None) -> None:
+        now = time.time() if now is None else now
+        with self._connect() as db:
+            db.execute("DELETE FROM recovery_attempts WHERE attempted_at <= ?", (now - self.LOGIN_WINDOW,))
+            count = db.execute(
+                "SELECT COUNT(*) FROM recovery_attempts WHERE client_key = ? AND attempted_at > ?",
+                (client_key, now - self.LOGIN_WINDOW),
+            ).fetchone()[0]
+        if count >= self.LOGIN_LIMIT:
+            raise LoginRateLimited("续接尝试过于频繁")
+
+    def record_recovery_failure(self, client_key: str, *, now: float | None = None) -> None:
+        now = time.time() if now is None else now
+        with self._connect() as db:
+            db.execute(
+                "INSERT INTO recovery_attempts(client_key, attempted_at) VALUES (?, ?)",
+                (client_key, now),
+            )

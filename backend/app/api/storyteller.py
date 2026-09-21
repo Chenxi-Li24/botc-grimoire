@@ -3,10 +3,30 @@
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from ..application.runtime import game, hub
-from .dependencies import STORYTELLER_PASSWORD, require_storyteller
+from ..application import runtime
+from .dependencies import STORYTELLER_PASSWORD, require_storyteller, validate_origin
 from .schemas_legacy import *
 
 router = APIRouter()
+
+
+@router.post("/api/st/players/{player_id}/recovery-code", dependencies=[Depends(require_storyteller), Depends(validate_origin)])
+def issue_recovery_code(player_id: str) -> dict[str, str]:
+    player = runtime.game.players.get(player_id)
+    if player is None:
+        raise HTTPException(status_code=404, detail="玩家不存在")
+    if player.account_id is not None:
+        raise HTTPException(status_code=409, detail="账户玩家请使用账户登录")
+    code = runtime.identity_store.issue_participant_recovery(runtime.game.game_id, player_id)
+    return {"player_id": player_id, "code": code}
+
+
+@router.post("/api/st/players/{player_id}/revoke-guest-sessions", dependencies=[Depends(require_storyteller), Depends(validate_origin)])
+def revoke_guest_sessions(player_id: str) -> dict[str, bool]:
+    if player_id not in runtime.game.players:
+        raise HTTPException(status_code=404, detail="玩家不存在")
+    runtime.identity_store.revoke_guest_sessions(runtime.game.game_id, player_id)
+    return {"ok": True}
 
 def deprecated_storyteller_view(replacement: str) -> dict[str, Any]:
     return {
@@ -399,4 +419,3 @@ async def reset() -> dict[str, Any]:
     game.reset()
     await hub.push_all()
     return game.storyteller_view()
-
