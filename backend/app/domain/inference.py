@@ -122,9 +122,16 @@ class InferenceMixin:
             target = event["target"]
             if (isinstance(target, int) and event["operation"] == "set"
                     and latest.get((target, event["category"])) == event["seq"]):
-                if event["category"] == "role":
-                    verdict = "correct" if event["data"]["role"] == self._seat_real_role(target) else "incorrect"
-                elif event["category"] == "alignment":
+                actual_role = self._seat_real_role(target)
+                changed_role = target in self.seat_role_changes or any(
+                    item.get("seat") == target and item.get("type") == "role_change"
+                    for item in self.events)
+                changed_alignment = changed_role or target in self.seat_team_changes or any(
+                    item.get("seat") == target and item.get("type") == "team_change"
+                    for item in self.events)
+                if actual_role is not None and not changed_role and event["category"] == "role":
+                    verdict = "correct" if event["data"]["role"] == actual_role else "incorrect"
+                elif actual_role is not None and not changed_alignment and event["category"] == "alignment":
                     if event["data"]["alignment"] != "unknown":
                         verdict = "correct" if event["data"]["alignment"] == self.seat_state(target).alignment else "incorrect"
             entries.append({**event, "verdict": verdict})

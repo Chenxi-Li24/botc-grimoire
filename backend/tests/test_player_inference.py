@@ -88,15 +88,36 @@ class PlayerInferenceTests(unittest.TestCase):
         other = project_own_history(self.game, self.bob_id)
         self.assertEqual(len(own["guesses"]), 1)
         self.assertEqual(other["guesses"], [])
-        self.assertEqual(own["guesses"][0]["verdict"], "incorrect")
+        self.assertEqual(own["guesses"][0]["verdict"], "unverified")
 
     def test_only_final_live_role_guess_is_compared_and_finished_game_is_read_only(self):
         self._note(self.alice, self.alice_id, self.alice_csrf)
         self._note(self.alice, self.alice_id, self.alice_csrf, client_id="test-2", data={"role": "imp"})
         self.game.winner = "evil"
         verdicts = [item["verdict"] for item in self.game.inference_replay(self.alice_id)]
-        self.assertEqual(verdicts, ["unverified", "incorrect"])
+        self.assertEqual(verdicts, ["unverified", "unverified"])
         self.assertEqual(self._note(self.alice, self.alice_id, self.alice_csrf, client_id="test-3").status_code, 400)
+
+    def test_role_change_does_not_retroactively_mark_an_earlier_guess_wrong(self):
+        self.game.seat_roles[3] = "chef"
+        self._note(self.alice, self.alice_id, self.alice_csrf)
+        self.game.set_marker(3, "role-change", True, role="imp")
+        self.game.winner = "evil"
+        self.assertEqual(self.game.inference_replay(self.alice_id)[0]["verdict"], "unverified")
+
+    def test_alignment_change_does_not_retroactively_mark_an_earlier_guess_wrong(self):
+        self.game.seat_roles[3] = "chef"
+        self._note(self.alice, self.alice_id, self.alice_csrf,
+                   category="alignment", data={"alignment": "good"})
+        self.game.set_marker(3, "team-change", True, team="evil")
+        self.game.winner = "evil"
+        self.assertEqual(self.game.inference_replay(self.alice_id)[0]["verdict"], "unverified")
+
+    def test_unchanged_assigned_role_can_be_confirmed(self):
+        self.game.seat_roles[3] = "chef"
+        self._note(self.alice, self.alice_id, self.alice_csrf)
+        self.game.winner = "good"
+        self.assertEqual(self.game.inference_replay(self.alice_id)[0]["verdict"], "correct")
 
 
 if __name__ == "__main__":
